@@ -15,35 +15,38 @@
 
 
 bool CrashHandler::bInitialized = false;
-std::string CrashHandler::dumpDir = "crashes/";
+std::string CrashHandler::s_baseDumpDirectory = "crashes/";
+std::string CrashHandler::s_currentCrashFolder = "";
 
 void CrashHandler::Initialize(const std::string& dumpDirectory)
 {
     if (bInitialized) { return; }
-    dumpDir = dumpDirectory;
-    std::filesystem::create_directories(dumpDir);
+    s_baseDumpDirectory = dumpDirectory;
+    std::filesystem::create_directories(s_baseDumpDirectory);
 
     // #1 Setup exception filter
     SetUnhandledExceptionFilter(ExceptionFilter);
     bInitialized = true;
-    fmt::println("Crash handler initialized - dumps go to: {}", dumpDir);
+    fmt::println("Crash handler initialized - dumps go to: {}", s_baseDumpDirectory);
 }
 
 LONG CrashHandler::ExceptionFilter(PEXCEPTION_POINTERS pExceptionInfo)
 {
-    std::string filename = dumpDir + "crash_" + GetTimestamp() + ".dmp";
+    s_currentCrashFolder = CreateCrashFolder();
 
     // #2 Write crash context
-    const std::string crashReason = GetExceptionDescription(pExceptionInfo);
-    CrashContext::WriteCrashContext(crashReason);
+    std::string crashReason = GetExceptionDescription(pExceptionInfo);
+    CrashContext::WriteCrashContext(crashReason, s_currentCrashFolder);
 
     // #3 Write crash dump
-    if (WriteDump(pExceptionInfo, filename)) {
-        fmt::println("Crash dump written to {}", filename);
+    std::string dumpPath = s_currentCrashFolder + "Minidump.dmp";
+    if (WriteDump(pExceptionInfo, dumpPath)) {
+        fmt::println("Crash dump written to {}", dumpPath);
     }
     else {
         fmt::println("Failed to create dump");
     }
+
 
     return EXCEPTION_EXECUTE_HANDLER;
 }
@@ -84,21 +87,24 @@ bool CrashHandler::WriteDump(const PEXCEPTION_POINTERS pExceptionInfo, const std
 
 bool CrashHandler::TriggerManualDump(const std::string& reason)
 {
+    s_currentCrashFolder = CreateCrashFolder();
+
     CONTEXT context = {};
     RtlCaptureContext(&context);
 
     EXCEPTION_RECORD record = {};
-    record.ExceptionCode = 0xC0000001;
+    record.ExceptionCode = 0xC0000001; // Custom code for manual dump
     record.ExceptionAddress = _ReturnAddress();
 
     EXCEPTION_POINTERS pointers = {};
     pointers.ExceptionRecord = &record;
     pointers.ContextRecord = &context;
 
-    std::string filename = dumpDir + "manual_" + GetTimestamp() + ".dmp";
-    fmt::println("Creating manual dump: {}\nReason: ", filename, reason);
+    std::string fullReason = "Manual dump: " + reason;
+    CrashContext::WriteCrashContext(fullReason, s_currentCrashFolder);
 
-    return WriteDump(&pointers, filename);
+    std::string dumpPath = s_currentCrashFolder + "Minidump.dmp";
+    return WriteDump(&pointers, dumpPath);
 }
 
 std::string CrashHandler::GetTimestamp()
@@ -200,6 +206,15 @@ std::string CrashHandler::GetExceptionDescription(PEXCEPTION_POINTERS pException
     description += fmt::format(" at address 0x{:X}", reinterpret_cast<uintptr_t>(exceptionAddress));
 
     return description;
+}
+
+std::string CrashHandler::CreateCrashFolder()
+{
+    std::string timestamp = GetTimestamp();
+    std::string crashFolder = s_baseDumpDirectory + timestamp + "/";
+
+    std::filesystem::create_directories(crashFolder);
+    return crashFolder;
 }
 
 #endif
