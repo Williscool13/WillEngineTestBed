@@ -27,7 +27,7 @@ void CrashContext::Initialize()
     fmt::println("Crash context initialized");
 }
 
-void CrashContext::WriteCrashContext(const std::string& crashReason)
+void CrashContext::WriteCrashContext(const std::string& crashReason, const std::string& folderPath)
 {
     if (!bInitialized) {
         context = nlohmann::json::object();
@@ -39,12 +39,14 @@ void CrashContext::WriteCrashContext(const std::string& crashReason)
     CollectProcessInfo();
 
     try {
-        std::ofstream file("crashes/context.json");
+        std::string contextPath = folderPath + "CrashContext.json";
+        std::ofstream file(contextPath);
         file << context.dump(2);
         file.close();
 
-        fmt::println("Crash context written to: crashes/context.json");
-    } catch (const std::exception& e) {
+        fmt::println("Crash context written to: {}", contextPath);
+    }
+    catch (const std::exception& e) {
         fmt::println("Failed to write crash context: {}", e.what());
     }
 }

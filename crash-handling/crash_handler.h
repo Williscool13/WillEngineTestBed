@@ -26,7 +26,12 @@ private:
 
     static std::string GetExceptionDescription(PEXCEPTION_POINTERS pExceptionInfo);
 
-    static std::string dumpDir;
+    static std::string CreateCrashFolder();
+
+private:
+
+    static std::string s_baseDumpDirectory;
+    static std::string s_currentCrashFolder;
     static bool bInitialized;
 };
 #endif

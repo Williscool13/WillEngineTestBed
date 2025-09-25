@@ -12,7 +12,7 @@
 class CrashContext {
 public:
     static void Initialize();
-    static void WriteCrashContext(const std::string& crashReason);
+    static void WriteCrashContext(const std::string& crashReason, const std::string& folderPath);
 
 private:
     static void CollectSystemInfo();
