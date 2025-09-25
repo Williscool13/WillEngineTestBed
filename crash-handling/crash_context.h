@@ -17,9 +17,10 @@ public:
 private:
     static void CollectSystemInfo();
     static void CollectProcessInfo();
+    static nlohmann::json GetBuildConfiguration();
     static std::string GetTimestamp();
 
-    static nlohmann::json context;
+    static nlohmann::ordered_json context;
     static bool bInitialized;
 };
 

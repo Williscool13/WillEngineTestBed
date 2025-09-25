@@ -9,7 +9,7 @@
 #include <fmt/format.h>
 #include <fmt/chrono.h>
 
-nlohmann::json CrashContext::context;
+nlohmann::ordered_json CrashContext::context;
 bool CrashContext::bInitialized = false;
 
 void CrashContext::Initialize()
@@ -18,8 +18,9 @@ void CrashContext::Initialize()
 
     std::filesystem::create_directories("crashes");
 
-    context = nlohmann::json::object();
+    context = nlohmann::ordered_json::object();
     context["session_start"] = GetTimestamp();
+    context["build_config"] = GetBuildConfiguration();
 
     CollectSystemInfo();
     bInitialized = true;
@@ -30,7 +31,7 @@ void CrashContext::Initialize()
 void CrashContext::WriteCrashContext(const std::string& crashReason, const std::string& folderPath)
 {
     if (!bInitialized) {
-        context = nlohmann::json::object();
+        context = nlohmann::ordered_json::object();
     }
 
     context["crash"]["reason"] = crashReason;
@@ -45,8 +46,7 @@ void CrashContext::WriteCrashContext(const std::string& crashReason, const std::
         file.close();
 
         fmt::println("Crash context written to: {}", contextPath);
-    }
-    catch (const std::exception& e) {
+    } catch (const std::exception& e) {
         fmt::println("Failed to write crash context: {}", e.what());
     }
 }
@@ -82,6 +82,14 @@ void CrashContext::CollectProcessInfo()
     DWORD handleCount = 0;
     GetProcessHandleCount(process, &handleCount);
     context["process"]["handle_count"] = handleCount;
+}
+
+nlohmann::json CrashContext::GetBuildConfiguration()
+{
+#ifdef BUILD_CONFIG_NAME
+    return BUILD_CONFIG_NAME;
+#endif
+    return "Unknown";
 }
 
 std::string CrashContext::GetTimestamp()
