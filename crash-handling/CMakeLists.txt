@@ -6,6 +6,10 @@ add_executable(CrashHandling
         crash_context.h
 )
 
+target_compile_definitions(CrashHandling PRIVATE
+        BUILD_CONFIG_NAME="$<CONFIG>"
+)
+
 target_include_directories(CrashHandling PRIVATE
         ${CMAKE_SOURCE_DIR}/extern/json
 )

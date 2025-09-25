@@ -19,12 +19,12 @@ int main()
 
     fmt::println("\nSelect crash type:");
     fmt::println("1. Null pointer dereference");
-    fmt::println("2. Stack overflow");
+    fmt::println("2. Out of bounds access");
     fmt::println("3. Division by zero");
     fmt::println("4. Manual dump (no crash)");
     fmt::println("5. Exit normally");
 
-    int choice;
+    int32_t choice;
     std::cout << "Enter choice: ";
     std::cin >> choice;
 
@@ -37,15 +37,18 @@ int main()
             break;
         }
         case 2:
-            StackOverflow();
+        {
+            const std::vector vec = {1, 2, 3};
+            int32_t bad = vec[100];
             break;
+        };
         case 3:
         {
             fmt::println("About to divide by zero...");
 
             int32_t a = 10;
             int32_t b = 0;
-            volatile int result = a / b;
+            volatile int32_t result = a / b;
             break;
         }
         case 4:
