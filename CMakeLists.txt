@@ -3,7 +3,7 @@ project(WillEngineTestBed)
 
 set(CMAKE_CXX_STANDARD 20)
 
+
+
 add_subdirectory(extern/fmt)
 add_subdirectory(crash-handling)
-
-add_executable(WillEngineTestBed main.cpp)

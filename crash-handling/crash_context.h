@@ -1,0 +1,27 @@
+//
+// Created by William on 2025-09-25.
+//
+
+#ifndef WILLENGINETESTBED_CRASH_CONTEXT_H
+#define WILLENGINETESTBED_CRASH_CONTEXT_H
+
+#include <nlohmann/json.hpp>
+
+#include <Windows.h>
+
+class CrashContext {
+public:
+    static void Initialize();
+    static void WriteCrashContext(const std::string& crashReason);
+
+private:
+    static void CollectSystemInfo();
+    static void CollectProcessInfo();
+    static std::string GetTimestamp();
+
+    static nlohmann::json context;
+    static bool bInitialized;
+};
+
+
+#endif //WILLENGINETESTBED_CRASH_CONTEXT_H
