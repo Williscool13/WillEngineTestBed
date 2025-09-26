@@ -3,19 +3,18 @@
 
 #include "crash_context.h"
 #include "crash_handler.h"
-
-void StackOverflow()
-{
-    fmt::println("Recursing infinitely...");
-    StackOverflow();
-}
+#include "logger.h"
 
 int main()
 {
     fmt::println("=== Crash Handler Test ===");
 
-    CrashContext::Initialize();
     CrashHandler::Initialize("crashes/");
+
+    Logger::Initialize("logs/engine.log");
+
+    CrashContext::Initialize();
+
 
     fmt::println("\nSelect crash type:");
     fmt::println("1. Null pointer dereference");
@@ -28,23 +27,26 @@ int main()
     std::cout << "Enter choice: ";
     std::cin >> choice;
 
+    LOG_INFO("User selected option: {}", choice);
+
     switch (choice) {
         case 1:
         {
-            fmt::println("About to dereference null pointer...");
+            LOG_ERROR("About to dereference null pointer - this will crash!");
             int* nullPtr = nullptr;
             *nullPtr = 42;
             break;
         }
         case 2:
         {
+            LOG_ERROR("About to access out of bounds - this will crash!");
             const std::vector vec = {1, 2, 3};
             int32_t bad = vec[100];
             break;
         };
         case 3:
         {
-            fmt::println("About to divide by zero...");
+            LOG_ERROR("About to divide by zero - this will crash!");
 
             int32_t a = 10;
             int32_t b = 0;
@@ -52,14 +54,15 @@ int main()
             break;
         }
         case 4:
+            LOG_INFO("Creating manual dump as requested by user");
             CrashHandler::TriggerManualDump("User requested test dump");
-            fmt::println("Manual dump created - program continues normally");
+            LOG_INFO("Manual dump created - program continues normally");
             break;
         case 5:
-            fmt::println("Exiting normally");
+            LOG_INFO("Exiting normally");
             break;
         default:
-            fmt::println("Invalid choice");
+            LOG_WARN("Invalid choice: {}", choice);
             break;
     }
 

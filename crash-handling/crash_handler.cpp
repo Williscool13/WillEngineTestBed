@@ -10,34 +10,40 @@
 
 #include "crash_context.h"
 #include "dbghelp.h"
+#include "logger.h"
 
 
 bool CrashHandler::bInitialized = false;
-std::string CrashHandler::s_baseDumpDirectory = "crashes/";
-std::string CrashHandler::s_currentCrashFolder = "";
+std::string CrashHandler::baseDumpDirectory = "crashes/";
+std::string CrashHandler::currentCrashFolder;
 
 void CrashHandler::Initialize(const std::string& dumpDirectory)
 {
     if (bInitialized) { return; }
-    s_baseDumpDirectory = dumpDirectory;
-    std::filesystem::create_directories(s_baseDumpDirectory);
+    baseDumpDirectory = dumpDirectory;
+    std::filesystem::create_directories(baseDumpDirectory);
 
     // #1 Setup exception filter
     SetUnhandledExceptionFilter(ExceptionFilter);
     bInitialized = true;
-    fmt::println("Crash handler initialized - dumps go to: {}", s_baseDumpDirectory);
+    fmt::println("Crash handler initialized - dumps go to: {}", baseDumpDirectory);
 }
 
 LONG CrashHandler::ExceptionFilter(PEXCEPTION_POINTERS pExceptionInfo)
 {
-    s_currentCrashFolder = CreateCrashFolder();
+    currentCrashFolder = CreateCrashFolder();
+
+    fmt::println("Crash Detected. Writing to folder: {}", currentCrashFolder);
+
+    // #1.5 Copy Logs
+    CopyLogsToCrashes();
 
     // #2 Write crash context
     std::string crashReason = GetExceptionDescription(pExceptionInfo);
-    CrashContext::WriteCrashContext(crashReason, s_currentCrashFolder);
+    CrashContext::WriteCrashContext(crashReason, currentCrashFolder);
 
     // #3 Write crash dump
-    std::string dumpPath = s_currentCrashFolder + "Minidump.dmp";
+    std::string dumpPath = currentCrashFolder + "Minidump.dmp";
     if (WriteDump(pExceptionInfo, dumpPath)) {
         fmt::println("Crash dump written to {}", dumpPath);
     }
@@ -85,7 +91,9 @@ bool CrashHandler::WriteDump(const PEXCEPTION_POINTERS pExceptionInfo, const std
 
 bool CrashHandler::TriggerManualDump(const std::string& reason)
 {
-    s_currentCrashFolder = CreateCrashFolder();
+    currentCrashFolder = CreateCrashFolder();
+
+    CopyLogsToCrashes();
 
     CONTEXT context = {};
     RtlCaptureContext(&context);
@@ -99,9 +107,9 @@ bool CrashHandler::TriggerManualDump(const std::string& reason)
     pointers.ContextRecord = &context;
 
     std::string fullReason = "Manual dump: " + reason;
-    CrashContext::WriteCrashContext(fullReason, s_currentCrashFolder);
+    CrashContext::WriteCrashContext(fullReason, currentCrashFolder);
 
-    std::string dumpPath = s_currentCrashFolder + "Minidump.dmp";
+    std::string dumpPath = currentCrashFolder + "Minidump.dmp";
     return WriteDump(&pointers, dumpPath);
 }
 
@@ -209,8 +217,30 @@ std::string CrashHandler::GetExceptionDescription(PEXCEPTION_POINTERS pException
 std::string CrashHandler::CreateCrashFolder()
 {
     std::string timestamp = GetTimestamp();
-    std::string crashFolder = s_baseDumpDirectory + timestamp + "/";
+    std::string crashFolder = baseDumpDirectory + timestamp + "/";
 
     std::filesystem::create_directories(crashFolder);
     return crashFolder;
+}
+
+void CrashHandler::CopyLogsToCrashes()
+{
+    try {
+        // Flush any pending logs
+        Logger::Flush();
+
+        std::string logPath = Logger::GetCurrentLogPath();
+        if (logPath.empty() || !std::filesystem::exists(logPath)) {
+            fmt::println("No log file to copy");
+            return;
+        }
+
+        std::string crashLogPath = currentCrashFolder + "engine.log";
+        std::filesystem::copy_file(logPath, crashLogPath);
+
+        fmt::println("Log file copied to: {}", crashLogPath);
+    }
+    catch (const std::exception& ex) {
+        fmt::println("Failed to copy logs: {}", ex.what());
+    }
 }

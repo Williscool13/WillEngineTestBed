@@ -27,9 +27,11 @@ private:
 
     static std::string CreateCrashFolder();
 
+    static void CopyLogsToCrashes();
+
 private:
-    static std::string s_baseDumpDirectory;
-    static std::string s_currentCrashFolder;
+    static std::string baseDumpDirectory;
+    static std::string currentCrashFolder;
     static bool bInitialized;
 };
 
