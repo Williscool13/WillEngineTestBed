@@ -2,8 +2,6 @@
 // Created by William on 2025-09-25.
 //
 
-#ifdef WIN32
-
 #include "crash_handler.h"
 
 #include <filesystem>
@@ -216,5 +214,3 @@ std::string CrashHandler::CreateCrashFolder()
     std::filesystem::create_directories(crashFolder);
     return crashFolder;
 }
-
-#endif

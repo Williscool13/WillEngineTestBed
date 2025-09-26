@@ -1,4 +1,4 @@
-add_executable(CrashHandling
+add_executable(crash-handling
         main.cpp
         crash_handler.cpp
         crash_handler.h
@@ -6,14 +6,8 @@ add_executable(CrashHandling
         crash_context.h
 )
 
-target_compile_definitions(CrashHandling PRIVATE
-        BUILD_CONFIG_NAME="$<CONFIG>"
-)
-
-target_include_directories(CrashHandling PRIVATE
-        ${CMAKE_SOURCE_DIR}/extern/json
-)
-
-if (WIN32)
-    target_link_libraries(CrashHandling PRIVATE dbghelp psapi fmt::fmt)
-endif ()
+target_link_libraries(crash-handling PRIVATE
+        engine-common
+        dbghelp
+        psapi
+        fmt::fmt)

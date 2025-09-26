@@ -5,7 +5,6 @@
 #ifndef WILLENGINETESTBED_CRASH_HANDLER_H
 #define WILLENGINETESTBED_CRASH_HANDLER_H
 
-#ifdef WIN32
 #include <string>
 
 #include <Windows.h>
@@ -29,11 +28,9 @@ private:
     static std::string CreateCrashFolder();
 
 private:
-
     static std::string s_baseDumpDirectory;
     static std::string s_currentCrashFolder;
     static bool bInitialized;
 };
-#endif
 
 #endif //WILLENGINETESTBED_CRASH_HANDLER_H
