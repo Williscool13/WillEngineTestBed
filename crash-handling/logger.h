@@ -4,10 +4,12 @@
 
 #ifndef WILLENGINETESTBED_LOGGER_H
 #define WILLENGINETESTBED_LOGGER_H
-#include <spdlog/spdlog.h>
-#include <spdlog/sinks/basic_file_sink.h>
+
 #include <memory>
 #include <string>
+
+#include <spdlog/spdlog.h>
+#include <spdlog/sinks/basic_file_sink.h>
 
 class Logger
 {
@@ -24,6 +26,8 @@ public:
 
     // Force flush logs (useful before crashes)
     static void Flush();
+
+    static bool IsInitialized() { return bInitialized; }
 
 private:
     static std::shared_ptr<spdlog::logger> logger;

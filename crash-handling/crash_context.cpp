@@ -3,9 +3,10 @@
 //
 
 #include "crash_context.h"
-#include <filesystem>
 #include <fstream>
+
 #include <psapi.h>
+
 #include <fmt/format.h>
 #include <fmt/chrono.h>
 
@@ -16,8 +17,6 @@ void CrashContext::Initialize()
 {
     if (bInitialized) return;
 
-    std::filesystem::create_directories("crashes");
-
     context = nlohmann::ordered_json::object();
     context["session_start"] = GetTimestamp();
     context["build_config"] = GetBuildConfiguration();
@@ -25,7 +24,7 @@ void CrashContext::Initialize()
     CollectSystemInfo();
     bInitialized = true;
 
-    fmt::println("Crash context initialized");
+    fmt::println("Initialized crash context");
 }
 
 void CrashContext::WriteCrashContext(const std::string& crashReason, const std::string& folderPath)

@@ -3,8 +3,10 @@
 //
 
 #include "logger.h"
-#include <spdlog/sinks/stdout_color_sinks.h>
+
 #include <filesystem>
+
+#include <spdlog/sinks/stdout_color_sinks.h>
 
 std::shared_ptr<spdlog::logger> Logger::logger = nullptr;
 std::string Logger::logPath;
@@ -39,10 +41,10 @@ void Logger::Initialize(const std::string& _logPath)
 
         bInitialized = true;
 
-        LOG_INFO("Logger initialized - writing to: {}", _logPath);
+        LOG_INFO("Initialized logger ({})", _logPath);
     }
     catch (const std::exception& ex) {
-        fmt::print("Failed to initialize logger: {}", ex.what());
+        fmt::print("Initialized logger ({})", ex.what());
     }
 }
 

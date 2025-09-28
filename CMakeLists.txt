@@ -18,4 +18,4 @@ set(SPDLOG_FMT_EXTERNAL ON)
 add_subdirectory(extern/spdlog)
 
 add_subdirectory(crash-handling)
-add_subdirectory(logging)
+add_subdirectory(multithreading)

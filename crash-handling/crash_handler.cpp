@@ -6,10 +6,10 @@
 
 #include <filesystem>
 
+#include <dbghelp.h>
 #include <fmt/format.h>
 
 #include "crash_context.h"
-#include "dbghelp.h"
 #include "logger.h"
 
 
@@ -26,7 +26,8 @@ void CrashHandler::Initialize(const std::string& dumpDirectory)
     // #1 Setup exception filter
     SetUnhandledExceptionFilter(ExceptionFilter);
     bInitialized = true;
-    fmt::println("Crash handler initialized - dumps go to: {}", baseDumpDirectory);
+
+    fmt::println("Initialized crash handler ({})", baseDumpDirectory);
 }
 
 LONG CrashHandler::ExceptionFilter(PEXCEPTION_POINTERS pExceptionInfo)
