@@ -19,3 +19,4 @@ add_subdirectory(extern/spdlog)
 
 add_subdirectory(crash-handling)
 add_subdirectory(multithreading)
+add_subdirectory(representing-and-manipulating-information)
