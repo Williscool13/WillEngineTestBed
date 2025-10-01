@@ -583,7 +583,7 @@ void Question_2_78()
         return (x + maskedBias) >> k;
     };
 
-    std::vector<std::tuple<int, int, int>> tests = {
+    std::vector<std::tuple<int, int, int> > tests = {
         {15, 2, 3},
         {-15, 2, -3},
         {17, 3, 2},
@@ -594,6 +594,423 @@ void Question_2_78()
         int result = dividePower2(x, k);
         fmt::println("dividePower2({}, {}) -> {} (expected: {})", x, k, result, expected);
     }
+}
+
+void Question_2_79()
+{
+    fmt::println("=== Question 2.79 ===");
+
+    int w = sizeof(int) << 3;
+    auto dividePower2 = [w](int x, int k) {
+        int negMask = x >> (w - 1);
+        int negativeBias = (1 << k) - 1;
+        int bias = negMask & negativeBias;
+        x += bias;
+        return x >> k;
+    };
+
+    // mul3 div4
+    // x*3 can overflow, let it.
+
+    auto mul3div4 = [w, dividePower2](int x) {
+        auto mult = (x << 1) + x;
+        return dividePower2(mult, 2);
+    };
+
+    std::vector<std::tuple<int, int> > tests = {
+        {0, 0},
+        {8, 6},
+        {-8, -6},
+        {12, 9},
+        {-12, -9},
+        {1, 0},
+        {-1, 0},
+        {INT_MAX, 536870911}, // will overflow in mult
+        {INT_MIN, -536870912}, // will overflow in mult
+        {100, 75},
+        {-100, -75},
+    };
+
+    for (auto [x, expected] : tests) {
+        int result = mul3div4(x);
+        fmt::println("mul3div4({}) -> {} (expected: {})", x, result, expected);
+    }
+}
+
+void Question_2_80()
+{
+    fmt::println("=== Question 2.80 ===");
+
+    int w = sizeof(int) << 3;
+
+    // auto dividePower2 = [w](int x, int k) {
+    //     int negMask = x >> (w - 1);
+    //     int negativeBias = (1 << k) - 1;
+    //     int bias = negMask & negativeBias;
+    //     x += bias;
+    //     return x >> k;
+    // };
+    //
+    // auto saturatingAdd = [](int x, int y) {
+    //     int sum = x + y;
+    //     int sig_mask = INT_MIN;
+    //     /*
+    //      * if x > 0, y > 0 but sum < 0, it's a positive overflow
+    //      * if x < 0, y < 0 but sum >= 0, it's a negative overflow
+    //      */
+    //     int pos_over = !(x & sig_mask) && !(y & sig_mask) && (sum & sig_mask);
+    //     int neg_over = (x & sig_mask) && (y & sig_mask) && !(sum & sig_mask);
+    //
+    //     (pos_over && (sum = INT_MAX) || neg_over && (sum = INT_MIN));
+    //
+    //     return sum;
+    // };
+    //
+    // auto threeFourths = [w, saturatingAdd, dividePower2](int x) {
+    //     int r = saturatingAdd(x, x);
+    //     r = saturatingAdd(r, x);
+    //
+    //     return dividePower2(r, 2);
+    // }
+
+    // mul3 div4
+    // x*3 can overflow, DONT let it.
+    auto threeFourths = [w](int x) {
+        int negMask = x >> (w - 1);
+        int f = x & ~0x3;
+        int l = x & 0x3;
+
+        // 3/4 of the w - 2 most significant bits. Right shift has no risk of rounding because last 2 bits are extracted into l
+        int fd4 = f >> 2;
+        int fd4m3 = (fd4 << 1) + fd4;
+
+        int lm3 = (l << 1) + l;
+        int bias = (1 << 2) - 1;
+        lm3 += bias & negMask;
+        int lm3d4 = lm3 >> 2;
+
+        return fd4m3 + lm3d4;
+    };
+
+    std::vector<std::tuple<int, int> > tests = {
+        {0, 0},
+        {8, 6},
+        {-8, -6},
+        {12, 9},
+        {-12, -9},
+        {1, 0},
+        {-1, 0},
+        {INT_MAX, 1610612735}, // will overflow in mult
+        {INT_MIN, -1610612736}, // will overflow in mult
+        {100, 75},
+        {-100, -75},
+        {715827882, 536870911}, // right at overflow boundary (positive)
+        {-715827883, -536870912} // right at overflow boundary (negative)
+    };
+
+    for (auto [x, expected] : tests) {
+        int result = threeFourths(x);
+        fmt::println("threeFourths({}) -> {} (expected: {})", x, result, expected);
+    }
+
+    // FAILED TO FIND SOLUTION
+}
+
+void Question_2_81()
+{
+    fmt::println("=== Question 2.81 ===");
+
+    // 1^(w-k), 0^k
+    auto expressionOne = [](int k) {
+        return ~0x0 << k;
+    };
+    // 0^(w-k-j), 1^k, 0^j
+    auto expressionTwo = [](int k, int j) {
+        return ~(~0x0 << k) << j;
+    };
+
+    ShowBytes(expressionOne(4));
+    ShowBytes(expressionTwo(4, 4));
+}
+
+void Question_2_82()
+{
+    fmt::println("=== Question 2.82 ===");
+
+    int w = sizeof(int) << 3;
+
+    // 32 bit, 2s complement, arithmetic right shift
+    // int32_t
+    // unsigned also 2 bits
+    // uint32_t
+
+    // create arbitrary values
+    // int32_t x = random();
+    // int32_t y = random();
+    // uint32_t ux = (unsigned)x;
+    // uint32_t uy = (unsigned)y;
+
+    // will yield 1 or 0? If 0, give example why
+
+
+    // A. (x < y) == (-x > -y)
+    // false, if x == INT_MIN and y == 1
+    fmt::println("2.82.A: {}", (INT_MIN < 1) == (-INT_MIN > -1));
+    /*
+     * B. ((x + y) << 4) + y - x == 17 * y + 15 * x;
+     * Expands to
+     * (x << 4 + y << 4 + y - x) == 17 * y + 15 * x;
+     * (16x - x + 16y + y) = 15x + 17y
+     * Add and mult are commutative and associative
+     * true!
+     *
+     */
+
+    /*
+     * C. ~x + ~y + 1 == ~(x + y)
+     * True because (~x = -x - 1) in all cases. Overflow affects both sides equally. The +1 is required to offset the (-1) in the conversion on the side that converts twice.
+    */
+    fmt::println("2.82.C: {}", ~1 + ~2 + 1 == ~(1 + 2));
+    fmt::println("2.82.C: {}", ~(-1) + ~(-2) + 1 == ~((-1) + (-2)));
+
+    /*
+     * D. (ux - uy) == -(unsigned)(y - x)
+     *
+     * True
+     * (ux - uy) == -(unsigned)(y - x)
+     * -(ux - uy) == (unsigned)(y - x)
+     * uy - ux == unsigned(y - x)
+     * uy - ux == uy - ux
+     */
+
+
+    /*
+     * E. ((x >> 2) << 2) <= x
+     * this is just rounded down? True
+     * >> 2 and << 2 like that removes the last 2 bits (always 0), so the resulting value is always smaller than or equal to the original value.
+     */
+}
+
+
+void Question_2_83()
+{
+    fmt::println("=== Question 2.83 ===");
+
+    int k = 3;
+    auto y = [](unsigned Y, int k) {
+        return (float) Y / ((1 << k) - 1);
+    };
+
+    fmt::println("y: {} --> expected {}", y(0x3, 4), 1.0f / 5);
+    fmt::println("y1: {} --> expected {}", y(0x5, 3), 5.0f / 7);
+    fmt::println("y2: {} --> expected {}", y(0x6, 4), 2.0f / 5);
+    fmt::println("y3: {} --> expected {}", y(0x13, 6), 19.0f / 63);
+}
+
+void Question_2_84()
+{
+    fmt::println("=== Question 2.84 ===");
+
+    auto f2u = [](float x) {
+        return *(unsigned*) &x;
+    };
+
+    auto floatLE = [f2u](float x, float y) {
+        unsigned ux = f2u(x);
+        unsigned uy = f2u(y);
+
+        unsigned sx = ux >> 31;
+        unsigned sy = uy >> 31;
+
+        int bothZero = (ux << 1 == 0 && uy << 1 == 0);
+        int xNegYPos = (sx && !sy);
+        int xPositiveLarger = !sx && !sy && ux <= uy;
+        int yPositiveLarger = sx && sy && ux >= uy;
+
+        return bothZero || xNegYPos || xPositiveLarger || yPositiveLarger;
+    };
+}
+
+void Question_2_85()
+{
+    fmt::println("=== Question 2.85 ===");
+
+    int k = 8;
+    int n = 23;
+    auto reconstructFloat = [k, n](int E, int f) {
+        auto exponent = E - ((1 << (k - 1)) - 1);
+        double e2 = pow(2, exponent);
+        auto leading = (double) (!!E);
+        return e2 * (leading + f / (double) (1 << n));
+    };
+
+    std::vector<std::tuple<int, int, double> > tests = {
+        {127, 0, 1.0},
+        {128, 2097152, 2.5},
+        {0, 0, 0.0},
+    };
+
+    for (auto [E, f, expected] : tests) {
+        double result = reconstructFloat(E, f);
+        fmt::println("generateFloat({}, {}) -> {} (expected: {})", E, f, result, expected);
+    }
+
+
+    // bias = (1 << (k - 1)) - 1
+    // V = 2^(E - bias) * (!!E + f / 1 << n);
+
+    // E = floor(log2(V)) + ((1 << (k-1)) - 1)
+    // Normalized
+    // f = (V / (2^(E - bias)) - 1) * 2^n
+    // M = 1 + f / 1 << n
+    // Denormalized
+    // f = (V / (2^(1 - bias))) * 2^n
+    // M = f / 1 << n
+
+    auto printFloat = [](double V, int k, int n) {
+        int bias = (1 << (k - 1)) - 1;
+        int E = (int) floor(log2(V)) + bias;
+
+        if (E > 0) {
+            // Normalized
+            double f = (V / pow(2, E - bias) - 1) * pow(2, n);
+            double M = 1 + f / pow(2, n);
+            fmt::println("V={}, k={}, n={} -> E={}, M={}, f={}", V, k, n, E, M, (int) f);
+            return std::make_tuple(E, (int) f);
+        }
+        else {
+            // Denormalized
+            E = 0;
+            double f = (V / pow(2, 1 - bias)) * pow(2, n);
+            double M = f / pow(2, n);
+            fmt::println("V={}, k={}, n={} -> E={}, M={}, f={}", V, k, n, E, M, (int) f);
+            return std::make_tuple(E, (int) f);
+        }
+    };
+
+    auto [E, f] = printFloat(7.0, k, n);
+    double result = reconstructFloat(E, f);
+    fmt::println("Reconstructed: {}", result);
+
+    // A. 7.0
+    // E =
+
+    // B. largest odd integer that can be represented exactly
+    {
+        auto [E2, f2] = printFloat(pow(2, 24) - 1, k, n);
+        double result2 = reconstructFloat(E2, f2);
+        fmt::println("Reconstructed: {}", result2);
+    } {
+        auto [E2, f2] = printFloat(pow(2, 24) + 1, k, n);
+        double result2 = reconstructFloat(E2, f2);
+        fmt::println("Reconstructed: {}", result2);
+    }
+    // C. reciprocal of the smallest positive normalized value
+
+    {
+        // ...
+    }
+}
+
+
+void Question_2_86()
+{
+    fmt::println("=== Question 2.86 ===");
+
+    // Intel extended precision FP
+    // 1 sign bit
+    // k = 15
+    // 1 integer bit - denotes the leading 1 (normalized vs denormalized)
+    // n = 63
+
+    // smallest positive denormalized (nonzero)
+    // 0x00000000000000000001
+    // all zero except first fraction
+    // 2 ^ (1 - bias) * 1 / 2^n
+
+    // smallest norm
+    // 0x00018000000000000000
+    // 3x zero for sign
+    // 1 for +1 for the exponent, even with the new integer, still need to be 1 to be normalized
+    // 2 ^ (1 - bias) * (1 + 1 / 2^n)
+
+    // largest norm
+    // 0x7FFEFFFFFFFFFFFFFFFF
+    // 7 for unset sign bit
+    // E because last exponent can't be set, if so it is inf
+}
+
+void Question_2_87()
+{
+    fmt::println("=== Question 2.87 ===");
+
+    // half
+    // 1 sign, k = 5, n = 10
+    // bias = (2^5-1) - 1 = 16 - 1 = 15
+
+    /*
+     * -0
+     * HEX = 0x1000
+     * M = 0 + 0 / 1024
+     * E = 2 ^ 1 - 15 (Denormalized) = 1 / 16384
+     * V = -0
+     * D = -0
+     */
+
+    /*
+     * smallest value > 2
+     * would be where (2^E) = 2, fraction = 0000000001
+     * E = 1 = e - 15, e = 16 = 10000
+     * 0 10000 0000000001
+     * HEX = 0x4001
+     * M = 1 + 1 / 1024
+     * E = 2 ^ (16 - 15) = 2
+     * V = 2 * (1025/1024)
+     * D = 2.0019531
+     */
+    fmt::println("{}", 2 * (1025.0f / 1024.0f));
+
+    /*
+     * 512
+     * E = log2(512) = 9 = e - 15, e = 15 + 9 = 24
+     * fraction should be 0
+     * 0 11000 0000000000
+     * HEX = 0x6000
+     * M = 1 + 0 / 1024
+     * E = 2 ^ (24 - 15) = 9
+     * V = 2^9 * 1024/1024 = 512
+     * D = 512.0
+     */
+
+    /*
+     * - infinity
+     * E = max value
+     * fraction should be 0s, otherwise NaN
+     * 1 11111 0000000000
+     * HEX = 0xFC00
+     * M = 1 + 0 / 1024
+     * E = 2 ^ (32 - 15) = 17
+     * V = -infinity
+     * D = -infinity
+     */
+
+    /*
+     * number with hex representation 3BB0
+     * HEX = 0x3BB0
+     * 0 01110 1110110000
+     * M = 1 + 512 + 256 + 128 + 32 + 16 = 944 / 1024
+     * E = 2 ^ (14 - 15) = 2^-1 = 1/2
+     * V = 1/2 * 1968/1024 = 123 / 128
+     * D = 0.9609375
+     */
+    fmt::println("{}", (123.0f / 128.0f));
+}
+
+
+void Question_2_88()
+{
+    fmt::println("=== Question 2.88 ===");
+
 }
 
 int main()
@@ -640,6 +1057,15 @@ int main()
     Question_2_76();
     Question_2_77();
     Question_2_78();
+    Question_2_79();
+    Question_2_80();
+    Question_2_81();
+    Question_2_82();
+    Question_2_83();
+    Question_2_84();
+    Question_2_85();
+    Question_2_86();
+    Question_2_87();
 
     return 0;
 }
