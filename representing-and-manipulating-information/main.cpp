@@ -1011,6 +1011,555 @@ void Question_2_88()
 {
     fmt::println("=== Question 2.88 ===");
 
+    // 2x 9 bit fps
+
+    /*
+     * A = 1s 5k 3n (bias 15)
+     * B = 1s 4k 4n (bias 7)
+     * convert value given in A form into B, rounded towards +infinity
+     */
+
+    /*
+     * A = 0 10110 011
+     * (2 ^ (22 - 15)) * (11 / 8) = 128 * 11 / 8 = 176
+     * 44 is between [128, 256), which is 7 (matches first one)
+     *
+     * E = (e - bias). e = E + bias = 7 + 7 = 14
+     * frac is 3/8, new frac = 3/8 too, represented out of 16. 6 / 16
+     * B = 0 1110 0110
+     */
+
+    /*
+     * A = 1 00111 010
+     * -1 * (2 ^ (7 - 15)) * 10 / 8 = -1 * 1/256 * 10 / 8 = -10/2048 = -5/1024
+     *
+     * maintain -8 E, target bias of -8 is out of range of B.
+     * = -1 * (2 ^ (1 - 7)) * ? / 16
+     * = -1 * 1 / 64  * ? / 16 -> ? = 5
+     * = - 5 / 1024
+     * B = 1 0000 0101
+     */
+
+    /*
+     * A = 0 00000 111
+     * 2 ^ 1 - 15 * 7/8 = 1/16384 * 7 / 8 = 7 / 131072
+     * in other words, 7 * 2^-17
+     *
+     * obviously we'll go to smallest exponent
+     * = 2 ^ (-6) * 1 / 16
+     * = 2 ^ (-10)
+     * nowhere near enough accuracy, but were rounding to +infinity so...
+     * B = 0 0000 0001
+     */
+
+    /*
+     * A = 1 11100 000
+     * = -1 * 2 ^ (28 - 15) * 1
+     * = -(2 ^ 13)
+     *
+     * want to try to preserve that exponent, but 13 is out of range... again...
+     * Since this is a negative number, rounding to +infinity means the answer is just...
+     * B = 1 1110 1111
+     * = -248
+     */
+
+    /*
+     * 0 10111 100
+     * = 2 ^ (23 - 15) * 12 / 8
+     *  = 2 ^ 5 * 12
+     *  = 384
+     *
+     *  E = 8
+     *  biggest E can we represent is 7, as 1111 is infinity
+     *  2 ^ (14 - 7) * 15 / 16
+     *  = 248
+     *  therefore, B = 0 1111 0000
+     *  and B = +infinity
+     *
+     */
+}
+
+
+void Question_2_89()
+{
+    fmt::println("=== Question 2.89 ===");
+
+    // int is 2d complement 32 bit
+    // float is IEEE 32 bit
+    // double is IEEE 64 bit
+
+    // int x = random();
+    // int y = random();
+    // int z = random();
+    // double dx = (double) x
+    // double dy = (double) y
+    // double dz = (double) z
+
+    // will always yield 1? If yes describe math principle.
+    // if not, give example
+
+    // A. (float) x == (float) dx
+    // Yes, double has enough precision to represent int. Float doesn't. But both cast to float means both will round to the same value
+
+    // B. dx - dy == (double) (x - y)
+    // No. because the x - y can overflow, resulting in a wildly different result compared to dx-dy, which has a much larger range of numbers
+    // x = INT_MIN, y = ~0x00
+
+    // C. (dx + dy) + dz == dx + (dy + dz)
+    // No, float arithmetic is not associative due to precision loss from rounding.
+    // dx = 1, dy = 2 ^ 53, dz = -(2 ^ 53)
+
+    // D. (dx * dy) * dz == dx * (dy * dz)
+    // no idea tbh
+
+    // E.  dx / dx == dz / dz
+    // if both are 0, both result in NaN, which is false!
+}
+
+void Question_2_90()
+{
+    fmt::println("=== Question 2.90 ===");
+
+    // C function to compute FP of 2^x
+    // skeleton:
+    // unsigned exp, frac;
+    // unsigned u;
+    // if (x < .) {
+    //     /*Too small, return 0.0*/
+    //     exp = .
+    //     frac = .
+    // } else if (x < .) {
+    //     /* Denormalized result*/
+    //     exp = .
+    //     frac = .
+    // } else if (x < .) {
+    //     /* Normalized result*/
+    //     exp = .
+    //     frac = .
+    // } else {
+    //     /*Too big, return +infinity*/
+    //     exp = .
+    //     frac = .
+    // }
+    // u = exp << 23 | frac;
+    // return u2f(u)
+
+    auto fpwr2 = [](int x) {
+        unsigned exp, frac;
+        unsigned u;
+
+        // fp 32
+        int s = 1; // always positive
+        int k = 8;
+        int n = 23;
+
+        // bias = 127
+        if (x < -149) {
+            // Too small, return 0
+            // 2 ^ (1 - 127) * 1 / (2 ^ 23)
+            // 2 ^ (-149)
+            exp = 0;
+            frac = 0;
+        }
+        else if (x < -126) {
+            // first number that can't be represented by denormalized is
+            // 2 ^ (1 - 127) * (1 + (0 / 2 ^ 23)
+            // 2 ^ (-126)
+            exp = 0;
+            frac = 1 << (x + 149);
+        }
+        else if (x < 128) {
+            // infinity happens when all exponent bits are set, so
+            // 2 ^ (255 - 127) * whatever
+            // 2 ^ 128
+            exp = x + 127;
+            frac = 0;
+        }
+        else {
+            exp = 255;
+            frac = 0;
+        }
+
+        u = exp << 23 | frac;
+        return *reinterpret_cast<float*>(&u);
+    };
+
+    fmt::println("fpwr2(-150): {} --> expected {}", fpwr2(-150), 0.0f);
+    fmt::println("fpwr2(-130): {} --> expected {}", fpwr2(-130), std::pow(2.0f, -130));
+    fmt::println("fpwr2(5): {} --> expected {}", fpwr2(5), 32.0f);
+    fmt::println("fpwr2(130): {} --> expected {}", fpwr2(130), std::numeric_limits<float>::infinity());
+}
+
+void Question_2_91()
+{
+    fmt::println("=== Question 2.91 ===");
+
+    // what is the fractional binary number of 0x40490FDB
+    // 0 10000000 10010010000111111011011
+
+    // what is the fractional binarynumber of 22/7
+    // 3.0 + 1 / 7. Can be represented in repeating 3 bits.
+    // 11.(001)
+
+    // 11.(001)
+    // = 1.1(001) * 2^1
+    // = 0 10000000 1(001)(001)(001)...
+
+    // compared
+    // aprx = 10010010000111111011011
+    // 22/7 = 1001001001001001
+    //        .|.|.|.|.^
+    // Answer is bit 10
+}
+
+typedef unsigned float_bits;
+
+void Question_2_92()
+{
+    fmt::println("=== Question 2.92 ===");
+
+    // compute -f. if f is NaN, return f.
+    auto floatNegate = [](float_bits f) -> float_bits {
+        // extract
+        unsigned sign = f >> 31;
+        unsigned exp = f >> 23 & 0xFF;
+        unsigned frac = f & 0x7FFFFF;
+
+        if (exp == 0xFF && frac) {
+            return f;
+        }
+
+        return ~sign << 31 | exp << 23 | frac;
+    };
+}
+
+void Question_2_93()
+{
+    fmt::println("=== Question 2.93 ===");
+
+    // compute abs(f). if f is NaN, return f.
+    auto floatAbsVal = [](float_bits f) -> float {
+        // extract
+        unsigned sign = f >> 31;
+        unsigned exp = f >> 23 & 0xFF;
+        unsigned frac = f & 0x7FFFFF;
+
+        if (exp == 0xFF && frac) {
+            return *reinterpret_cast<float*>(&f);
+        }
+
+        float_bits a = exp << 23 | frac;
+        return *reinterpret_cast<float*>(&a);
+    };
+
+    // for (unsigned bits = 0; bits < UINT32_MAX; bits++) {
+    //     float f = *reinterpret_cast<float*>(&bits);
+    //     float result = floatAbsVal(bits);
+    //     float expected = abs(f);
+    //
+    //     // Handle NaN comparison specially
+    //     if (std::isnan(expected)) {
+    //         if (!std::isnan(result)) {
+    //             fmt::println("Error: expected NaN but got {}", result);
+    //             return;
+    //         }
+    //     } else if (result != expected) {
+    //         fmt::println("Error in floatAbsVal");
+    //         return;
+    //     }
+    // }
+    // fmt::println("2.93 completed successfully");
+}
+
+
+void Question_2_94()
+{
+    fmt::println("=== Question 2.94 ===");
+
+
+    // compute 2*f. if f is NaN, return f.
+    auto floatTwice = [](float_bits f) -> float {
+        // extract
+        unsigned sign = f >> 31;
+        unsigned exp = f >> 23 & 0xFF;
+        unsigned frac = f & 0x7FFFFF;
+
+        if (exp == 0xFF) {
+            return *reinterpret_cast<float*>(&f);
+        }
+
+        // Denormalized case
+        if (exp == 0x0) {
+            float_bits a = sign << 31 | exp << 23 | frac << 1;
+            return *reinterpret_cast<float*>(&a);
+        }
+
+        // x2
+        exp += 1;
+
+        if (exp == 255) {
+            float_bits a = sign << 31 | exp << 23;
+            return *reinterpret_cast<float*>(&a);
+        }
+
+        float_bits a = sign << 31 | exp << 23 | frac;
+        return *reinterpret_cast<float*>(&a);
+    };
+
+    // for (unsigned bits = 0; bits < UINT32_MAX; bits++) {
+    //     float f = *reinterpret_cast<float*>(&bits);
+    //     float result = floatTwice(bits);
+    //     float expected = f * 2;
+    //
+    //     // Handle NaN comparison specially
+    //     if (std::isnan(expected)) {
+    //         if (!std::isnan(result)) {
+    //             fmt::println("Error: expected NaN but got {}", result);
+    //             //return;
+    //         }
+    //     } else if (result != expected) {
+    //         fmt::println("Error in floatTwice {}", expected);
+    //         //return;
+    //     }
+    // }
+    // fmt::println("2.94 completed successfully");
+}
+
+void Question_2_95()
+{
+    fmt::println("=== Question 2.95 ===");
+
+    // compute 0.5*f. if f is NaN, return f.
+    auto floatHalf = [](float_bits f) -> float {
+        // extract
+        unsigned sign = f >> 31;
+        unsigned exp = f >> 23 & 0xFF;
+        unsigned frac = f & 0x7FFFFF;
+
+        if (exp == 0xFF) {
+            return *reinterpret_cast<float*>(&f);
+        }
+
+        // Denormalized case
+        if (exp == 0x0) {
+            unsigned lsb = frac & 1;
+            unsigned newLsb = (frac >> 1) & 1;
+
+            frac = frac >> 1;
+
+            if (lsb && newLsb) {
+                frac += 1; // round up to even
+            }
+
+            float_bits a = sign << 31 | exp << 23 | frac;
+            return *reinterpret_cast<float*>(&a);
+        }
+
+        if (exp == 0x1) {
+            unsigned lsb = frac & 1;
+            unsigned newLsb = (frac >> 1) & 1;
+
+            frac = frac >> 1;
+
+            if (lsb && newLsb) {
+                frac += 1; // round up to even
+            }
+
+            // Denormalize special case, the exp bit shifts into the frac, rounding can potentially cause 1.999 * 0.5f = 1.0f
+            float_bits a = sign << 31 | ((exp << 22) + frac);
+            return *reinterpret_cast<float*>(&a);
+        }
+
+        // x0.5f
+        exp -= 1;
+
+        float_bits a = sign << 31 | exp << 23 | frac;
+        return *reinterpret_cast<float*>(&a);
+    };
+
+    // for (unsigned bits = 0; bits < UINT32_MAX; bits++) {
+    //     float f = *reinterpret_cast<float*>(&bits);
+    //     float result = floatHalf(bits);
+    //     float expected = 0.5f * f;
+    //
+    //     // Handle NaN comparison specially
+    //     if (std::isnan(expected)) {
+    //         if (!std::isnan(result)) {
+    //             fmt::println("Error: expected NaN but got {}", result);
+    //             //return;
+    //         }
+    //     } else if (result != expected) {
+    //         fmt::println("Error in floatHalf {}", expected);
+    //         float result = floatHalf(bits);
+    //         //return;
+    //     }
+    // }
+    // fmt::println("2.95 completed successfully");
+}
+
+void Question_2_96()
+{
+    fmt::println("=== Question 2.96 ===");
+
+    // compute (int) f. If overflow or nan, return 0x80000000
+    auto floatF2I = [](float_bits f) -> int {
+        // extract
+        unsigned sign = f >> 31;
+        unsigned exp = f >> 23 & 0xFF;
+        unsigned frac = f & 0x7FFFFF;
+
+        float_bits d = 0x80000000;
+        if (exp == 0xFF) {
+            return d;
+        }
+
+        // an int is essentially a 31 bit + sign, so limit is 2^31, or 1 << 31
+        constexpr int bias = (1 << 7) - 1;
+        if (exp < bias) {
+            float_bits a = 0x0;
+            return *reinterpret_cast<int*>(&a);
+        }
+
+        if (exp - bias >= 31) {
+            return d;
+        }
+
+
+        int diff = exp - bias;
+        // frac contribution
+        // downshift frac by 31 - (diff - 1)
+        int downshift = (23 - (diff));
+
+        float_bits fracContribution;
+        if (downshift >= 0) {
+            fracContribution = frac >> downshift;
+        }
+        else {
+            fracContribution = frac << abs(downshift);
+        }
+
+
+        float_bits a = (1 << (exp - bias)) + fracContribution;
+        if (sign) {
+            a = ~a + 1;
+        }
+        return *reinterpret_cast<int*>(&a);
+    };
+
+    // for (unsigned bits = 0; bits < UINT32_MAX; bits++) {
+    //     float f = *reinterpret_cast<float*>(&bits);
+    //     int result = floatF2I(bits);
+    //     int expected = (int) f;
+    //
+    //     // Handle NaN comparison specially
+    //     if (std::isnan(expected)) {
+    //         if (!std::isnan(result)) {
+    //             fmt::println("Error: expected NaN but got {}", result);
+    //             //return;
+    //         }
+    //     } else if (result != expected) {
+    //         fmt::println("Error in floatHalf {}", expected);
+    //         int result = floatF2I(bits);
+    //         //return;
+    //     }
+    // }
+    // fmt::println("2.96 completed successfully");
+}
+
+void Question_2_97()
+{
+    fmt::println("=== Question 2.97 ===");
+
+    // compute (float) i.
+    auto floatI2F = [](int i) {
+        if (i == 0) {
+            unsigned a = 0;
+            return *reinterpret_cast<float*>(&a);
+        }
+
+        // extract
+        unsigned sign = i >> 31;
+        unsigned v = i;
+
+        // extract body (no sign)
+        if (sign) {
+            v = ~v + 1;
+        }
+
+        if (v == 0) {
+            unsigned a = sign << 31;
+            return *reinterpret_cast<float*>(&a);
+        }
+
+        constexpr int bias = (1 << 7) - 1;
+        int significand = floor(log2(v));
+        int exp = bias + significand;
+
+        int downshift = (23 - (significand));
+
+
+        unsigned fracContribution = v - (1 << significand);
+        unsigned bonusExp = 0;
+        float_bits frac;
+        if (downshift >= 0) {
+            frac = fracContribution << downshift;
+        }
+        else {
+            //frac = fracContribution;
+            // downshift has rounding
+            // unsigned lsb = fracContribution & 1;
+            // unsigned newLsb = (fracContribution >> 1) & 1;
+            //
+            // frac = fracContribution >> abs(downshift);
+            // if (lsb && newLsb) {
+            //     frac += 1; // round up to even
+            // }
+
+            int rightShift = abs(downshift);
+
+            // Get the bits we're about to lose
+            unsigned dropped = fracContribution & ((1 << rightShift) - 1);
+            unsigned halfway = 1 << (rightShift - 1);
+
+            frac = fracContribution >> rightShift;
+
+            // Round to nearest, ties to even
+            if (dropped > halfway || (dropped == halfway && (frac & 1))) {
+                frac += 1;
+
+                // Check for carry into exponent
+                if (frac >> 23) {
+                    frac = 0;
+                    bonusExp = 1;
+                }
+            }
+        }
+
+
+        float_bits a = sign << 31 | ((exp + bonusExp) << 23) | frac;
+
+        return *reinterpret_cast<float*>(&a);
+    };
+
+    for (unsigned bits = 0; bits < UINT32_MAX; bits++) {
+        int f = *reinterpret_cast<int*>(&bits);
+        float result = floatI2F(f);
+        float expected = (float) f;
+
+        // Handle NaN comparison specially
+        if (std::isnan(expected)) {
+            if (!std::isnan(result)) {
+                fmt::println("Error: expected NaN but got {}", result);
+                //return;
+            }
+        }
+        else if (result != expected) {
+            fmt::println("Error in floatI2F {}", expected);
+            float result = floatI2F(f);
+            //return;
+        }
+    }
+    fmt::println("2.97 completed successfully");
 }
 
 int main()
@@ -1066,6 +1615,13 @@ int main()
     Question_2_85();
     Question_2_86();
     Question_2_87();
+    Question_2_90();
+    Question_2_92();
+    Question_2_93();
+    Question_2_94();
+    Question_2_95();
+    Question_2_96();
+    Question_2_97();
 
     return 0;
 }
