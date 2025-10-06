@@ -2,7 +2,7 @@
 // Created by William on 2025-09-26.
 //
 
-#include "logger.h"
+#include "../../crash-handling/logger.h"
 
 #include <filesystem>
 

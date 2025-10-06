@@ -1,13 +1,9 @@
-#include <iostream>
+#include <fmt/format.h>
 
 int main()
 {
     const auto lang = "C++";
-    std::cout << "Hello Will Engine Test Bed! (" << lang << ")\n";
-
-    for (int i = 1; i <= 5; i++) {
-        std::cout << "i = " << i << std::endl;
-    }
+    fmt::println("Hello Will Engine Test Bed! ({})", lang);
 
     return 0;
 }

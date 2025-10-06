@@ -5,7 +5,7 @@
 #ifndef WILLENGINETESTBED_CRASH_CONTEXT_H
 #define WILLENGINETESTBED_CRASH_CONTEXT_H
 
-#include <nlohmann/json.hpp>
+#include <json/nlohmann/json.hpp>
 
 #include <Windows.h>
 

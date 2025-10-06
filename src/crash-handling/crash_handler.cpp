@@ -2,7 +2,7 @@
 // Created by William on 2025-09-25.
 //
 
-#include "crash_handler.h"
+#include "../../crash-handling/crash_handler.h"
 
 #include <filesystem>
 
@@ -10,7 +10,7 @@
 #include <fmt/format.h>
 
 #include "crash_context.h"
-#include "logger.h"
+#include "../../crash-handling/logger.h"
 
 
 bool CrashHandler::bInitialized = false;

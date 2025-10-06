@@ -6,10 +6,12 @@
   <component name="CMakeWorkspace" PROJECT_DIR="$PROJECT_DIR$" />
   <component name="CidrRootsConfiguration">
     <libraryRoots>
-      <file path="$PROJECT_DIR$/extern" />
       <file path="$PROJECT_DIR$/extern/fmt" />
       <file path="$PROJECT_DIR$/extern/json" />
       <file path="$PROJECT_DIR$/extern/spdlog" />
     </libraryRoots>
+    <excludeRoots>
+      <file path="$PROJECT_DIR$/extern" />
+    </excludeRoots>
   </component>
 </project>
