@@ -4,7 +4,9 @@
 
 #include "multithreading.h"
 
+#include "utils.h"
 #include "SDL3/SDL.h"
+#include "src/crash-handling/crash_handler.h"
 
 #include "src/crash-handling/logger.h"
 
@@ -33,14 +35,15 @@ void Multithreading::Initialize()
 
 void Multithreading::RenderThread()
 {
+    SetThreadName("Render Thread");
     int32_t operatingIndex = -1;
     while (!bShouldExit.load()) {
         frameReady.acquire();
-        if (bShouldExit.load()) { break; }
-
-        {
+        if (bShouldExit.load()) { break; } {
             operatingIndex = (operatingIndex + 1) % 2;
             FrameData& buffer = frameBuffers[operatingIndex];
+            lastRenderFrame = buffer.frameCount;
+
             auto timer = ScopedTimer(fmt::format("[Render Thread] Frame time (Frame {})", buffer.frameCount));
 
             auto now = std::chrono::high_resolution_clock::now();
@@ -51,18 +54,51 @@ void Multithreading::RenderThread()
             constexpr auto renderWait = std::chrono::milliseconds(50);
             std::this_thread::sleep_for(renderWait);
             buffer.renderReleaseTime = std::chrono::high_resolution_clock::now();
+
+            if (buffer.frameCount == 75) {
+                LOG_WARN("[Render thread]: inducing hang");
+                std::this_thread::sleep_for(std::chrono::seconds(10));
+            }
         }
 
 
-
         availableBuffers.release();
+    }
+
+    watchdogCv.notify_all();
+}
+
+void Multithreading::WatchdogThread()
+{
+    SetThreadName("Watchdog Thread");
+    while (!bShouldExit.load()) {
+        uint32_t gameSnapshot = lastGameFrame.load();
+        uint32_t renderSnapshot = lastRenderFrame.load();
+
+        std::unique_lock lock(watchdogMutex);
+        watchdogCv.wait_for(lock, std::chrono::seconds(watchdogThreshold), [this] { return bShouldExit.load(); });
+        if (bShouldExit.load()) { break; }
+
+        if (lastGameFrame.load() == gameSnapshot) {
+            LOG_ERROR("Game thread hung at frame {}. Dumping.", gameSnapshot);
+            CrashHandler::TriggerManualDump();
+            exit(1);
+        }
+
+        if (lastRenderFrame.load() == renderSnapshot) {
+            LOG_ERROR("Render thread hung at frame {}. Dumping.", renderSnapshot);
+            CrashHandler::TriggerManualDump();
+            exit(1);
+        }
     }
 }
 
 
 void Multithreading::Run()
 {
-    std::jthread renderThread(&Multithreading::RenderThread, this);
+    SetThreadName("GameThread");
+    renderThread = std::jthread(&Multithreading::RenderThread, this);
+    watchdogThread = std::jthread(&Multithreading::WatchdogThread, this);
 
     uint32_t frame = 0;
     SDL_Event e;
@@ -80,19 +116,17 @@ void Multithreading::Run()
             break;
         }
 
-        availableBuffers.acquire();
-        {
-
+        availableBuffers.acquire(); {
             operatingIndex = (operatingIndex + 1) % 2;
             FrameData& buffer = frameBuffers[operatingIndex];
             buffer.frameCount = frame++;
+            lastRenderFrame = buffer.frameCount;
 
             auto timer = ScopedTimer(fmt::format("[Game Thread] Frame time (Frame {})", buffer.frameCount));
 
             auto now = std::chrono::high_resolution_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::microseconds>(now - buffer.renderReleaseTime);
             LOG_INFO("[Game Thread] {}us between render release and game acquire. Frame {}", duration.count(), buffer.frameCount);
-
 
 
             constexpr auto gameWait = std::chrono::milliseconds(20);
@@ -103,6 +137,7 @@ void Multithreading::Run()
     }
 
     renderThread.join();
+    watchdogThread.join();
 }
 
 void Multithreading::Cleanup()

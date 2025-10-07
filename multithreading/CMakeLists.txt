@@ -4,6 +4,8 @@ add_executable(multithreading
         types.h
         multithreading.cpp
         multithreading.h
+        utils.cpp
+        utils.h
 )
 
 add_subdirectory(${CMAKE_SOURCE_DIR}/extern/SDL ${CMAKE_BINARY_DIR}/SDL EXCLUDE_FROM_ALL)
