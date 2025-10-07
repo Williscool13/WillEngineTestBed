@@ -25,6 +25,10 @@ void Multithreading::Initialize()
         window_flags);
 
     frameBuffers.resize(bufferCount);
+    for (auto& frameBuffer : frameBuffers) {
+        frameBuffer.gameReleaseTime = std::chrono::high_resolution_clock::now();
+        frameBuffer.renderReleaseTime = frameBuffer.gameReleaseTime;
+    }
 }
 
 void Multithreading::RenderThread()
@@ -32,16 +36,24 @@ void Multithreading::RenderThread()
     int32_t operatingIndex = -1;
     while (!bShouldExit.load()) {
         frameReady.acquire();
-
         if (bShouldExit.load()) { break; }
 
-        operatingIndex = (operatingIndex + 1) % 2;
-        FrameData& buffer = frameBuffers[operatingIndex];
+        {
+            operatingIndex = (operatingIndex + 1) % 2;
+            FrameData& buffer = frameBuffers[operatingIndex];
+            auto timer = ScopedTimer(fmt::format("[Render Thread] Frame time (Frame {})", buffer.frameCount));
 
-        // Slower than game thread to simulate slower render thread. Game thread should come out ahead after the first few frames.
-        constexpr auto renderWait = std::chrono::milliseconds(50);
-        std::this_thread::sleep_for(renderWait);
-        LOG_INFO("[Render thread] Simulated render logic ({} ms). Frame {}", renderWait.count(), buffer.frameCount);
+            auto now = std::chrono::high_resolution_clock::now();
+            auto duration = std::chrono::duration_cast<std::chrono::microseconds>(now - buffer.gameReleaseTime);
+            LOG_INFO("[Render Thread] {}us between game release and render acquire. Frame {}", duration.count(), buffer.frameCount);
+
+            // Slower than game thread to simulate slower render thread. Game thread should come out ahead after the first few frames.
+            constexpr auto renderWait = std::chrono::milliseconds(50);
+            std::this_thread::sleep_for(renderWait);
+            buffer.renderReleaseTime = std::chrono::high_resolution_clock::now();
+        }
+
+
 
         availableBuffers.release();
     }
@@ -69,15 +81,24 @@ void Multithreading::Run()
         }
 
         availableBuffers.acquire();
-        operatingIndex = (operatingIndex + 1) % 2;
-        FrameData& buffer = frameBuffers[operatingIndex];
-        buffer.frameCount = frame;
+        {
+
+            operatingIndex = (operatingIndex + 1) % 2;
+            FrameData& buffer = frameBuffers[operatingIndex];
+            buffer.frameCount = frame++;
+
+            auto timer = ScopedTimer(fmt::format("[Game Thread] Frame time (Frame {})", buffer.frameCount));
+
+            auto now = std::chrono::high_resolution_clock::now();
+            auto duration = std::chrono::duration_cast<std::chrono::microseconds>(now - buffer.renderReleaseTime);
+            LOG_INFO("[Game Thread] {}us between render release and game acquire. Frame {}", duration.count(), buffer.frameCount);
 
 
-        constexpr auto gameWait = std::chrono::milliseconds(20);
-        std::this_thread::sleep_for(gameWait);
-        LOG_INFO("[Game Thread] Simulated game logic ({} ms). Frame {}", gameWait.count(), frame++);
 
+            constexpr auto gameWait = std::chrono::milliseconds(20);
+            std::this_thread::sleep_for(gameWait);
+            buffer.gameReleaseTime = std::chrono::high_resolution_clock::now();
+        }
         frameReady.release();
     }
 

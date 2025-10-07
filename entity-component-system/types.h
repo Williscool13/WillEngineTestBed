@@ -10,6 +10,7 @@
 
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
+#include <utility>
 
 #include "src/crash-handling/logger.h"
 
@@ -54,23 +55,27 @@ struct RigidBodyEntityComponent
     }
 };
 
-struct BounceEntityComponent {
+struct BounceEntityComponent
+{
     float minY = 0.0f;
     float maxY = 10.0f;
 };
 
-struct RenderEntityComponent {
+struct RenderEntityComponent
+{
     glm::vec4 color{1.0f, 1.0f, 1.0f, 1.0f};
     float pulseFrequency = 1.0f;
     float pulseTime = 0.0f;
 };
 
-class ScopedTimer {
+class ScopedTimer
+{
 public:
-    explicit ScopedTimer(const std::string& name)
-        : name(name), start(std::chrono::high_resolution_clock::now()) {}
+    explicit ScopedTimer(std::string name)
+        : name(std::move(name)), start(std::chrono::high_resolution_clock::now()) {}
 
-    ~ScopedTimer() {
+    ~ScopedTimer()
+    {
         auto end = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
         LOG_INFO("{}: {} us ({:.3f} ms)", name, duration.count(), duration.count() / 1000.0);

@@ -28,6 +28,8 @@ private:
     struct SDL_Window* window{nullptr};
 
     std::atomic<bool> bShouldExit{false};
+
+    // todo: limit to no of cores available on machine?
     static constexpr int32_t bufferCount = 2;
     std::vector<FrameData> frameBuffers{bufferCount};
     std::counting_semaphore<bufferCount> availableBuffers{bufferCount};
