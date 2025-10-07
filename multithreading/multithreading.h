@@ -4,6 +4,10 @@
 
 #ifndef WILLENGINETESTBED_MULTITHREADING_H
 #define WILLENGINETESTBED_MULTITHREADING_H
+#include <atomic>
+#include <semaphore>
+#include <vector>
+
 #include "types.h"
 
 
@@ -11,6 +15,8 @@ class Multithreading
 {
 public:
     Multithreading() = default;
+
+    void RenderThread();
 
     void Initialize();
 
@@ -21,7 +27,11 @@ public:
 private:
     struct SDL_Window* window{nullptr};
 
-    FrameData data[2]{};
+    std::atomic<bool> bShouldExit{false};
+    static constexpr int32_t bufferCount = 2;
+    std::vector<FrameData> frameBuffers{bufferCount};
+    std::counting_semaphore<bufferCount> availableBuffers{bufferCount};
+    std::binary_semaphore frameReady{0};
 };
 
 

@@ -8,7 +8,7 @@
 
 struct FrameData
 {
-    int64_t frameCount;
+    int64_t frameCount{-1};
 };
 
 #endif //WILLENGINETESTBED_TYPES_H
