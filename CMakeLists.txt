@@ -42,5 +42,5 @@ target_link_libraries(crash-handling PUBLIC
 add_subdirectory(crash-handling-test)
 add_subdirectory(multithreading)
 add_subdirectory(representing-and-manipulating-information)
-#add_subdirectory(parallelization)
+add_subdirectory(parallelization)
 add_subdirectory(entity-component-system)
