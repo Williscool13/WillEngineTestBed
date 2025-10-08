@@ -7,6 +7,9 @@ set(CMAKE_CXX_STANDARD 20)
 add_subdirectory(extern/fmt)
 set(SPDLOG_FMT_EXTERNAL ON)
 add_subdirectory(extern/spdlog)
+add_subdirectory(extern/SDL)
+set(ENKITS_BUILD_EXAMPLES OFF)
+add_subdirectory(extern/enkiTS)
 
 add_library(engine-common INTERFACE)
 target_compile_definitions(engine-common INTERFACE

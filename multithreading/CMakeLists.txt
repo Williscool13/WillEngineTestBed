@@ -8,8 +8,6 @@ add_executable(multithreading
         utils.h
 )
 
-add_subdirectory(${CMAKE_SOURCE_DIR}/extern/SDL ${CMAKE_BINARY_DIR}/SDL EXCLUDE_FROM_ALL)
-
 add_custom_command(TARGET multithreading POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
         $<TARGET_FILE:SDL3::SDL3>
