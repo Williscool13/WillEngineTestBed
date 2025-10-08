@@ -21,7 +21,7 @@ struct Model
     glm::mat4 model{1.0f};
 };
 
-struct ClipPosition
+struct alignas(64) ClipPosition
 {
     glm::vec4 clipPos{0.0f, 0.0f, 0.0f, 1.0f};
 };
@@ -40,6 +40,7 @@ struct ParallelTransformTask final : enki::ITaskSet
     CameraState* cameraState;
     std::vector<ClipPosition>* clips;
 
+    // info: adjust m_MinRange for low count to reduce overhead cost of task creation.
     ParallelTransformTask(std::vector<Position>* positions, Model* model, CameraState* camera, std::vector<ClipPosition>* clips, uint32_t count)
         : positions(positions), model(model), cameraState(camera), clips(clips)
     {
@@ -135,36 +136,36 @@ int main()
 }
 
 /*
- * [info] [Parallelization] (      10) Parallelized avg:          14 us (   0.014 ms)
- * [info] [Parallelization] (      10) Single-threaded avg:        6 us (   0.006 ms)
- * [info] [Parallelization] (     100) Parallelized avg:          18 us (   0.018 ms)
- * [info] [Parallelization] (     100) Single-threaded avg:       65 us (   0.065 ms)
- * [info] [Parallelization] (    1000) Parallelized avg:         103 us (   0.103 ms)
- * [info] [Parallelization] (    1000) Single-threaded avg:      673 us (   0.673 ms)
- * [info] [Parallelization] (   10000) Parallelized avg:         511 us (   0.511 ms)
- * [info] [Parallelization] (   10000) Single-threaded avg:     6860 us (   6.860 ms)
- * [info] [Parallelization] (  100000) Parallelized avg:        4497 us (   4.497 ms)
- * [info] [Parallelization] (  100000) Single-threaded avg:    65512 us (  65.512 ms)
- * [info] [Parallelization] ( 1000000) Parallelized avg:       42097 us (  42.097 ms)
- * [info] [Parallelization] ( 1000000) Single-threaded avg:   650287 us ( 650.287 ms)
- * [info] [Parallelization] (10000000) Parallelized avg:      426604 us ( 426.604 ms)
- * [info] [Parallelization] (10000000) Single-threaded avg:  6488630 us (6488.630 ms)
+ * [info] [Parallelization] (      10) Parallelized avg:           6 us (   0.006 ms)
+ * [info] [Parallelization] (      10) Single-threaded avg:        0 us (   0.000 ms)
+ * [info] [Parallelization] (     100) Parallelized avg:          23 us (   0.023 ms)
+ * [info] [Parallelization] (     100) Single-threaded avg:        1 us (   0.001 ms)
+ * [info] [Parallelization] (    1000) Parallelized avg:          81 us (   0.081 ms)
+ * [info] [Parallelization] (    1000) Single-threaded avg:       13 us (   0.013 ms)
+ * [info] [Parallelization] (   10000) Parallelized avg:         117 us (   0.117 ms)
+ * [info] [Parallelization] (   10000) Single-threaded avg:      143 us (   0.143 ms)
+ * [info] [Parallelization] (  100000) Parallelized avg:         300 us (   0.300 ms)
+ * [info] [Parallelization] (  100000) Single-threaded avg:     1475 us (   1.475 ms)
+ * [info] [Parallelization] ( 1000000) Parallelized avg:        1313 us (   1.313 ms)
+ * [info] [Parallelization] ( 1000000) Single-threaded avg:    14459 us (  14.459 ms)
+ * [info] [Parallelization] (10000000) Parallelized avg:        9757 us (   9.757 ms)
+ * [info] [Parallelization] (10000000) Single-threaded avg:   137208 us ( 137.208 ms)
  */
 
 /* alignas(64) on ClipPosition
  * [info] Scheduler operating with 32 threads.
- * [info] [Parallelization] (      10) Parallelized avg:          13 us (   0.013 ms)
- * [info] [Parallelization] (      10) Single-threaded avg:        9 us (   0.009 ms)
- * [info] [Parallelization] (     100) Parallelized avg:          14 us (   0.014 ms)
- * [info] [Parallelization] (     100) Single-threaded avg:       70 us (   0.070 ms)
- * [info] [Parallelization] (    1000) Parallelized avg:          99 us (   0.099 ms)
- * [info] [Parallelization] (    1000) Single-threaded avg:      693 us (   0.693 ms)
- * [info] [Parallelization] (   10000) Parallelized avg:         554 us (   0.554 ms)
- * [info] [Parallelization] (   10000) Single-threaded avg:     6663 us (   6.663 ms)
- * [info] [Parallelization] (  100000) Parallelized avg:        4423 us (   4.423 ms)
- * [info] [Parallelization] (  100000) Single-threaded avg:    66196 us (  66.196 ms)
- * [info] [Parallelization] ( 1000000) Parallelized avg:       42492 us (  42.492 ms)
- * [info] [Parallelization] ( 1000000) Single-threaded avg:   662021 us ( 662.021 ms)
- * [info] [Parallelization] (10000000) Parallelized avg:      426136 us ( 426.136 ms)
- * [info] [Parallelization] (10000000) Single-threaded avg:  6617584 us (6617.584 ms)
+ * [info] [Parallelization] (      10) Parallelized avg:           5 us (   0.005 ms)
+ * [info] [Parallelization] (      10) Single-threaded avg:        0 us (   0.000 ms)
+ * [info] [Parallelization] (     100) Parallelized avg:          19 us (   0.019 ms)
+ * [info] [Parallelization] (     100) Single-threaded avg:        1 us (   0.001 ms)
+ * [info] [Parallelization] (    1000) Parallelized avg:          80 us (   0.080 ms)
+ * [info] [Parallelization] (    1000) Single-threaded avg:       13 us (   0.013 ms)
+ * [info] [Parallelization] (   10000) Parallelized avg:         121 us (   0.121 ms)
+ * [info] [Parallelization] (   10000) Single-threaded avg:      152 us (   0.152 ms)
+ * [info] [Parallelization] (  100000) Parallelized avg:         320 us (   0.320 ms)
+ * [info] [Parallelization] (  100000) Single-threaded avg:     1622 us (   1.622 ms)
+ * [info] [Parallelization] ( 1000000) Parallelized avg:        1842 us (   1.842 ms)
+ * [info] [Parallelization] ( 1000000) Single-threaded avg:    14985 us (  14.985 ms)
+ * [info] [Parallelization] (10000000) Parallelized avg:       26127 us (  26.127 ms)
+ * [info] [Parallelization] (10000000) Single-threaded avg:   135836 us ( 135.836 ms)
  */

@@ -10,11 +10,8 @@ int main()
     fmt::println("=== Crash Handler Test ===");
 
     CrashHandler::Initialize("crashes/");
-
-    Logger::Initialize("logs/engine.log");
-
     CrashContext::Initialize();
-
+    Logger::Initialize("logs/Log.log");
 
     fmt::println("\nSelect crash type:");
     fmt::println("1. Null pointer dereference");
