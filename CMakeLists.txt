@@ -15,6 +15,9 @@ add_subdirectory(extern/volk)
 add_subdirectory(extern/vma)
 add_subdirectory(extern/vk-bootstrap)
 
+# My Libs
+add_subdirectory(src/crash-handling)
+
 # Imgui
 set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/extern/imgui)
 add_library(imgui STATIC
@@ -52,22 +55,6 @@ target_include_directories(engine-common INTERFACE
 )
 target_link_libraries(engine-common INTERFACE
         fmt::fmt
-)
-
-# Crash Handling
-add_library(crash-handling STATIC
-        ${CMAKE_SOURCE_DIR}/src/crash-handling/crash_handler.cpp
-        ${CMAKE_SOURCE_DIR}/src/crash-handling/crash_handler.h
-        ${CMAKE_SOURCE_DIR}/src/crash-handling/crash_context.cpp
-        ${CMAKE_SOURCE_DIR}/src/crash-handling/crash_context.h
-        ${CMAKE_SOURCE_DIR}/src/crash-handling/logger.cpp
-        ${CMAKE_SOURCE_DIR}/src/crash-handling/logger.h
-)
-target_link_libraries(crash-handling PUBLIC
-        engine-common
-        dbghelp
-        psapi
-        spdlog::spdlog
 )
 
 
