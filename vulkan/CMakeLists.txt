@@ -1,19 +1,26 @@
-add_executable(vulkan
+add_executable(renderer
         main.cpp
         renderer.cpp
         renderer.h
+        vulkan_context.cpp
+        vulkan_context.h
+        imgui_wrapper.cpp
+        imgui_wrapper.h
+        utils.cpp
+        utils.h
 )
 
-add_custom_command(TARGET vulkan POST_BUILD
+add_custom_command(TARGET renderer POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
         $<TARGET_FILE:SDL3::SDL3>
-        $<TARGET_FILE_DIR:vulkan>
+        $<TARGET_FILE_DIR:renderer>
 )
 
-target_link_libraries(vulkan PRIVATE
+target_link_libraries(renderer PRIVATE
         engine-common
         crash-handling
         volk
+        imgui
         VulkanMemoryAllocator
         vk-bootstrap::vk-bootstrap
         SDL3::SDL3

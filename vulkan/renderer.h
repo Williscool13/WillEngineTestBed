@@ -5,23 +5,17 @@
 #ifndef WILLENGINETESTBED_RENDERER_H
 #define WILLENGINETESTBED_RENDERER_H
 
-#include <volk.h>
-#include <vk_mem_alloc.h>
+#include <memory>
 #include <SDL3/SDL.h>
+
+#include "imgui_wrapper.h"
+#include "vulkan_context.h"
 
 namespace Renderer
 {
-struct DeviceInfo
-{
-    VkPhysicalDeviceProperties properties{};
-    VkPhysicalDeviceDescriptorBufferPropertiesEXT descriptorBufferProps{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_PROPERTIES_EXT};
-};
-
 class Renderer
 {
 public:
-    static DeviceInfo deviceInfo;
-
     Renderer() = default;
 
     void Initialize();
@@ -31,16 +25,9 @@ public:
     void Cleanup();
 
 private:
-    SDL_Window* window;
-
-    VkInstance instance{};
-    VkSurfaceKHR surface{};
-    VkPhysicalDevice physicalDevice{};
-    VkDevice device{};
-    VkQueue graphicsQueue{};
-    uint32_t graphicsQueueFamily{};
-    VmaAllocator allocator{};
-    VkDebugUtilsMessengerEXT debugMessenger{};
+    SDL_Window* window{nullptr};
+    std::unique_ptr<VulkanContext> vulkanContext{nullptr};
+    std::unique_ptr<ImguiWrapper> imgui{nullptr};
 
     bool bShouldExit;
 };

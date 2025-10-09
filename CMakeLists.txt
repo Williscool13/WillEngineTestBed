@@ -3,10 +3,6 @@ project(WillEngineTestBed)
 
 set(CMAKE_CXX_STANDARD 20)
 
-if (WIN32)
-    set(VOLK_STATIC_DEFINES VK_USE_PLATFORM_WIN32_KHR)
-endif()
-
 # Dependencies
 add_subdirectory(extern/fmt)
 set(SPDLOG_FMT_EXTERNAL ON)
@@ -14,24 +10,51 @@ add_subdirectory(extern/spdlog)
 add_subdirectory(extern/SDL EXCLUDE_FROM_ALL)
 set(ENKITS_BUILD_EXAMPLES OFF)
 add_subdirectory(extern/enkiTS)
+set(VOLK_STATIC_DEFINES VK_USE_PLATFORM_WIN32_KHR)
 add_subdirectory(extern/volk)
 add_subdirectory(extern/vma)
 add_subdirectory(extern/vk-bootstrap)
 
+# Imgui
+set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/extern/imgui)
+add_library(imgui STATIC
+        ${IMGUI_DIR}/imgui.cpp
+        ${IMGUI_DIR}/imgui_draw.cpp
+        ${IMGUI_DIR}/imgui_tables.cpp
+        ${IMGUI_DIR}/imgui_widgets.cpp
+        ${IMGUI_DIR}/backends/imgui_impl_sdl3.cpp
+        ${IMGUI_DIR}/backends/imgui_impl_vulkan.cpp
+        ${IMGUI_DIR}/misc/cpp/imgui_stdlib.cpp
+)
+target_compile_definitions(imgui PUBLIC
+        IMGUI_IMPL_VULKAN_USE_VOLK
+        VK_NO_PROTOTYPES
+)
+target_include_directories(imgui PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/extern/imgui
+        ${CMAKE_CURRENT_SOURCE_DIR}/extern/volk
+        ${CMAKE_SOURCE_DIR}/extern/SDL/include
+        ${Vulkan_INCLUDE_DIRS}
+)
+
+target_link_libraries(imgui PUBLIC
+        volk
+)
+
+# Common
 add_library(engine-common INTERFACE)
 target_compile_definitions(engine-common INTERFACE
         BUILD_CONFIG_NAME="$<CONFIG>"
 )
-
 target_include_directories(engine-common INTERFACE
         ${CMAKE_SOURCE_DIR}
         ${CMAKE_SOURCE_DIR}/extern
 )
-
 target_link_libraries(engine-common INTERFACE
         fmt::fmt
 )
 
+# Crash Handling
 add_library(crash-handling STATIC
         ${CMAKE_SOURCE_DIR}/src/crash-handling/crash_handler.cpp
         ${CMAKE_SOURCE_DIR}/src/crash-handling/crash_handler.h
@@ -40,7 +63,6 @@ add_library(crash-handling STATIC
         ${CMAKE_SOURCE_DIR}/src/crash-handling/logger.cpp
         ${CMAKE_SOURCE_DIR}/src/crash-handling/logger.h
 )
-
 target_link_libraries(crash-handling PUBLIC
         engine-common
         dbghelp
