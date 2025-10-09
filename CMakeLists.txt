@@ -3,13 +3,20 @@ project(WillEngineTestBed)
 
 set(CMAKE_CXX_STANDARD 20)
 
+if (WIN32)
+    set(VOLK_STATIC_DEFINES VK_USE_PLATFORM_WIN32_KHR)
+endif()
+
 # Dependencies
 add_subdirectory(extern/fmt)
 set(SPDLOG_FMT_EXTERNAL ON)
 add_subdirectory(extern/spdlog)
-add_subdirectory(extern/SDL)
+add_subdirectory(extern/SDL EXCLUDE_FROM_ALL)
 set(ENKITS_BUILD_EXAMPLES OFF)
 add_subdirectory(extern/enkiTS)
+add_subdirectory(extern/volk)
+add_subdirectory(extern/vma)
+add_subdirectory(extern/vk-bootstrap)
 
 add_library(engine-common INTERFACE)
 target_compile_definitions(engine-common INTERFACE
@@ -47,3 +54,4 @@ add_subdirectory(multithreading)
 add_subdirectory(representing-and-manipulating-information)
 add_subdirectory(parallelization)
 add_subdirectory(entity-component-system)
+add_subdirectory(vulkan)

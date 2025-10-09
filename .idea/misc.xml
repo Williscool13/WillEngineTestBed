@@ -8,11 +8,15 @@
     <libraryRoots>
       <file path="$PROJECT_DIR$/extern" />
       <file path="$PROJECT_DIR$/extern/SDL" />
+      <file path="$PROJECT_DIR$/extern/enkiTS" />
       <file path="$PROJECT_DIR$/extern/entt" />
       <file path="$PROJECT_DIR$/extern/fmt" />
       <file path="$PROJECT_DIR$/extern/glm" />
       <file path="$PROJECT_DIR$/extern/json" />
       <file path="$PROJECT_DIR$/extern/spdlog" />
+      <file path="$PROJECT_DIR$/extern/vk-bootstrap" />
+      <file path="$PROJECT_DIR$/extern/vma" />
+      <file path="$PROJECT_DIR$/extern/volk" />
     </libraryRoots>
   </component>
 </project>
