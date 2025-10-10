@@ -27,6 +27,8 @@ public:
 
     void Initialize();
 
+    void CreateResources();
+
     void Run();
 
     void Render();

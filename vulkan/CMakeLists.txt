@@ -12,6 +12,10 @@ add_executable(renderer
         swapchain.h
         synchronization.cpp
         synchronization.h
+        input.cpp
+        input.h
+        vk_helpers.cpp
+        vk_helpers.h
 )
 
 add_custom_command(TARGET renderer POST_BUILD

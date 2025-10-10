@@ -13,7 +13,8 @@
 #include "imgui_wrapper.h"
 #include "backends/imgui_impl_sdl3.h"
 #include "backends/imgui_impl_vulkan.h"
-
+#include "input.h"
+#include "vk_helpers.h"
 
 namespace Renderer
 {
@@ -47,17 +48,8 @@ void Renderer::Initialize()
 
     frameSynchronization.resize(swapchain->imageCount);
 
-    // Command Pools
-    VkCommandPoolCreateInfo commandPoolCreateInfo = {};
-    commandPoolCreateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    commandPoolCreateInfo.pNext = nullptr;
-    commandPoolCreateInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-
-    VkCommandBufferAllocateInfo commandBufferAllocateInfo = {};
-    commandBufferAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    commandBufferAllocateInfo.pNext = nullptr;
-    commandBufferAllocateInfo.commandBufferCount = 1;
-    commandBufferAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    VkCommandPoolCreateInfo commandPoolCreateInfo = VkHelpers::CommandPoolCreateInfo();
+    VkCommandBufferAllocateInfo commandBufferAllocateInfo = VkHelpers::CommandBufferAllocateInfo(1);
 
     for (auto& frame : frameSynchronization) {
         VK_CHECK(vkCreateCommandPool(vulkanContext->device, &commandPoolCreateInfo, nullptr, &frame.commandPool));
@@ -66,35 +58,68 @@ void Renderer::Initialize()
     }
 
     // Sync Structures
-    VkFenceCreateInfo fenceCreateInfo = {};
-    fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    fenceCreateInfo.pNext = nullptr;
-    fenceCreateInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-
-    VkSemaphoreCreateInfo semaphoreCreateInfo = {};
-    semaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-    semaphoreCreateInfo.pNext = nullptr;
-
+    const VkFenceCreateInfo fenceCreateInfo = VkHelpers::FenceCreateInfo();
+    const VkSemaphoreCreateInfo semaphoreCreateInfo = VkHelpers::SemaphoreCreateInfo();
     for (auto& frame : frameSynchronization) {
         VK_CHECK(vkCreateFence(vulkanContext->device, &fenceCreateInfo, nullptr, &frame.renderFence));
-
         VK_CHECK(vkCreateSemaphore(vulkanContext->device, &semaphoreCreateInfo, nullptr, &frame.swapchainSemaphore));
         VK_CHECK(vkCreateSemaphore(vulkanContext->device, &semaphoreCreateInfo, nullptr, &frame.renderSemaphore));
     }
+
+    CreateResources();
+}
+
+void Renderer::CreateResources()
+{
+    VkCommandPool immediateCommandPool;
+    VkCommandBuffer immediateCommandBuffer;
+    VkFence immediateFence;
+
+    const VkCommandPoolCreateInfo commandPoolCreateInfo = VkHelpers::CommandPoolCreateInfo();
+    VK_CHECK(vkCreateCommandPool(vulkanContext->device, &commandPoolCreateInfo, nullptr, &immediateCommandPool));
+    VkCommandBufferAllocateInfo commandBufferAllocateInfo = VkHelpers::CommandBufferAllocateInfo(1, immediateCommandPool);
+    VK_CHECK(vkAllocateCommandBuffers(vulkanContext->device, &commandBufferAllocateInfo, &immediateCommandBuffer));
+
+    VkFenceCreateInfo fenceCreateInfo = VkHelpers::FenceCreateInfo();
+    VK_CHECK(vkCreateFence(vulkanContext->device, &fenceCreateInfo, nullptr, &immediateFence));
+
+
+    VK_CHECK(vkResetFences(vulkanContext->device, 1, &immediateFence));
+    VK_CHECK(vkResetCommandBuffer(immediateCommandBuffer, 0));
+
+    VkCommandBuffer cmd = immediateCommandBuffer;
+    VkCommandBufferBeginInfo commandBufferBeginInfo = VkHelpers::CommandBufferBeginInfo();
+    VK_CHECK(vkBeginCommandBuffer(cmd, &commandBufferBeginInfo));
+
+    // Commands
+    {}
+
+    VK_CHECK(vkEndCommandBuffer(cmd));
+
+    VkCommandBufferSubmitInfo commandBufferSubmitInfo = VkHelpers::CommandBufferSubmitInfo(cmd);
+    VkSubmitInfo2 submitInfo = VkHelpers::SubmitInfo(&commandBufferSubmitInfo, nullptr, nullptr);
+
+    VK_CHECK(vkQueueSubmit2(vulkanContext->graphicsQueue, 1, &submitInfo, immediateFence));
+    VK_CHECK(vkWaitForFences(vulkanContext->device, 1, &immediateFence, true, 1000000000));
+
+    vkDestroyCommandPool(vulkanContext->device, immediateCommandPool, nullptr);
+    vkDestroyFence(vulkanContext->device, immediateFence, nullptr);
 }
 
 void Renderer::Run()
 {
+    Input& input = Input::get();
     SDL_Event e;
     bool exit = false;
     while (true) {
         while (SDL_PollEvent(&e) != 0) {
+            input.processEvent(e);
             imgui->HandleInput(e);
             if (e.type == SDL_EVENT_QUIT) { exit = true; }
             if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_ESCAPE) { exit = true; }
         }
 
-
+        input.updateFocus(SDL_GetWindowFlags(window));
 
         if (exit) {
             bShouldExit = true;
@@ -103,12 +128,15 @@ void Renderer::Run()
 
         Render();
 
+        input.frameReset();
         frameNumber++;
     }
 }
 
 void Renderer::Render()
 {
+    Input& input = Input::get();
+
     const uint32_t currentFrameInFlight = frameNumber % swapchain->imageCount;
     const FrameData& currentFrameData = frameSynchronization[currentFrameInFlight];
 
@@ -121,17 +149,19 @@ void Renderer::Render()
     // Do rendering stuff
     VkCommandBuffer cmd = currentFrameData.commandBuffer;
     VK_CHECK(vkResetCommandBuffer(cmd, 0));
-    VkCommandBufferBeginInfo commandBufferBeginInfo = {};
-    commandBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    commandBufferBeginInfo.pNext = nullptr;
-    commandBufferBeginInfo.pInheritanceInfo = nullptr;
-    commandBufferBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    VkCommandBufferBeginInfo commandBufferBeginInfo = VkHelpers::CommandBufferBeginInfo();
     VK_CHECK(vkBeginCommandBuffer(cmd, &commandBufferBeginInfo));
 
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
 
+    if (input.isKeyPressed(Key::G)) {
+        LOG_INFO("G is pressed");
+    }
+    if (input.isKeyReleased(Key::G)) {
+        LOG_INFO("G is released");
+    }
     if (ImGui::Begin("Main")) {
         ImGui::Text("Hello!");
     }
@@ -152,31 +182,21 @@ void Renderer::Render()
     VkImageView currentSwapchainImageView = swapchain->swapchainImageViews[swapchainImageIndex];
 
 
-
     // Transition 1
     {
-        VkImageMemoryBarrier2 imageBarrier{.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
-        imageBarrier.pNext = nullptr;
-        imageBarrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-        imageBarrier.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_SHADER_WRITE_BIT;
-        imageBarrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-        imageBarrier.dstAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_SHADER_READ_BIT;
-        imageBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        imageBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        VkImageSubresourceRange subImage{};
-        subImage.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        subImage.baseMipLevel = 0;
-        subImage.levelCount = VK_REMAINING_MIP_LEVELS;
-        subImage.baseArrayLayer = 0;
-        subImage.layerCount = VK_REMAINING_ARRAY_LAYERS;
-        imageBarrier.subresourceRange = subImage;
-        imageBarrier.image = currentSwapchainImage;
-        VkDependencyInfo depInfo{};
-        depInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        depInfo.pNext = nullptr;
-        depInfo.imageMemoryBarrierCount = 1;
-        depInfo.pImageMemoryBarriers = &imageBarrier;
-        vkCmdPipelineBarrier2(cmd, &depInfo);
+        auto subresource = VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT);
+        auto barrier = VkHelpers::ImageMemoryBarrier(
+            currentSwapchainImage,
+            subresource,
+            VK_PIPELINE_STAGE_2_NONE,
+            VK_ACCESS_2_NONE,
+            VK_IMAGE_LAYOUT_UNDEFINED,
+            VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+            VK_ACCESS_2_TRANSFER_WRITE_BIT,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
+        );
+        auto dependencyInfo = VkHelpers::DependencyInfo(&barrier);
+        vkCmdPipelineBarrier2(cmd, &dependencyInfo);
     }
 
     // Clear Color
@@ -201,28 +221,19 @@ void Renderer::Render()
 
     // Transition 2
     {
-        VkImageMemoryBarrier2 imageBarrier{.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
-        imageBarrier.pNext = nullptr;
-        imageBarrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-        imageBarrier.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_SHADER_WRITE_BIT;
-        imageBarrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-        imageBarrier.dstAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_SHADER_READ_BIT;
-        imageBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        imageBarrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        VkImageSubresourceRange subImage{};
-        subImage.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        subImage.baseMipLevel = 0;
-        subImage.levelCount = VK_REMAINING_MIP_LEVELS;
-        subImage.baseArrayLayer = 0;
-        subImage.layerCount = VK_REMAINING_ARRAY_LAYERS;
-        imageBarrier.subresourceRange = subImage;
-        imageBarrier.image = currentSwapchainImage;
-        VkDependencyInfo depInfo{};
-        depInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        depInfo.pNext = nullptr;
-        depInfo.imageMemoryBarrierCount = 1;
-        depInfo.pImageMemoryBarriers = &imageBarrier;
-        vkCmdPipelineBarrier2(cmd, &depInfo);
+        auto subresource = VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT);
+        auto barrier = VkHelpers::ImageMemoryBarrier(
+            currentSwapchainImage,
+            subresource,
+            VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+            VK_ACCESS_2_TRANSFER_WRITE_BIT,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+            VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+        );
+        auto dependencyInfo = VkHelpers::DependencyInfo(&barrier);
+        vkCmdPipelineBarrier2(cmd, &dependencyInfo);
     }
 
     // Imgui Draw
@@ -252,75 +263,36 @@ void Renderer::Render()
 
     // Transition 3
     {
-        VkImageMemoryBarrier2 imageBarrier{.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
-        imageBarrier.pNext = nullptr;
-        imageBarrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-        imageBarrier.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_SHADER_WRITE_BIT;
-        imageBarrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-        imageBarrier.dstAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_SHADER_READ_BIT;
-        imageBarrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        imageBarrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-        VkImageSubresourceRange subImage{};
-        subImage.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        subImage.baseMipLevel = 0;
-        subImage.levelCount = VK_REMAINING_MIP_LEVELS;
-        subImage.baseArrayLayer = 0;
-        subImage.layerCount = VK_REMAINING_ARRAY_LAYERS;
-        imageBarrier.subresourceRange = subImage;
-        imageBarrier.image = currentSwapchainImage;
-        VkDependencyInfo depInfo{};
-        depInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        depInfo.pNext = nullptr;
-        depInfo.imageMemoryBarrierCount = 1;
-        depInfo.pImageMemoryBarriers = &imageBarrier;
-        vkCmdPipelineBarrier2(cmd, &depInfo);
+        auto subresource = VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT);
+        auto barrier = VkHelpers::ImageMemoryBarrier(
+            currentSwapchainImage,
+            subresource,
+            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+            VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            VK_PIPELINE_STAGE_2_NONE,
+            VK_ACCESS_2_NONE,
+            VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
+        );
+        auto dependencyInfo = VkHelpers::DependencyInfo(&barrier);
+        vkCmdPipelineBarrier2(cmd, &dependencyInfo);
     }
 
 
     VK_CHECK(vkEndCommandBuffer(cmd));
 
 
-    VkCommandBufferSubmitInfo commandBufferSubmitInfo{};
-    commandBufferSubmitInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
-    commandBufferSubmitInfo.pNext = nullptr;
-    commandBufferSubmitInfo.commandBuffer = currentFrameData.commandBuffer;
-    commandBufferSubmitInfo.deviceMask = 0;
-    VkSemaphoreSubmitInfo swapchainSemaphoreWaitInfo{};
-    swapchainSemaphoreWaitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-    swapchainSemaphoreWaitInfo.pNext = nullptr;
-    swapchainSemaphoreWaitInfo.semaphore = currentFrameData.swapchainSemaphore;
-    swapchainSemaphoreWaitInfo.stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR;
-    swapchainSemaphoreWaitInfo.deviceIndex = 0;
-    swapchainSemaphoreWaitInfo.value = 1;
-    VkSemaphoreSubmitInfo renderSemaphoreSignalInfo{};
-    renderSemaphoreSignalInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-    renderSemaphoreSignalInfo.pNext = nullptr;
-    renderSemaphoreSignalInfo.semaphore = currentFrameData.renderSemaphore;
-    renderSemaphoreSignalInfo.stageMask = VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT;
-    renderSemaphoreSignalInfo.deviceIndex = 0;
-    renderSemaphoreSignalInfo.value = 1;
-    VkSubmitInfo2 submitInfo = {};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
-    submitInfo.pNext = nullptr;
-    submitInfo.waitSemaphoreInfoCount = 1;
-    submitInfo.pWaitSemaphoreInfos = &swapchainSemaphoreWaitInfo;
-    submitInfo.signalSemaphoreInfoCount = 1;
-    submitInfo.pSignalSemaphoreInfos = &renderSemaphoreSignalInfo;
-    submitInfo.commandBufferInfoCount = 1;
-    submitInfo.pCommandBufferInfos = &commandBufferSubmitInfo;
+    VkCommandBufferSubmitInfo commandBufferSubmitInfo = VkHelpers::CommandBufferSubmitInfo(currentFrameData.commandBuffer);
+    VkSemaphoreSubmitInfo swapchainSemaphoreWaitInfo = VkHelpers::SemaphoreSubmitInfo(currentFrameData.swapchainSemaphore, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR);
+    VkSemaphoreSubmitInfo renderSemaphoreSignalInfo = VkHelpers::SemaphoreSubmitInfo(currentFrameData.renderSemaphore, VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT);
+    VkSubmitInfo2 submitInfo = VkHelpers::SubmitInfo(&commandBufferSubmitInfo, &swapchainSemaphoreWaitInfo, &renderSemaphoreSignalInfo);
 
     // Wait for swapchain semaphore, then submit command buffer. When finished, signal render semaphore and render fence.
     VK_CHECK(vkQueueSubmit2(vulkanContext->graphicsQueue, 1, &submitInfo, currentFrameData.renderFence));
 
-    VkPresentInfoKHR presentInfo = {};
-    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-    presentInfo.pNext = nullptr;
-    presentInfo.pSwapchains = &swapchain->handle;
-    presentInfo.swapchainCount = 1;
-    presentInfo.pWaitSemaphores = &currentFrameData.renderSemaphore;
-    presentInfo.waitSemaphoreCount = 1;
-    presentInfo.pImageIndices = &swapchainImageIndex;
     // Wait for render semaphore, then present frame.
+    VkPresentInfoKHR presentInfo = VkHelpers::PresentInfo(&swapchain->handle, nullptr, &swapchainImageIndex);
+    presentInfo.pWaitSemaphores = &currentFrameData.renderSemaphore;
     const VkResult presentResult = vkQueuePresentKHR(vulkanContext->graphicsQueue, &presentInfo);
 
     if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR) {
