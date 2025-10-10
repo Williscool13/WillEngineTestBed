@@ -11,13 +11,14 @@
 #include <imgui/backends/imgui_impl_sdl3.h>
 
 #include "utils.h"
+#include "VkBootstrap.h"
 #include "vulkan_context.h"
 #include "src/crash-handling/logger.h"
 
 
 namespace Renderer
 {
-ImguiWrapper::ImguiWrapper(VulkanContext* context, SDL_Window* window, VkFormat swapchainImageFormat)
+ImguiWrapper::ImguiWrapper(VulkanContext* context, SDL_Window* window, int32_t swapchainImageCount)
     : context(context)
 {
     // DearImGui implementation, basically copied directly from the Vulkan/SDl3 from DearImGui samples.
@@ -70,8 +71,8 @@ ImguiWrapper::ImguiWrapper(VulkanContext* context, SDL_Window* window, VkFormat 
     initInfo.Queue = context->graphicsQueue;
     // init_info.PipelineCache = g_PipelineCache;
     initInfo.DescriptorPool = imguiPool;
-    initInfo.MinImageCount = 2;
-    initInfo.ImageCount = SWAPCHAIN_IMAGE_COUNT;
+    initInfo.MinImageCount = vkb::SwapchainBuilder::DOUBLE_BUFFERING;
+    initInfo.ImageCount = swapchainImageCount;
     // initInfo.Allocator = g_Allocator;
     // initInfo.PipelineInfoMain.RenderPass = wd->RenderPass;
     initInfo.PipelineInfoMain.Subpass = 0;
@@ -82,7 +83,7 @@ ImguiWrapper::ImguiWrapper(VulkanContext* context, SDL_Window* window, VkFormat 
     initInfo.UseDynamicRendering = true;
     initInfo.PipelineInfoMain.PipelineRenderingCreateInfo = {.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO};
     initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.colorAttachmentCount = 1;
-    initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.pColorAttachmentFormats = &swapchainImageFormat;
+    initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.pColorAttachmentFormats = &SWAPCHAIN_IMAGE_FORMAT;
     ImGui_ImplVulkan_Init(&initInfo);
 
 

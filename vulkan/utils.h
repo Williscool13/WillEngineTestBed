@@ -13,7 +13,8 @@ namespace Renderer
 {
 
 } // Renderer
-inline static int32_t SWAPCHAIN_IMAGE_COUNT = 3;
+inline static int32_t SWAPCHAIN_MINIMUM_IMAGE_COUNT = 2;
+inline static int32_t SWAPCHAIN_DESIRED_IMAGE_COUNT = 3;
 inline static VkFormat SWAPCHAIN_IMAGE_FORMAT = VK_FORMAT_R8G8B8A8_UNORM;
 
 #define VK_CHECK(x)                                                          \

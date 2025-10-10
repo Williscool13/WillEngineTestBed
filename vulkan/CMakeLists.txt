@@ -8,6 +8,10 @@ add_executable(renderer
         imgui_wrapper.h
         utils.cpp
         utils.h
+        swapchain.cpp
+        swapchain.h
+        synchronization.cpp
+        synchronization.h
 )
 
 add_custom_command(TARGET renderer POST_BUILD
