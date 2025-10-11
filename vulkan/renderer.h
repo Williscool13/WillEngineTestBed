@@ -10,10 +10,14 @@
 #include <SDL3/SDL.h>
 
 #include "synchronization.h"
+#include "vk_resources.h"
 
 
 namespace Renderer
 {
+struct DescriptorBufferStorageImage;
+struct DescriptorBufferCombinedImageSampler;
+struct DescriptorBufferUniform;
 class ImguiWrapper;
 struct VulkanContext;
 struct Swapchain;
@@ -43,6 +47,18 @@ private:
 
     uint64_t frameNumber{0};
     std::vector<FrameData> frameSynchronization;
+    int32_t renderFramesInFlight{0};
+
+    VkDescriptorSetLayout bindlessUniformSetLayout;
+    std::unique_ptr<DescriptorBufferUniform> bindlessUniforms;
+    VkDescriptorSetLayout bindlessCombinedImageSamplerSetLayout;
+    std::unique_ptr<DescriptorBufferCombinedImageSampler> bindlessCombinedImageSamplers;
+    VkDescriptorSetLayout bindlessStorageImageSetLayout;
+    std::unique_ptr<DescriptorBufferStorageImage> bindlessStorageImages;
+
+    AllocatedImage drawImage;
+    AllocatedImageView drawImageView;
+
 
     bool bShouldExit{false};
     bool bWindowChanged{false};

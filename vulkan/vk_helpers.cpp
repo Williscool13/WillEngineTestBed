@@ -161,4 +161,45 @@ VkDeviceAddress VkHelpers::GetDeviceAddress(VkDevice device, VkBuffer buffer)
     const uint64_t address = vkGetBufferDeviceAddress(device, &bufferDeviceAddressInfo);
     return address;
 }
+
+VkImageCreateInfo VkHelpers::ImageCreateInfo(VkFormat format, VkExtent3D extent, VkFlags usageFlags)
+{
+    return {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .pNext = nullptr,
+
+        // Single 2D image with no mip levels by default
+        .imageType = VK_IMAGE_TYPE_2D,
+        .format = format,
+        .extent = extent,
+        .mipLevels = 1,
+        .arrayLayers = 1,
+
+        // No MSAA
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+
+        // Tiling Optimal has the best performance
+        .tiling = VK_IMAGE_TILING_OPTIMAL,
+        .usage = usageFlags,
+    };
+}
+
+VkImageViewCreateInfo VkHelpers::ImageViewCreateInfo(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags)
+{
+    VkImageSubresourceRange subresource{
+        .aspectMask = aspectFlags,
+        .baseMipLevel = 0,
+        .levelCount = 1,
+        .baseArrayLayer = 0,
+        .layerCount = 1,
+    };
+    return {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .pNext = nullptr,
+        .image = image,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = format,
+        .subresourceRange = subresource,
+    };
+}
 }

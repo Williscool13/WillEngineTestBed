@@ -38,6 +38,10 @@ VkPresentInfoKHR PresentInfo(VkSwapchainKHR* swapchain, VkSemaphore* waitSemapho
 VkDeviceSize GetAlignedSize(VkDeviceSize value, VkDeviceSize alignment);
 
 VkDeviceAddress GetDeviceAddress(VkDevice device, VkBuffer buffer);
+
+VkImageCreateInfo ImageCreateInfo(VkFormat format, VkExtent3D extent, VkFlags usageFlags);
+
+VkImageViewCreateInfo ImageViewCreateInfo(VkImage image, VkFormat format, VkFlags aspectFlags);
 }
 
 

@@ -16,12 +16,12 @@ add_executable(renderer
         input.h
         vk_helpers.cpp
         vk_helpers.h
+        vk_resources.cpp
+        vk_resources.h
         descriptor_buffer/descriptor_buffer_uniform.cpp
         descriptor_buffer/descriptor_buffer_uniform.h
         descriptor_buffer/descriptor_buffer_storage.cpp
         descriptor_buffer/descriptor_buffer_storage.h
-        vk_resources.cpp
-        vk_resources.h
         descriptor_buffer/descriptor_buffer_combined_image_sampler.cpp
         descriptor_buffer/descriptor_buffer_combined_image_sampler.h
         descriptor_buffer/descriptor_buffer_sampled_image.cpp
@@ -30,6 +30,8 @@ add_executable(renderer
         descriptor_buffer/descriptor_buffer_sampler.h
         descriptor_buffer/descriptor_buffer_storage_image.cpp
         descriptor_buffer/descriptor_buffer_storage_image.h
+        vk_descriptors.h
+        vk_descriptors.cpp
 
 )
 

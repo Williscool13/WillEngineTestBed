@@ -8,11 +8,13 @@
 #include <volk/volk.h>
 #include <vma/include/vk_mem_alloc.h>
 
+#include "vulkan_context.h"
+
 namespace Renderer
 {
 struct VulkanContext;
 
-struct Buffer
+struct AllocatedBuffer
 {
     VkBuffer handle{};
     VkDeviceAddress address{};
@@ -23,6 +25,34 @@ struct Buffer
 
     void Cleanup(const VulkanContext* context);
 };
+
+struct AllocatedImage
+{
+
+    VkImage image{};
+    VkFormat imageFormat{};
+    VkExtent3D imageExtent{};
+    VkImageLayout imageLayout{};
+    uint32_t mipLevels{};
+    VmaAllocation allocation{};
+
+    void Cleanup(const VulkanContext* context);
+};
+
+struct AllocatedImageView
+{
+    VkImageView imageView{};
+
+    void Cleanup(const VulkanContext* context);
+};
+
+
+namespace VkResources
+{
+    AllocatedImage CreateAllocatedImage(const VulkanContext* context, const VkImageCreateInfo& imageCreateInfo);
+    AllocatedImageView CreateAllocatedImageView(const VulkanContext* context, const VkImageViewCreateInfo& imageViewCreateInfo);
+}
+
 }
 
 #endif //WILLENGINETESTBED_VK_RESOURCES_H

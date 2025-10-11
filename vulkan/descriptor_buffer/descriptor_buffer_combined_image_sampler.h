@@ -56,7 +56,7 @@ struct DescriptorBufferCombinedImageSampler
 
 private:
     VulkanContext* context{};
-    Buffer buffer{};
+    AllocatedBuffer buffer{};
 
     /**
      * The size of 1 descriptor set

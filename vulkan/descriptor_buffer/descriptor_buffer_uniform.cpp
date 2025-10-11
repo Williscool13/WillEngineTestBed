@@ -76,7 +76,7 @@ int32_t DescriptorBufferUniform::AllocateDescriptorSet()
     return descriptorSetIndex;
 }
 
-bool DescriptorBufferUniform::UpdateDescriptorSet(const std::span<Buffer> uniformBuffers, int32_t descriptorSetIndex)
+bool DescriptorBufferUniform::UpdateDescriptorSet(const std::span<AllocatedBuffer> uniformBuffers, int32_t descriptorSetIndex)
 {
     if (descriptorSetIndex < 0 || descriptorSetIndex >= maxDescriptorSets) {
         LOG_ERROR("Invalid descriptor set index: {}", descriptorSetIndex);
@@ -113,7 +113,7 @@ bool DescriptorBufferUniform::UpdateDescriptorSet(const std::span<Buffer> unifor
     return true;
 }
 
-bool DescriptorBufferUniform::UpdateDescriptor(const Buffer& uniformBuffer, int32_t descriptorSetIndex, int32_t bindingIndex)
+bool DescriptorBufferUniform::UpdateDescriptor(const AllocatedBuffer& uniformBuffer, int32_t descriptorSetIndex, int32_t bindingIndex)
 {
     if (descriptorSetIndex < 0 || descriptorSetIndex >= maxDescriptorSets) {
         LOG_ERROR("Invalid descriptor set index: {}", descriptorSetIndex);

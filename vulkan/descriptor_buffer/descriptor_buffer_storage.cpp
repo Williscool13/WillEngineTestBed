@@ -76,7 +76,7 @@ int32_t DescriptorBufferStorage::AllocateDescriptorSet()
     return descriptorSetIndex;
 }
 
-bool DescriptorBufferStorage::UpdateDescriptorSet(std::span<Buffer> storageBuffers, int32_t descriptorSetIndex)
+bool DescriptorBufferStorage::UpdateDescriptorSet(std::span<AllocatedBuffer> storageBuffers, int32_t descriptorSetIndex)
 {
     if (descriptorSetIndex < 0 || descriptorSetIndex >= maxDescriptorSets) {
         LOG_ERROR("Invalid descriptor set index: {}", descriptorSetIndex);
@@ -113,7 +113,7 @@ bool DescriptorBufferStorage::UpdateDescriptorSet(std::span<Buffer> storageBuffe
     return true;
 }
 
-bool DescriptorBufferStorage::UpdateDescriptor(const Buffer& storageBuffer, int32_t descriptorSetIndex, int32_t bindingIndex)
+bool DescriptorBufferStorage::UpdateDescriptor(const AllocatedBuffer& storageBuffer, int32_t descriptorSetIndex, int32_t bindingIndex)
 {
     if (descriptorSetIndex < 0 || descriptorSetIndex >= maxDescriptorSets) {
         LOG_ERROR("Invalid descriptor set index: {}", descriptorSetIndex);

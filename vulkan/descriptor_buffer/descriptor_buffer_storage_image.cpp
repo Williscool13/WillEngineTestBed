@@ -94,12 +94,12 @@ bool DescriptorBufferStorageImage::UpdateDescriptorSet(std::span<VkDescriptorIma
 
     VkDescriptorGetInfoEXT descriptorGetInfo{};
     descriptorGetInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT;
-    descriptorGetInfo.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    descriptorGetInfo.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
 
 
     const size_t storageImageSize = VulkanContext::deviceInfo.descriptorBufferProps.storageImageDescriptorSize;
     for (int32_t i = 0; i < imageInfos.size(); i++) {
-        descriptorGetInfo.data.pCombinedImageSampler = &imageInfos[i];
+        descriptorGetInfo.data.pStorageImage = &imageInfos[i];
 
         char* bufferPtr = static_cast<char*>(buffer.allocationInfo.pMappedData) + offset + i * storageImageSize;
         vkGetDescriptorEXT(context->device, &descriptorGetInfo, storageImageSize, bufferPtr);
@@ -124,8 +124,8 @@ bool DescriptorBufferStorageImage::UpdateDescriptor(const VkDescriptorImageInfo&
 
     VkDescriptorGetInfoEXT descriptorGetInfo{};
     descriptorGetInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT;
-    descriptorGetInfo.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    descriptorGetInfo.data.pCombinedImageSampler = &imageInfo;
+    descriptorGetInfo.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    descriptorGetInfo.data.pStorageImage = &imageInfo;
 
     const size_t storageImageSize = VulkanContext::deviceInfo.descriptorBufferProps.storageImageDescriptorSize;
     char* bufferPtr = static_cast<char*>(buffer.allocationInfo.pMappedData) + offset + bindingIndex * storageImageSize;

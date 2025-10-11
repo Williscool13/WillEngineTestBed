@@ -23,7 +23,8 @@ Swapchain::Swapchain(const VulkanContext* context)
             //.set_desired_present_mode(VK_PRESENT_MODE_FIFO_KHR)
             .set_desired_extent(800, 600)
             .add_image_usage_flags(VK_IMAGE_USAGE_TRANSFER_DST_BIT)
-            .set_desired_min_image_count(vkb::SwapchainBuilder::TRIPLE_BUFFERING)
+             .set_desired_min_image_count(vkb::SwapchainBuilder::TRIPLE_BUFFERING)
+            //.set_desired_min_image_count(vkb::SwapchainBuilder::DOUBLE_BUFFERING)
             .build();
 
     if (!swapchainResult) {

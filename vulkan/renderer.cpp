@@ -14,7 +14,11 @@
 #include "backends/imgui_impl_sdl3.h"
 #include "backends/imgui_impl_vulkan.h"
 #include "input.h"
+#include "vk_descriptors.h"
 #include "vk_helpers.h"
+#include "descriptor_buffer/descriptor_buffer_combined_image_sampler.h"
+#include "descriptor_buffer/descriptor_buffer_storage_image.h"
+#include "descriptor_buffer/descriptor_buffer_uniform.h"
 
 namespace Renderer
 {
@@ -47,6 +51,7 @@ void Renderer::Initialize()
     imgui = std::make_unique<ImguiWrapper>(vulkanContext.get(), window, swapchain->imageCount);
 
     frameSynchronization.resize(swapchain->imageCount);
+    renderFramesInFlight = swapchain->imageCount;
 
     VkCommandPoolCreateInfo commandPoolCreateInfo = VkHelpers::CommandPoolCreateInfo();
     VkCommandBufferAllocateInfo commandBufferAllocateInfo = VkHelpers::CommandBufferAllocateInfo(1);
@@ -71,6 +76,66 @@ void Renderer::Initialize()
 
 void Renderer::CreateResources()
 {
+    DescriptorLayoutBuilder layoutBuilder{1};
+    //
+    {
+        layoutBuilder.AddBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, BINDLESS_UNIFORM_BUFFER_COUNT);
+        VkDescriptorSetLayoutCreateInfo layoutCreateInfo = layoutBuilder.Build(
+            static_cast<VkShaderStageFlagBits>(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT),
+            VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT
+        );
+        VK_CHECK(vkCreateDescriptorSetLayout(vulkanContext->device, &layoutCreateInfo, nullptr, &bindlessUniformSetLayout));
+        bindlessUniforms = std::make_unique<DescriptorBufferUniform>(vulkanContext.get(), bindlessUniformSetLayout, renderFramesInFlight);
+    }
+
+    //
+    {
+        layoutBuilder.Clear();
+        layoutBuilder.AddBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, BINDLESS_COMBINED_IMAGE_SAMPLER_COUNT);
+        VkDescriptorSetLayoutCreateInfo layoutCreateInfo = layoutBuilder.Build(
+            static_cast<VkShaderStageFlagBits>(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT),
+            VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT
+        );
+        VK_CHECK(vkCreateDescriptorSetLayout(vulkanContext->device, &layoutCreateInfo, nullptr, &bindlessCombinedImageSamplerSetLayout));
+        bindlessCombinedImageSamplers = std::make_unique<DescriptorBufferCombinedImageSampler>(vulkanContext.get(), bindlessCombinedImageSamplerSetLayout, renderFramesInFlight);
+    }
+
+    //
+    {
+        layoutBuilder.Clear();
+        layoutBuilder.AddBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, BINDLESS_STORAGE_IMAGE_COUNT);
+        VkDescriptorSetLayoutCreateInfo layoutCreateInfo = layoutBuilder.Build(
+            static_cast<VkShaderStageFlagBits>(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT),
+            VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT
+        );
+        VK_CHECK(vkCreateDescriptorSetLayout(vulkanContext->device, &layoutCreateInfo, nullptr, &bindlessStorageImageSetLayout));
+        bindlessStorageImages = std::make_unique<DescriptorBufferStorageImage>(vulkanContext.get(), bindlessStorageImageSetLayout, renderFramesInFlight);
+        // Allocate all, we know they are all for FIF
+        for (int32_t i = 0; i < renderFramesInFlight; ++i) {
+            bindlessStorageImages->AllocateDescriptorSet();
+        }
+    }
+
+
+    VkImageUsageFlags drawImageUsages{};
+    drawImageUsages |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    drawImageUsages |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    drawImageUsages |= VK_IMAGE_USAGE_STORAGE_BIT;
+    drawImageUsages |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    drawImageUsages |= VK_IMAGE_USAGE_SAMPLED_BIT;
+    VkImageCreateInfo drawImageCreateInfo = VkHelpers::ImageCreateInfo(VK_FORMAT_R8G8B8A8_UNORM, {800, 600, 1}, drawImageUsages);
+    drawImage = VkResources::CreateAllocatedImage(vulkanContext.get(), drawImageCreateInfo);
+
+    VkImageViewCreateInfo drawImageViewCreateInfo = VkHelpers::ImageViewCreateInfo(drawImage.image, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT);
+    drawImageView = VkResources::CreateAllocatedImageView(vulkanContext.get(), drawImageViewCreateInfo);
+
+    VkDescriptorImageInfo drawDescriptorInfo;
+    drawDescriptorInfo.imageView = drawImageView.imageView;
+    // Manually update all 3,
+    for (int i = 0; i < renderFramesInFlight; ++i) {
+        bindlessStorageImages->UpdateDescriptor(drawDescriptorInfo, i, 0);
+    }
+
     VkCommandPool immediateCommandPool;
     VkCommandBuffer immediateCommandBuffer;
     VkFence immediateFence;
@@ -305,16 +370,17 @@ void Renderer::Cleanup()
 {
     vkDeviceWaitIdle(vulkanContext->device);
 
+    vkDestroyDescriptorSetLayout(vulkanContext->device, bindlessUniformSetLayout, nullptr);
+    vkDestroyDescriptorSetLayout(vulkanContext->device, bindlessCombinedImageSamplerSetLayout, nullptr);
+    vkDestroyDescriptorSetLayout(vulkanContext->device, bindlessStorageImageSetLayout, nullptr);
 
-    imgui.reset();
+    drawImage.Cleanup(vulkanContext.get());
+    drawImageView.Cleanup(vulkanContext.get());
 
     for (FrameData& frameData : frameSynchronization) {
         frameData.Cleanup(vulkanContext.get());
     }
 
-    swapchain.reset();
-
-    vulkanContext.reset();
     SDL_DestroyWindow(window);
 }
 }

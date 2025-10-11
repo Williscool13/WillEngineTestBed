@@ -94,12 +94,12 @@ bool DescriptorBufferSampler::UpdateDescriptorSet(std::span<VkDescriptorImageInf
 
     VkDescriptorGetInfoEXT descriptorGetInfo{};
     descriptorGetInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT;
-    descriptorGetInfo.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    descriptorGetInfo.type = VK_DESCRIPTOR_TYPE_SAMPLER;
 
 
     const size_t samplerSamplerSize = VulkanContext::deviceInfo.descriptorBufferProps.samplerDescriptorSize;
     for (int32_t i = 0; i < imageInfos.size(); i++) {
-        descriptorGetInfo.data.pCombinedImageSampler = &imageInfos[i];
+        descriptorGetInfo.data.pSampler = &imageInfos[i].sampler;
 
         char* bufferPtr = static_cast<char*>(buffer.allocationInfo.pMappedData) + offset + i * samplerSamplerSize;
         vkGetDescriptorEXT(context->device, &descriptorGetInfo, samplerSamplerSize, bufferPtr);
@@ -124,8 +124,8 @@ bool DescriptorBufferSampler::UpdateDescriptor(const VkDescriptorImageInfo& imag
 
     VkDescriptorGetInfoEXT descriptorGetInfo{};
     descriptorGetInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT;
-    descriptorGetInfo.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    descriptorGetInfo.data.pCombinedImageSampler = &imageInfo;
+    descriptorGetInfo.type = VK_DESCRIPTOR_TYPE_SAMPLER;
+    descriptorGetInfo.data.pSampler = &imageInfo.sampler;
 
     const size_t samplerSamplerSize = VulkanContext::deviceInfo.descriptorBufferProps.samplerDescriptorSize;
     char* bufferPtr = static_cast<char*>(buffer.allocationInfo.pMappedData) + offset + bindingIndex * samplerSamplerSize;

@@ -4,9 +4,10 @@
 
 #include "vk_resources.h"
 
+#include "utils.h"
 #include "vulkan_context.h"
 
-void Renderer::Buffer::Cleanup(const VulkanContext* context)
+void Renderer::AllocatedBuffer::Cleanup(const VulkanContext* context)
 {
     if (handle != VK_NULL_HANDLE) {
         vmaDestroyBuffer(context->allocator, handle, allocation);
@@ -15,4 +16,47 @@ void Renderer::Buffer::Cleanup(const VulkanContext* context)
         address = 0;
         size = 0;
     }
+}
+
+void Renderer::AllocatedImage::Cleanup(const VulkanContext* context)
+{
+    if (image != VK_NULL_HANDLE && allocation != VK_NULL_HANDLE) {
+        vmaDestroyImage(context->allocator, image, allocation);
+        image = VK_NULL_HANDLE;
+        allocation = VK_NULL_HANDLE;
+    }
+    imageExtent = {};
+    imageFormat = VK_FORMAT_UNDEFINED;
+    imageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    mipLevels = 0;
+}
+
+void Renderer::AllocatedImageView::Cleanup(const VulkanContext* context)
+{
+    if (imageView != VK_NULL_HANDLE) {
+        vkDestroyImageView(context->device, imageView, nullptr);
+        imageView = VK_NULL_HANDLE;
+    }
+}
+
+Renderer::AllocatedImage Renderer::VkResources::CreateAllocatedImage(const VulkanContext* context, const VkImageCreateInfo& imageCreateInfo)
+{
+    AllocatedImage newImage;
+    constexpr VmaAllocationCreateInfo allocInfo{
+        .flags = 0,
+        .usage = VMA_MEMORY_USAGE_GPU_ONLY,
+        .requiredFlags = static_cast<VkMemoryPropertyFlags>(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT),
+    };
+    newImage.imageFormat = imageCreateInfo.format;
+    newImage.imageExtent = imageCreateInfo.extent;
+    newImage.mipLevels = imageCreateInfo.mipLevels;
+    VK_CHECK(vmaCreateImage(context->allocator, &imageCreateInfo, &allocInfo, &newImage.image, &newImage.allocation, nullptr));
+    return newImage;
+}
+
+Renderer::AllocatedImageView Renderer::VkResources::CreateAllocatedImageView(const VulkanContext* context, const VkImageViewCreateInfo& imageViewCreateInfo)
+{
+    AllocatedImageView newImageView;
+    VK_CHECK(vkCreateImageView(context->device, &imageViewCreateInfo, nullptr, &newImageView.imageView));
+    return newImageView;
 }

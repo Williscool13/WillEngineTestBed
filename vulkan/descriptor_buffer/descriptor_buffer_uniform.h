@@ -35,7 +35,7 @@ struct DescriptorBufferUniform
      * @param descriptorSetIndex Index of descriptor set to update.
      * @return True if successful, false if index is invalid or not allocated.
      */
-    bool UpdateDescriptorSet(std::span<Buffer> uniformBuffers, int32_t descriptorSetIndex);
+    bool UpdateDescriptorSet(std::span<AllocatedBuffer> uniformBuffers, int32_t descriptorSetIndex);
 
     /**
      * Updates a single binding in a descriptor set.
@@ -44,7 +44,7 @@ struct DescriptorBufferUniform
      * @param bindingIndex Binding index within the descriptor set. Must be valid for the layout.
      * @return True if successful, false if indices are invalid or set not allocated.
      */
-    bool UpdateDescriptor(const Buffer& uniformBuffer, int32_t descriptorSetIndex, int32_t bindingIndex);
+    bool UpdateDescriptor(const AllocatedBuffer& uniformBuffer, int32_t descriptorSetIndex, int32_t bindingIndex);
 
     [[nodiscard]] VkDescriptorBufferBindingInfoEXT GetBindingInfo() const;
 
@@ -52,7 +52,7 @@ struct DescriptorBufferUniform
 
 private:
     VulkanContext* context{};
-    Buffer buffer{};
+    AllocatedBuffer buffer{};
 
     /**
      * The size of 1 descriptor set
