@@ -147,4 +147,18 @@ VkPresentInfoKHR VkHelpers::PresentInfo(VkSwapchainKHR* swapchain, VkSemaphore* 
         .pImageIndices = imageIndices,
     };
 }
+
+VkDeviceSize VkHelpers::GetAlignedSize(VkDeviceSize value, VkDeviceSize alignment)
+{
+    return (value + alignment - 1) & ~(alignment - 1);
+}
+
+VkDeviceAddress VkHelpers::GetDeviceAddress(VkDevice device, VkBuffer buffer)
+{
+    VkBufferDeviceAddressInfo bufferDeviceAddressInfo{};
+    bufferDeviceAddressInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+    bufferDeviceAddressInfo.buffer = buffer;
+    const uint64_t address = vkGetBufferDeviceAddress(device, &bufferDeviceAddressInfo);
+    return address;
+}
 }

@@ -16,6 +16,21 @@ add_executable(renderer
         input.h
         vk_helpers.cpp
         vk_helpers.h
+        descriptor_buffer/descriptor_buffer_uniform.cpp
+        descriptor_buffer/descriptor_buffer_uniform.h
+        descriptor_buffer/descriptor_buffer_storage.cpp
+        descriptor_buffer/descriptor_buffer_storage.h
+        vk_resources.cpp
+        vk_resources.h
+        descriptor_buffer/descriptor_buffer_combined_image_sampler.cpp
+        descriptor_buffer/descriptor_buffer_combined_image_sampler.h
+        descriptor_buffer/descriptor_buffer_sampled_image.cpp
+        descriptor_buffer/descriptor_buffer_sampled_image.h
+        descriptor_buffer/descriptor_buffer_sampler.cpp
+        descriptor_buffer/descriptor_buffer_sampler.h
+        descriptor_buffer/descriptor_buffer_storage_image.cpp
+        descriptor_buffer/descriptor_buffer_storage_image.h
+
 )
 
 add_custom_command(TARGET renderer POST_BUILD

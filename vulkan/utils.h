@@ -5,7 +5,7 @@
 #ifndef WILLENGINETESTBED_UTILS_H
 #define WILLENGINETESTBED_UTILS_H
 
-#include <fmt/format.h>
+#include <logger.h>
 #include <vulkan/vk_enum_string_helper.h>
 #include <volk.h>
 
@@ -21,7 +21,7 @@ inline static VkFormat SWAPCHAIN_IMAGE_FORMAT = VK_FORMAT_R8G8B8A8_UNORM;
     do {                                                                     \
         VkResult err = x;                                                    \
         if (err) {                                                           \
-            fmt::print("Detected Vulkan error: {}\n", string_VkResult(err)); \
+            LOG_ERROR("Detected Vulkan error: {}\n", string_VkResult(err)); \
             abort();                                                         \
         }                                                                    \
     } while (0)
