@@ -131,10 +131,54 @@ void Renderer::CreateResources()
 
     VkDescriptorImageInfo drawDescriptorInfo;
     drawDescriptorInfo.imageView = drawImageView.imageView;
-    // Manually update all 3,
+    drawDescriptorInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+    // Manually update all FIF descriptor sets
     for (int i = 0; i < renderFramesInFlight; ++i) {
         bindlessStorageImages->UpdateDescriptor(drawDescriptorInfo, i, 0);
     }
+
+    //
+    {
+        VkPipelineLayoutCreateInfo computePipelineLayoutCreateInfo{};
+        computePipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        computePipelineLayoutCreateInfo.pNext = nullptr;
+        computePipelineLayoutCreateInfo.pSetLayouts = &bindlessStorageImageSetLayout;
+        computePipelineLayoutCreateInfo.setLayoutCount = 1;
+        //  Push Constants
+        /*VkPushConstantRange pushConstant{};
+        pushConstant.offset = 0;
+        pushConstant.size = sizeof(ComputePushConstants);
+        pushConstant.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;*/
+        computePipelineLayoutCreateInfo.pPushConstantRanges = nullptr;
+        computePipelineLayoutCreateInfo.pushConstantRangeCount = 0;
+
+        VK_CHECK(vkCreatePipelineLayout(vulkanContext->device, &computePipelineLayoutCreateInfo, nullptr, &computePipelineLayout));
+
+        VkShaderModule computeShader;
+        if (!VkHelpers::LoadShaderModule("shaders\\compute.comp.spv", vulkanContext->device, &computeShader)) {
+            throw std::runtime_error("Error when building the compute shader (compute.comp.spv)");
+        }
+
+        VkPipelineShaderStageCreateInfo stageinfo{};
+        stageinfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        stageinfo.pNext = nullptr;
+        stageinfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+        stageinfo.module = computeShader;
+        stageinfo.pName = "main";
+
+        VkComputePipelineCreateInfo computePipelineCreateInfo{};
+        computePipelineCreateInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+        computePipelineCreateInfo.pNext = nullptr;
+        computePipelineCreateInfo.layout = computePipelineLayout;
+        computePipelineCreateInfo.stage = stageinfo;
+        computePipelineCreateInfo.flags = VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT;
+
+        VK_CHECK(vkCreateComputePipelines(vulkanContext->device, VK_NULL_HANDLE, 1, &computePipelineCreateInfo, nullptr, &computePipeline));
+
+        // Cleanup
+        vkDestroyShaderModule(vulkanContext->device, computeShader, nullptr);
+    }
+
 
     VkCommandPool immediateCommandPool;
     VkCommandBuffer immediateCommandBuffer;
@@ -210,30 +254,6 @@ void Renderer::Render()
     // Un-signal fence, essentially saying "I'm using this frame-in-flight's resources, hands off".
     VK_CHECK(vkResetFences(vulkanContext->device, 1, &currentFrameData.renderFence));
 
-
-    // Do rendering stuff
-    VkCommandBuffer cmd = currentFrameData.commandBuffer;
-    VK_CHECK(vkResetCommandBuffer(cmd, 0));
-    VkCommandBufferBeginInfo commandBufferBeginInfo = VkHelpers::CommandBufferBeginInfo();
-    VK_CHECK(vkBeginCommandBuffer(cmd, &commandBufferBeginInfo));
-
-    ImGui_ImplVulkan_NewFrame();
-    ImGui_ImplSDL3_NewFrame();
-    ImGui::NewFrame();
-
-    if (input.isKeyPressed(Key::G)) {
-        LOG_INFO("G is pressed");
-    }
-    if (input.isKeyReleased(Key::G)) {
-        LOG_INFO("G is released");
-    }
-    if (ImGui::Begin("Main")) {
-        ImGui::Text("Hello!");
-    }
-    ImGui::End();
-    ImGui::Render();
-
-
     uint32_t swapchainImageIndex;
     // (Non-Blocking) Acquire swapchain image index. Signal semaphore when the actual image is ready for use.
     VkResult e = vkAcquireNextImageKHR(vulkanContext->device, swapchain->handle, 1000000000, currentFrameData.swapchainSemaphore, nullptr, &swapchainImageIndex);
@@ -247,55 +267,158 @@ void Renderer::Render()
     VkImageView currentSwapchainImageView = swapchain->swapchainImageViews[swapchainImageIndex];
 
 
-    // Transition 1
+    // Do rendering stuff
+    VkCommandBuffer cmd = currentFrameData.commandBuffer;
+    VK_CHECK(vkResetCommandBuffer(cmd, 0));
+    VkCommandBufferBeginInfo commandBufferBeginInfo = VkHelpers::CommandBufferBeginInfo();
+    VK_CHECK(vkBeginCommandBuffer(cmd, &commandBufferBeginInfo));
+
+    //
+    {
+        ImGui_ImplVulkan_NewFrame();
+        ImGui_ImplSDL3_NewFrame();
+        ImGui::NewFrame();
+
+        if (input.isKeyPressed(Key::G)) {
+            LOG_INFO("G is pressed");
+        }
+        if (input.isKeyReleased(Key::G)) {
+            LOG_INFO("G is released");
+        }
+        if (ImGui::Begin("Main")) {
+            ImGui::Text("Hello!");
+        }
+        ImGui::End();
+        ImGui::Render();
+    }
+
+
+    // // Transition 1
+    // {
+    //     auto subresource = VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT);
+    //     auto barrier = VkHelpers::ImageMemoryBarrier(
+    //         currentSwapchainImage,
+    //         subresource,
+    //         VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_UNDEFINED,
+    //         VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
+    //     );
+    //     auto dependencyInfo = VkHelpers::DependencyInfo(&barrier);
+    //     vkCmdPipelineBarrier2(cmd, &dependencyInfo);
+    // }
+    //
+    // // Clear Color
+    // {
+    //     int32_t idiv = 360 * 1;
+    //     float fdiv = 360 * 1;
+    //     float t = (frameNumber % idiv) / fdiv;
+    //     float r = std::sin(t * 6.28318f) * 0.5f + 0.5f;
+    //     float g = std::sin((t + 0.333f) * 6.28318f) * 0.5f + 0.5f;
+    //     float b = std::sin((t + 0.666f) * 6.28318f) * 0.5f + 0.5f;
+    //
+    //     VkImageSubresourceRange range{
+    //         .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+    //         .baseMipLevel = 0,
+    //         .levelCount = 1,
+    //         .baseArrayLayer = 0,
+    //         .layerCount = 1
+    //     };
+    //     VkClearColorValue clear = {r, g, b, 1.0f};
+    //     vkCmdClearColorImage(cmd, currentSwapchainImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clear, 1, &range);
+    // }
+    // // Transition 2
+    // {
+    //     auto subresource = VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT);
+    //     auto barrier = VkHelpers::ImageMemoryBarrier(
+    //         currentSwapchainImage,
+    //         subresource,
+    //         VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+    //         VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+    //     );
+    //     auto dependencyInfo = VkHelpers::DependencyInfo(&barrier);
+    //     vkCmdPipelineBarrier2(cmd, &dependencyInfo);
+    // }
+
+    // Transition 1 - Prepare for compute draw
     {
         auto subresource = VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT);
         auto barrier = VkHelpers::ImageMemoryBarrier(
-            currentSwapchainImage,
+            drawImage.image,
             subresource,
-            VK_PIPELINE_STAGE_2_NONE,
-            VK_ACCESS_2_NONE,
-            VK_IMAGE_LAYOUT_UNDEFINED,
-            VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-            VK_ACCESS_2_TRANSFER_WRITE_BIT,
-            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
+            VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_UNDEFINED,
+            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_GENERAL
         );
         auto dependencyInfo = VkHelpers::DependencyInfo(&barrier);
         vkCmdPipelineBarrier2(cmd, &dependencyInfo);
     }
 
-    // Clear Color
+    // Draw compute
     {
-        int32_t idiv = 360 * 1;
-        float fdiv = 360 * 1;
-        float t = (frameNumber % idiv) / fdiv;
-        float r = std::sin(t * 6.28318f) * 0.5f + 0.5f;
-        float g = std::sin((t + 0.333f) * 6.28318f) * 0.5f + 0.5f;
-        float b = std::sin((t + 0.666f) * 6.28318f) * 0.5f + 0.5f;
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline);
+        // Push Constants
+        //vkCmdPushConstants(cmd, _backgroundEffectPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(ComputePushConstants), &selected._data);
+        VkDescriptorBufferBindingInfoEXT descriptorBufferBindingInfo[1]{};
+        //descriptor_buffer_binding_info[0] = computeImageDescriptorBuffer.get_descriptor_buffer_binding_info(_device);
+        descriptorBufferBindingInfo[0] = bindlessStorageImages->GetBindingInfo();
+        vkCmdBindDescriptorBuffersEXT(cmd, 1, descriptorBufferBindingInfo);
 
-        VkImageSubresourceRange range{
-            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = 1
-        };
-        VkClearColorValue clear = {r, g, b, 1.0f};
-        vkCmdClearColorImage(cmd, currentSwapchainImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clear, 1, &range);
+        uint32_t bufferIndexImage = 0;
+        VkDeviceSize bufferOffset = 0;
+        vkCmdSetDescriptorBufferOffsetsEXT(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, computePipelineLayout, 0, 1, &bufferIndexImage, &bufferOffset);
+        vkCmdDispatch(cmd, std::ceil(800 / 16.0), std::ceil(600 / 16.0), 1);
     }
 
-    // Transition 2
+
+    // Transition 2 - Prepare for copy
+    {
+        VkImageMemoryBarrier2 barriers[2];
+        barriers[0] = VkHelpers::ImageMemoryBarrier(
+            drawImage.image,
+            VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT),
+            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_GENERAL,
+            VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
+        );
+        barriers[1] = VkHelpers::ImageMemoryBarrier(
+            currentSwapchainImage,
+            VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT),
+            VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_UNDEFINED,
+            VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
+        );
+        VkDependencyInfo depInfo{.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+        depInfo.imageMemoryBarrierCount = 2;
+        depInfo.pImageMemoryBarriers = barriers;
+        vkCmdPipelineBarrier2(cmd, &depInfo);
+    }
+
+    // Copy
+    {
+        VkImageCopy2 copyRegion{};
+        copyRegion.sType = VK_STRUCTURE_TYPE_IMAGE_COPY_2;
+        copyRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        copyRegion.srcSubresource.layerCount = 1;
+        copyRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        copyRegion.dstSubresource.layerCount = 1;
+        copyRegion.extent = {800, 600, 1};
+
+        VkCopyImageInfo2 copyInfo{};
+        copyInfo.sType = VK_STRUCTURE_TYPE_COPY_IMAGE_INFO_2;
+        copyInfo.srcImage = drawImage.image;
+        copyInfo.srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        copyInfo.dstImage = currentSwapchainImage;
+        copyInfo.dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        copyInfo.regionCount = 1;
+        copyInfo.pRegions = &copyRegion;
+
+        vkCmdCopyImage2(cmd, &copyInfo);
+    }
+
+    // Transition 3 - Prepare for imgui draw
     {
         auto subresource = VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT);
         auto barrier = VkHelpers::ImageMemoryBarrier(
             currentSwapchainImage,
             subresource,
-            VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-            VK_ACCESS_2_TRANSFER_WRITE_BIT,
-            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-            VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+            VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
         );
         auto dependencyInfo = VkHelpers::DependencyInfo(&barrier);
         vkCmdPipelineBarrier2(cmd, &dependencyInfo);
@@ -326,7 +449,7 @@ void Renderer::Render()
     }
 
 
-    // Transition 3
+    // Final transition -
     {
         auto subresource = VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT);
         auto barrier = VkHelpers::ImageMemoryBarrier(
@@ -373,6 +496,9 @@ void Renderer::Cleanup()
     vkDestroyDescriptorSetLayout(vulkanContext->device, bindlessUniformSetLayout, nullptr);
     vkDestroyDescriptorSetLayout(vulkanContext->device, bindlessCombinedImageSamplerSetLayout, nullptr);
     vkDestroyDescriptorSetLayout(vulkanContext->device, bindlessStorageImageSetLayout, nullptr);
+
+    vkDestroyPipelineLayout(vulkanContext->device, computePipelineLayout, nullptr);
+    vkDestroyPipeline(vulkanContext->device, computePipeline, nullptr);
 
     drawImage.Cleanup(vulkanContext.get());
     drawImageView.Cleanup(vulkanContext.get());

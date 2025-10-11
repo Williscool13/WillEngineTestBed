@@ -42,6 +42,8 @@ VkDeviceAddress GetDeviceAddress(VkDevice device, VkBuffer buffer);
 VkImageCreateInfo ImageCreateInfo(VkFormat format, VkExtent3D extent, VkFlags usageFlags);
 
 VkImageViewCreateInfo ImageViewCreateInfo(VkImage image, VkFormat format, VkFlags aspectFlags);
+
+bool LoadShaderModule(const char *filePath, VkDevice device, VkShaderModule *outShaderModule);
 }
 
 

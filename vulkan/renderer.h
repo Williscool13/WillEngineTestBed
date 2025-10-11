@@ -49,6 +49,9 @@ private:
     std::vector<FrameData> frameSynchronization;
     int32_t renderFramesInFlight{0};
 
+    // Probably want separate descriptor buffers/layouts for:
+    //  - Scene Data
+    //  - Render Targets / Depth Image (only need 1 descriptor set because they're invariant)
     VkDescriptorSetLayout bindlessUniformSetLayout;
     std::unique_ptr<DescriptorBufferUniform> bindlessUniforms;
     VkDescriptorSetLayout bindlessCombinedImageSamplerSetLayout;
@@ -59,9 +62,13 @@ private:
     AllocatedImage drawImage;
     AllocatedImageView drawImageView;
 
+    VkPipelineLayout computePipelineLayout;
+    VkPipeline computePipeline;
+
 
     bool bShouldExit{false};
     bool bWindowChanged{false};
+
 };
 }
 
