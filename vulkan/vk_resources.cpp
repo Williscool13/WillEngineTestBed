@@ -20,22 +20,22 @@ void Renderer::AllocatedBuffer::Cleanup(const VulkanContext* context)
 
 void Renderer::AllocatedImage::Cleanup(const VulkanContext* context)
 {
-    if (image != VK_NULL_HANDLE && allocation != VK_NULL_HANDLE) {
-        vmaDestroyImage(context->allocator, image, allocation);
-        image = VK_NULL_HANDLE;
+    if (handle != VK_NULL_HANDLE && allocation != VK_NULL_HANDLE) {
+        vmaDestroyImage(context->allocator, handle, allocation);
+        handle = VK_NULL_HANDLE;
         allocation = VK_NULL_HANDLE;
     }
-    imageExtent = {};
-    imageFormat = VK_FORMAT_UNDEFINED;
-    imageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    extent = {};
+    format = VK_FORMAT_UNDEFINED;
+    layout = VK_IMAGE_LAYOUT_UNDEFINED;
     mipLevels = 0;
 }
 
 void Renderer::AllocatedImageView::Cleanup(const VulkanContext* context)
 {
-    if (imageView != VK_NULL_HANDLE) {
-        vkDestroyImageView(context->device, imageView, nullptr);
-        imageView = VK_NULL_HANDLE;
+    if (handle != VK_NULL_HANDLE) {
+        vkDestroyImageView(context->device, handle, nullptr);
+        handle = VK_NULL_HANDLE;
     }
 }
 
@@ -47,16 +47,16 @@ Renderer::AllocatedImage Renderer::VkResources::CreateAllocatedImage(const Vulka
         .usage = VMA_MEMORY_USAGE_GPU_ONLY,
         .requiredFlags = static_cast<VkMemoryPropertyFlags>(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT),
     };
-    newImage.imageFormat = imageCreateInfo.format;
-    newImage.imageExtent = imageCreateInfo.extent;
+    newImage.format = imageCreateInfo.format;
+    newImage.extent = imageCreateInfo.extent;
     newImage.mipLevels = imageCreateInfo.mipLevels;
-    VK_CHECK(vmaCreateImage(context->allocator, &imageCreateInfo, &allocInfo, &newImage.image, &newImage.allocation, nullptr));
+    VK_CHECK(vmaCreateImage(context->allocator, &imageCreateInfo, &allocInfo, &newImage.handle, &newImage.allocation, nullptr));
     return newImage;
 }
 
 Renderer::AllocatedImageView Renderer::VkResources::CreateAllocatedImageView(const VulkanContext* context, const VkImageViewCreateInfo& imageViewCreateInfo)
 {
     AllocatedImageView newImageView;
-    VK_CHECK(vkCreateImageView(context->device, &imageViewCreateInfo, nullptr, &newImageView.imageView));
+    VK_CHECK(vkCreateImageView(context->device, &imageViewCreateInfo, nullptr, &newImageView.handle));
     return newImageView;
 }

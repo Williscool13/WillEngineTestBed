@@ -16,6 +16,7 @@
 #include "input.h"
 #include "vk_descriptors.h"
 #include "vk_helpers.h"
+#include "vk_pipelines.h"
 #include "descriptor_buffer/descriptor_buffer_combined_image_sampler.h"
 #include "descriptor_buffer/descriptor_buffer_storage_image.h"
 #include "descriptor_buffer/descriptor_buffer_uniform.h"
@@ -138,27 +139,43 @@ void Renderer::CreateResources()
         }
     }
 
+    //
+    {
+        VkImageUsageFlags drawImageUsages{};
+        drawImageUsages |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+        drawImageUsages |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+        drawImageUsages |= VK_IMAGE_USAGE_STORAGE_BIT;
+        drawImageUsages |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+        drawImageUsages |= VK_IMAGE_USAGE_SAMPLED_BIT;
+        VkImageCreateInfo drawImageCreateInfo = VkHelpers::ImageCreateInfo(VK_FORMAT_R8G8B8A8_UNORM, {800, 600, 1}, drawImageUsages);
+        drawImage = VkResources::CreateAllocatedImage(vulkanContext.get(), drawImageCreateInfo);
 
-    VkImageUsageFlags drawImageUsages{};
-    drawImageUsages |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-    drawImageUsages |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-    drawImageUsages |= VK_IMAGE_USAGE_STORAGE_BIT;
-    drawImageUsages |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-    drawImageUsages |= VK_IMAGE_USAGE_SAMPLED_BIT;
-    VkImageCreateInfo drawImageCreateInfo = VkHelpers::ImageCreateInfo(VK_FORMAT_R8G8B8A8_UNORM, {800, 600, 1}, drawImageUsages);
-    drawImage = VkResources::CreateAllocatedImage(vulkanContext.get(), drawImageCreateInfo);
+        VkImageViewCreateInfo drawImageViewCreateInfo = VkHelpers::ImageViewCreateInfo(drawImage.handle, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT);
+        drawImageView = VkResources::CreateAllocatedImageView(vulkanContext.get(), drawImageViewCreateInfo);
+    }
 
-    VkImageViewCreateInfo drawImageViewCreateInfo = VkHelpers::ImageViewCreateInfo(drawImage.image, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT);
-    drawImageView = VkResources::CreateAllocatedImageView(vulkanContext.get(), drawImageViewCreateInfo);
+    //
+    {
+        VkImageUsageFlags depthImageUsages{};
+        depthImageUsages |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+        depthImageUsages |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+        depthImageUsages |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+        depthImageUsages |= VK_IMAGE_USAGE_SAMPLED_BIT;
+        VkImageCreateInfo depthImageCreateInfo = VkHelpers::ImageCreateInfo(VK_FORMAT_D32_SFLOAT, {800, 600, 1}, depthImageUsages);
+        depthImage = VkResources::CreateAllocatedImage(vulkanContext.get(), depthImageCreateInfo);
+
+        VkImageViewCreateInfo depthImageViewCreateInfo = VkHelpers::ImageViewCreateInfo(depthImage.handle, VK_FORMAT_D32_SFLOAT, VK_IMAGE_ASPECT_DEPTH_BIT);
+        depthImageView = VkResources::CreateAllocatedImageView(vulkanContext.get(), depthImageViewCreateInfo);
+    }
 
     VkDescriptorImageInfo drawDescriptorInfo;
-    drawDescriptorInfo.imageView = drawImageView.imageView;
+    drawDescriptorInfo.imageView = drawImageView.handle;
     drawDescriptorInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 
     // only 1 set (invariant), binding 1 is the drawImage binding, not an array so 0
     renderTargets->UpdateDescriptor(drawDescriptorInfo, 0, 0, 0);
 
-    //
+    // Compute Pipeline
     {
         VkPipelineLayoutCreateInfo computePipelineLayoutCreateInfo{};
         computePipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -186,6 +203,50 @@ void Renderer::CreateResources()
 
         // Cleanup
         vkDestroyShaderModule(vulkanContext->device, computeShader, nullptr);
+    }
+
+    // Render Pipeline
+    {
+        VkPipelineLayoutCreateInfo renderPipelineLayoutCreateInfo{};
+        renderPipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        renderPipelineLayoutCreateInfo.setLayoutCount = 0;
+        renderPipelineLayoutCreateInfo.pSetLayouts = nullptr;
+        renderPipelineLayoutCreateInfo.pushConstantRangeCount = 0;
+        renderPipelineLayoutCreateInfo.pPushConstantRanges = nullptr;
+        // VkPushConstantRange renderPushConstantRange{};
+        // renderPushConstantRange.offset = 0;
+        // renderPushConstantRange.size = sizeof(RenderPushConstant);
+        // renderPushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+        // std::array layouts{resourceManager.getSceneDataLayout(), samplerDescriptorLayout->layout};
+        // layoutInfo.pSetLayouts = layouts.data();
+        // layoutInfo.pPushConstantRanges = &renderPushConstantRange;
+        // layoutInfo.pushConstantRangeCount = 1;
+
+        VK_CHECK(vkCreatePipelineLayout(vulkanContext->device, &renderPipelineLayoutCreateInfo, nullptr, &renderPipelineLayout));
+
+        VkShaderModule vertShader;
+        VkShaderModule fragShader;
+        if (!VkHelpers::LoadShaderModule("shaders\\vertex.vert.spv", vulkanContext->device, &vertShader)) {
+            throw std::runtime_error("Error when building the compute shader (vertex.vert.spv)");
+        }
+        if (!VkHelpers::LoadShaderModule("shaders\\fragment.frag.spv", vulkanContext->device, &fragShader)) {
+            throw std::runtime_error("Error when building the compute shader (fragment.frag.spv)");
+        }
+
+        RenderPipelineBuilder renderPipelineBuilder;
+        renderPipelineBuilder.setShaders(vertShader, fragShader);
+        renderPipelineBuilder.setupInputAssembly(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+        renderPipelineBuilder.setupRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_BACK_BIT, VK_FRONT_FACE_CLOCKWISE);
+        renderPipelineBuilder.disableMultisampling();
+        renderPipelineBuilder.disableBlending();
+        renderPipelineBuilder.enableDepthTest(true, VK_COMPARE_OP_GREATER_OR_EQUAL);
+        renderPipelineBuilder.setupRenderer({VK_FORMAT_R8G8B8A8_UNORM}, VK_FORMAT_D32_SFLOAT);
+        renderPipelineBuilder.setupPipelineLayout(renderPipelineLayout);
+        VkGraphicsPipelineCreateInfo pipelineCreateInfo = renderPipelineBuilder.generatePipelineCreateInfo();
+        VK_CHECK(vkCreateGraphicsPipelines(vulkanContext->device, VK_NULL_HANDLE, 1, &pipelineCreateInfo, nullptr, &renderPipeline));
+
+        vkDestroyShaderModule(vulkanContext->device, vertShader, nullptr);
+        vkDestroyShaderModule(vulkanContext->device, fragShader, nullptr);
     }
 
 
@@ -301,136 +362,185 @@ void Renderer::Render()
         ImGui::Render();
     }
 
+    // Clear Color
+    /*{
+        // Transition 1
+        {
+            auto subresource = VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT);
+            auto barrier = VkHelpers::ImageMemoryBarrier(
+                currentSwapchainImage,
+                subresource,
+                VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_UNDEFINED,
+                VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
+            );
+            auto dependencyInfo = VkHelpers::DependencyInfo(&barrier);
+            vkCmdPipelineBarrier2(cmd, &dependencyInfo);
+        }
 
-    // // Transition 1
-    // {
-    //     auto subresource = VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT);
-    //     auto barrier = VkHelpers::ImageMemoryBarrier(
-    //         currentSwapchainImage,
-    //         subresource,
-    //         VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_UNDEFINED,
-    //         VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
-    //     );
-    //     auto dependencyInfo = VkHelpers::DependencyInfo(&barrier);
-    //     vkCmdPipelineBarrier2(cmd, &dependencyInfo);
-    // }
-    //
-    // // Clear Color
-    // {
-    //     int32_t idiv = 360 * 1;
-    //     float fdiv = 360 * 1;
-    //     float t = (frameNumber % idiv) / fdiv;
-    //     float r = std::sin(t * 6.28318f) * 0.5f + 0.5f;
-    //     float g = std::sin((t + 0.333f) * 6.28318f) * 0.5f + 0.5f;
-    //     float b = std::sin((t + 0.666f) * 6.28318f) * 0.5f + 0.5f;
-    //
-    //     VkImageSubresourceRange range{
-    //         .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-    //         .baseMipLevel = 0,
-    //         .levelCount = 1,
-    //         .baseArrayLayer = 0,
-    //         .layerCount = 1
-    //     };
-    //     VkClearColorValue clear = {r, g, b, 1.0f};
-    //     vkCmdClearColorImage(cmd, currentSwapchainImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clear, 1, &range);
-    // }
-    // // Transition 2
-    // {
-    //     auto subresource = VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT);
-    //     auto barrier = VkHelpers::ImageMemoryBarrier(
-    //         currentSwapchainImage,
-    //         subresource,
-    //         VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-    //         VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
-    //     );
-    //     auto dependencyInfo = VkHelpers::DependencyInfo(&barrier);
-    //     vkCmdPipelineBarrier2(cmd, &dependencyInfo);
-    // }
+        // Clear Color
+        {
+            int32_t idiv = 360 * 1;
+            float fdiv = 360 * 1;
+            float t = (frameNumber % idiv) / fdiv;
+            float r = std::sin(t * 6.28318f) * 0.5f + 0.5f;
+            float g = std::sin((t + 0.333f) * 6.28318f) * 0.5f + 0.5f;
+            float b = std::sin((t + 0.666f) * 6.28318f) * 0.5f + 0.5f;
 
-    // Transition 1 - Prepare for compute draw
+            VkImageSubresourceRange range{
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1
+            };
+            VkClearColorValue clear = {r, g, b, 1.0f};
+            vkCmdClearColorImage(cmd, currentSwapchainImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clear, 1, &range);
+        }
+        // Transition 2
+        {
+            auto subresource = VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT);
+            auto barrier = VkHelpers::ImageMemoryBarrier(
+                currentSwapchainImage,
+                subresource,
+                VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+            );
+            auto dependencyInfo = VkHelpers::DependencyInfo(&barrier);
+            vkCmdPipelineBarrier2(cmd, &dependencyInfo);
+        }
+    }*/
+
+    // Compute Shader
     {
-        auto subresource = VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT);
-        auto barrier = VkHelpers::ImageMemoryBarrier(
-            drawImage.image,
-            subresource,
-            VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_UNDEFINED,
-            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_GENERAL
-        );
-        auto dependencyInfo = VkHelpers::DependencyInfo(&barrier);
-        vkCmdPipelineBarrier2(cmd, &dependencyInfo);
-    }
+        // Transition 1 - Prepare for compute draw
+        {
+            auto subresource = VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT);
+            auto barrier = VkHelpers::ImageMemoryBarrier(
+                drawImage.handle,
+                subresource,
+                VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_UNDEFINED,
+                VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_GENERAL
+            );
+            auto dependencyInfo = VkHelpers::DependencyInfo(&barrier);
+            vkCmdPipelineBarrier2(cmd, &dependencyInfo);
+        }
 
-    // Draw compute
-    {
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline);
-        // Push Constants
-        //vkCmdPushConstants(cmd, _backgroundEffectPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(ComputePushConstants), &selected._data);
-        VkDescriptorBufferBindingInfoEXT descriptorBufferBindingInfo[1]{};
-        //descriptor_buffer_binding_info[0] = computeImageDescriptorBuffer.get_descriptor_buffer_binding_info(_device);
-        descriptorBufferBindingInfo[0] = renderTargets->GetBindingInfo();
-        vkCmdBindDescriptorBuffersEXT(cmd, 1, descriptorBufferBindingInfo);
+        // Draw compute
+        {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline);
+            // Push Constants
+            //vkCmdPushConstants(cmd, _backgroundEffectPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(ComputePushConstants), &selected._data);
+            VkDescriptorBufferBindingInfoEXT descriptorBufferBindingInfo[1]{};
+            descriptorBufferBindingInfo[0] = renderTargets->GetBindingInfo();
+            vkCmdBindDescriptorBuffersEXT(cmd, 1, descriptorBufferBindingInfo);
 
-        uint32_t bufferIndexImage = 0;
-        VkDeviceSize bufferOffset = 0;
-        vkCmdSetDescriptorBufferOffsetsEXT(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, computePipelineLayout, 0, 1, &bufferIndexImage, &bufferOffset);
-        vkCmdDispatch(cmd, std::ceil(800 / 16.0), std::ceil(600 / 16.0), 1);
-    }
+            uint32_t bufferIndexImage = 0;
+            VkDeviceSize bufferOffset = 0;
+            vkCmdSetDescriptorBufferOffsetsEXT(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, computePipelineLayout, 0, 1, &bufferIndexImage, &bufferOffset);
+            vkCmdDispatch(cmd, std::ceil(800 / 16.0), std::ceil(600 / 16.0), 1);
+        }
+
+        // Transition 2 - Prepare for render draw
+        {
+            auto subresource = VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT);
+            auto barrier = VkHelpers::ImageMemoryBarrier(
+                drawImage.handle,
+                subresource,
+                VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_GENERAL,
+                VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+            );
+            auto dependencyInfo = VkHelpers::DependencyInfo(&barrier);
+            vkCmdPipelineBarrier2(cmd, &dependencyInfo);
+        }
+
+        // Draw render
+        {
+            const VkRenderingAttachmentInfo colorAttachment = VkHelpers::RenderingAttachmentInfo(drawImageView.handle, nullptr, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+            constexpr VkClearValue depthClear = {.depthStencil = {0.0f, 0u}};
+            const VkRenderingAttachmentInfo depthAttachment = VkHelpers::RenderingAttachmentInfo(depthImageView.handle, &depthClear, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+            const VkRenderingInfo renderInfo = VkHelpers::RenderingInfo({800, 600}, &colorAttachment, &depthAttachment);
 
 
-    // Transition 2 - Prepare for copy
-    {
-        VkImageMemoryBarrier2 barriers[2];
-        barriers[0] = VkHelpers::ImageMemoryBarrier(
-            drawImage.image,
-            VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT),
-            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_GENERAL,
-            VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
-        );
-        barriers[1] = VkHelpers::ImageMemoryBarrier(
-            currentSwapchainImage,
-            VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT),
-            VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_UNDEFINED,
-            VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
-        );
-        VkDependencyInfo depInfo{.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
-        depInfo.imageMemoryBarrierCount = 2;
-        depInfo.pImageMemoryBarriers = barriers;
-        vkCmdPipelineBarrier2(cmd, &depInfo);
-    }
+            vkCmdBeginRendering(cmd, &renderInfo);
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, renderPipeline);
 
-    // Copy
-    {
-        VkImageCopy2 copyRegion{};
-        copyRegion.sType = VK_STRUCTURE_TYPE_IMAGE_COPY_2;
-        copyRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        copyRegion.srcSubresource.layerCount = 1;
-        copyRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        copyRegion.dstSubresource.layerCount = 1;
-        copyRegion.extent = {800, 600, 1};
+            // Dynamic States
+            //  Viewport
+            VkViewport viewport = {};
+            viewport.x = 0;
+            viewport.y = 0;
+            viewport.width = 800;
+            viewport.height = 600;
+            viewport.minDepth = 0.f;
+            viewport.maxDepth = 1.f;
+            vkCmdSetViewport(cmd, 0, 1, &viewport);
+            //  Scissor
+            VkRect2D scissor = {};
+            scissor.offset.x = 0;
+            scissor.offset.y = 0;
+            scissor.extent.width = 800;
+            scissor.extent.height = 600;
+            vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-        VkCopyImageInfo2 copyInfo{};
-        copyInfo.sType = VK_STRUCTURE_TYPE_COPY_IMAGE_INFO_2;
-        copyInfo.srcImage = drawImage.image;
-        copyInfo.srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-        copyInfo.dstImage = currentSwapchainImage;
-        copyInfo.dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        copyInfo.regionCount = 1;
-        copyInfo.pRegions = &copyRegion;
+            vkCmdDraw(cmd, 6, 1, 0, 0);
+            vkCmdEndRendering(cmd);
+        }
 
-        vkCmdCopyImage2(cmd, &copyInfo);
-    }
+        // Transition 2 - Prepare for copy
+        {
+            VkImageMemoryBarrier2 barriers[2];
+            barriers[0] = VkHelpers::ImageMemoryBarrier(
+                drawImage.handle,
+                VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT),
+                VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
+            );
+            barriers[1] = VkHelpers::ImageMemoryBarrier(
+                currentSwapchainImage,
+                VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT),
+                VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_UNDEFINED,
+                VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
+            );
+            VkDependencyInfo depInfo{.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+            depInfo.imageMemoryBarrierCount = 2;
+            depInfo.pImageMemoryBarriers = barriers;
+            vkCmdPipelineBarrier2(cmd, &depInfo);
+        }
 
-    // Transition 3 - Prepare for imgui draw
-    {
-        auto subresource = VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT);
-        auto barrier = VkHelpers::ImageMemoryBarrier(
-            currentSwapchainImage,
-            subresource,
-            VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
-        );
-        auto dependencyInfo = VkHelpers::DependencyInfo(&barrier);
-        vkCmdPipelineBarrier2(cmd, &dependencyInfo);
+        // Copy
+        {
+            VkImageCopy2 copyRegion{};
+            copyRegion.sType = VK_STRUCTURE_TYPE_IMAGE_COPY_2;
+            copyRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            copyRegion.srcSubresource.layerCount = 1;
+            copyRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            copyRegion.dstSubresource.layerCount = 1;
+            copyRegion.extent = {800, 600, 1};
+
+            VkCopyImageInfo2 copyInfo{};
+            copyInfo.sType = VK_STRUCTURE_TYPE_COPY_IMAGE_INFO_2;
+            copyInfo.srcImage = drawImage.handle;
+            copyInfo.srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+            copyInfo.dstImage = currentSwapchainImage;
+            copyInfo.dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            copyInfo.regionCount = 1;
+            copyInfo.pRegions = &copyRegion;
+
+            vkCmdCopyImage2(cmd, &copyInfo);
+        }
+
+        // Transition 3 - Prepare for imgui draw
+        {
+            auto subresource = VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT);
+            auto barrier = VkHelpers::ImageMemoryBarrier(
+                currentSwapchainImage,
+                subresource,
+                VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+            );
+            auto dependencyInfo = VkHelpers::DependencyInfo(&barrier);
+            vkCmdPipelineBarrier2(cmd, &dependencyInfo);
+        }
     }
 
     // Imgui Draw
@@ -509,9 +619,13 @@ void Renderer::Cleanup()
 
     vkDestroyPipelineLayout(vulkanContext->device, computePipelineLayout, nullptr);
     vkDestroyPipeline(vulkanContext->device, computePipeline, nullptr);
+    vkDestroyPipelineLayout(vulkanContext->device, renderPipelineLayout, nullptr);
+    vkDestroyPipeline(vulkanContext->device, renderPipeline, nullptr);
 
     drawImage.Cleanup(vulkanContext.get());
     drawImageView.Cleanup(vulkanContext.get());
+    depthImage.Cleanup(vulkanContext.get());
+    depthImageView.Cleanup(vulkanContext.get());
 
     for (FrameData& frameData : frameSynchronization) {
         frameData.Cleanup(vulkanContext.get());

@@ -63,9 +63,14 @@ private:
 
     AllocatedImage drawImage;
     AllocatedImageView drawImageView;
+    AllocatedImage depthImage;
+    AllocatedImageView depthImageView;
 
     VkPipelineLayout computePipelineLayout;
     VkPipeline computePipeline;
+
+    VkPipelineLayout renderPipelineLayout;
+    VkPipeline renderPipeline;
 
 
     bool bShouldExit{false};

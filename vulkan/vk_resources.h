@@ -29,10 +29,10 @@ struct AllocatedBuffer
 struct AllocatedImage
 {
 
-    VkImage image{};
-    VkFormat imageFormat{};
-    VkExtent3D imageExtent{};
-    VkImageLayout imageLayout{};
+    VkImage handle{};
+    VkFormat format{};
+    VkExtent3D extent{};
+    VkImageLayout layout{};
     uint32_t mipLevels{};
     VmaAllocation allocation{};
 
@@ -41,7 +41,7 @@ struct AllocatedImage
 
 struct AllocatedImageView
 {
-    VkImageView imageView{};
+    VkImageView handle{};
 
     void Cleanup(const VulkanContext* context);
 };

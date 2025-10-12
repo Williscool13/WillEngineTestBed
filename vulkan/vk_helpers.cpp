@@ -275,4 +275,31 @@ VkComputePipelineCreateInfo VkHelpers::ComputePipelineCreateInfo(VkPipelineLayou
         .layout = pipelineLayout,
     };
 }
+
+VkRenderingAttachmentInfo VkHelpers::RenderingAttachmentInfo(VkImageView view, const VkClearValue* clear, VkImageLayout layout)
+{
+    return {
+        .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+        .pNext = nullptr,
+        .imageView = view,
+        .imageLayout = layout,
+        .loadOp = clear ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD,
+        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+        .clearValue = clear ? *clear : VkClearValue{}
+    };
+}
+
+VkRenderingInfo VkHelpers::RenderingInfo(const VkExtent2D renderExtent, const VkRenderingAttachmentInfo* colorAttachment, const VkRenderingAttachmentInfo* depthAttachment)
+{
+    return {
+        .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+        .pNext = nullptr,
+        .renderArea = VkRect2D{VkOffset2D{0, 0}, renderExtent},
+        .layerCount = 1,
+        .colorAttachmentCount = colorAttachment == nullptr ? 0u : 1u,
+        .pColorAttachments = colorAttachment,
+        .pDepthAttachment = depthAttachment,
+        .pStencilAttachment = nullptr,
+    };
+}
 }

@@ -57,6 +57,10 @@ VulkanContext:: VulkanContext(SDL_Window* window)
     // vk 1.2
     VkPhysicalDeviceVulkan12Features features12{};
     features12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+
+    VkPhysicalDeviceVulkan11Features features11{};
+    features11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+
     // Descriptor Buffer Extension
     VkPhysicalDeviceDescriptorBufferFeaturesEXT descriptorBufferFeatures = {};
     descriptorBufferFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_FEATURES_EXT;
@@ -76,6 +80,8 @@ VulkanContext:: VulkanContext(SDL_Window* window)
     features12.shaderUniformBufferArrayNonUniformIndexing  = VK_TRUE;
     features12.shaderStorageBufferArrayNonUniformIndexing = VK_TRUE;
 
+    // SV_VertexID
+    features11.shaderDrawParameters = VK_TRUE;
 
 
     vkb::PhysicalDeviceSelector selector{vkb_inst};
@@ -83,6 +89,7 @@ VulkanContext:: VulkanContext(SDL_Window* window)
             .set_minimum_version(1, 3)
             .set_required_features_13(features)
             .set_required_features_12(features12)
+            .set_required_features_11(features11)
             .add_required_extension(VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME)
             .set_surface(surface)
             .select()

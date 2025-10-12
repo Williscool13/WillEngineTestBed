@@ -32,6 +32,8 @@ add_executable(renderer
         descriptor_buffer/descriptor_buffer_storage_image.h
         vk_descriptors.h
         vk_descriptors.cpp
+        vk_pipelines.cpp
+        vk_pipelines.h
 
 )
 

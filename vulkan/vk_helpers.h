@@ -48,6 +48,10 @@ bool LoadShaderModule(const char* filePath, VkDevice device, VkShaderModule* out
 VkPipelineShaderStageCreateInfo PipelineShaderStageCreateInfo(VkShaderModule computeShader, VkShaderStageFlagBits shaderStage);
 
 VkComputePipelineCreateInfo ComputePipelineCreateInfo(VkPipelineLayout pipelineLayout, const VkPipelineShaderStageCreateInfo& pipelineStageCreateInfo);
+
+VkRenderingAttachmentInfo RenderingAttachmentInfo(VkImageView view, const VkClearValue* clear, VkImageLayout layout);
+
+VkRenderingInfo RenderingInfo(VkExtent2D renderExtent, const VkRenderingAttachmentInfo* colorAttachment, const VkRenderingAttachmentInfo* depthAttachment);
 }
 
 
