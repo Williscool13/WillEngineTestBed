@@ -253,4 +253,26 @@ bool VkHelpers::LoadShaderModule(const char* filePath, VkDevice device, VkShader
     *outShaderModule = shaderModule;
     return true;
 }
+
+VkPipelineShaderStageCreateInfo VkHelpers::PipelineShaderStageCreateInfo(VkShaderModule computeShader, VkShaderStageFlagBits shaderStage)
+{
+    return {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+        .pNext = nullptr,
+        .stage = shaderStage,
+        .module = computeShader,
+        .pName = "main",
+    };
+}
+
+VkComputePipelineCreateInfo VkHelpers::ComputePipelineCreateInfo(VkPipelineLayout pipelineLayout, const VkPipelineShaderStageCreateInfo& pipelineStageCreateInfo)
+{
+    return {
+        .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT,
+        .stage = pipelineStageCreateInfo,
+        .layout = pipelineLayout,
+    };
+}
 }

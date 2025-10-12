@@ -13,13 +13,11 @@ namespace Renderer
 DescriptorBufferUniform::DescriptorBufferUniform() = default;
 
 DescriptorBufferUniform::DescriptorBufferUniform(VulkanContext* context, VkDescriptorSetLayout setLayout, int32_t maxSetCount)
-    : context(context)
+    : context(context), descriptorSetLayout(setLayout)
 {
     // Get size per descriptor set (Aligned).
     vkGetDescriptorSetLayoutSizeEXT(context->device, setLayout, &descriptorSetSize);
     descriptorSetSize = VkHelpers::GetAlignedSize(descriptorSetSize, VulkanContext::deviceInfo.descriptorBufferProps.descriptorBufferOffsetAlignment);
-    // Get descriptor buffer ptr after offset (potential metadata)
-    vkGetDescriptorSetLayoutBindingOffsetEXT(context->device, setLayout, 0u, &metadataOffset);
 
     // Set up indices in the descriptor buffer
     freeIndices.clear();
@@ -76,7 +74,7 @@ int32_t DescriptorBufferUniform::AllocateDescriptorSet()
     return descriptorSetIndex;
 }
 
-bool DescriptorBufferUniform::UpdateDescriptorSet(const std::span<AllocatedBuffer> uniformBuffers, int32_t descriptorSetIndex)
+bool DescriptorBufferUniform::UpdateDescriptorSet(const std::span<AllocatedBuffer> uniformBuffers, int32_t descriptorSetIndex, int32_t descriptorBindingIndex)
 {
     if (descriptorSetIndex < 0 || descriptorSetIndex >= maxDescriptorSets) {
         LOG_ERROR("Invalid descriptor set index: {}", descriptorSetIndex);
@@ -89,8 +87,11 @@ bool DescriptorBufferUniform::UpdateDescriptorSet(const std::span<AllocatedBuffe
         return false;
     }
 
-    // Base offset
-    uint64_t offset = metadataOffset + descriptorSetIndex * descriptorSetSize;
+    // location = bufferAddress + setOffset + descriptorOffset + (arrayElement × descriptorSize)
+    size_t setOffset = descriptorSetIndex * descriptorSetSize;
+    size_t bindingOffset;
+    vkGetDescriptorSetLayoutBindingOffsetEXT(context->device, descriptorSetLayout, descriptorBindingIndex, &bindingOffset);
+    char* basePtr = static_cast<char*>(buffer.allocationInfo.pMappedData) + setOffset + bindingOffset;
 
     VkDescriptorAddressInfoEXT descriptorAddressInfo = {};
     descriptorAddressInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_ADDRESS_INFO_EXT;
@@ -106,14 +107,14 @@ bool DescriptorBufferUniform::UpdateDescriptorSet(const std::span<AllocatedBuffe
         descriptorAddressInfo.address = uniformBuffers[i].address;
         descriptorAddressInfo.range = uniformBuffers[i].size;
 
-        char* bufferPtr = static_cast<char*>(buffer.allocationInfo.pMappedData) + offset + i * uniformBufferSize;
+        char* bufferPtr = basePtr + i * uniformBufferSize;
         vkGetDescriptorEXT(context->device, &descriptorGetInfo, uniformBufferSize, bufferPtr);
     }
 
     return true;
 }
 
-bool DescriptorBufferUniform::UpdateDescriptor(const AllocatedBuffer& uniformBuffer, int32_t descriptorSetIndex, int32_t bindingIndex)
+bool DescriptorBufferUniform::UpdateDescriptor(const AllocatedBuffer& uniformBuffer, int32_t descriptorSetIndex, int32_t descriptorBindingIndex, int32_t bindingArrayIndex)
 {
     if (descriptorSetIndex < 0 || descriptorSetIndex >= maxDescriptorSets) {
         LOG_ERROR("Invalid descriptor set index: {}", descriptorSetIndex);
@@ -125,8 +126,11 @@ bool DescriptorBufferUniform::UpdateDescriptor(const AllocatedBuffer& uniformBuf
         return false;
     }
 
-    const uint64_t offset = metadataOffset + descriptorSetIndex * descriptorSetSize;
-    const size_t uniformBufferSize = VulkanContext::deviceInfo.descriptorBufferProps.uniformBufferDescriptorSize;
+    // location = bufferAddress + setOffset + descriptorOffset + (arrayElement × descriptorSize)
+    size_t setOffset = descriptorSetIndex * descriptorSetSize;
+    size_t bindingOffset;
+    vkGetDescriptorSetLayoutBindingOffsetEXT(context->device, descriptorSetLayout, descriptorBindingIndex, &bindingOffset);
+    char* basePtr = static_cast<char*>(buffer.allocationInfo.pMappedData) + setOffset + bindingOffset;
 
     VkDescriptorAddressInfoEXT descriptorAddressInfo = {};
     descriptorAddressInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_ADDRESS_INFO_EXT;
@@ -139,7 +143,8 @@ bool DescriptorBufferUniform::UpdateDescriptor(const AllocatedBuffer& uniformBuf
     descriptorGetInfo.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     descriptorGetInfo.data.pUniformBuffer = &descriptorAddressInfo;
 
-    char* bufferPtr = static_cast<char*>(buffer.allocationInfo.pMappedData) + offset + bindingIndex * uniformBufferSize;
+    const size_t uniformBufferSize = VulkanContext::deviceInfo.descriptorBufferProps.uniformBufferDescriptorSize;
+    char* bufferPtr = basePtr + bindingArrayIndex * uniformBufferSize;
     vkGetDescriptorEXT(context->device, &descriptorGetInfo, uniformBufferSize, bufferPtr);
 
     return true;

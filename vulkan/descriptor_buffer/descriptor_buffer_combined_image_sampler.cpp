@@ -13,13 +13,11 @@ namespace Renderer
 DescriptorBufferCombinedImageSampler::DescriptorBufferCombinedImageSampler() = default;
 
 DescriptorBufferCombinedImageSampler::DescriptorBufferCombinedImageSampler(VulkanContext* context, VkDescriptorSetLayout setLayout, int32_t maxSetCount)
-    : context(context)
+    : context(context), descriptorSetLayout(setLayout)
 {
     // Get size per descriptor set (Aligned).
-    vkGetDescriptorSetLayoutSizeEXT(context->device, setLayout, &descriptorSetSize);
+    vkGetDescriptorSetLayoutSizeEXT(context->device, descriptorSetLayout, &descriptorSetSize);
     descriptorSetSize = VkHelpers::GetAlignedSize(descriptorSetSize, VulkanContext::deviceInfo.descriptorBufferProps.descriptorBufferOffsetAlignment);
-    // Get descriptor buffer ptr after offset (potential metadata)
-    vkGetDescriptorSetLayoutBindingOffsetEXT(context->device, setLayout, 0u, &metadataOffset);
 
     // Set up indices in the descriptor buffer
     freeIndices.clear();
@@ -76,7 +74,7 @@ int32_t DescriptorBufferCombinedImageSampler::AllocateDescriptorSet()
     return descriptorSetIndex;
 }
 
-bool DescriptorBufferCombinedImageSampler::UpdateDescriptorSet(std::span<VkDescriptorImageInfo> imageInfos, int32_t descriptorSetIndex)
+bool DescriptorBufferCombinedImageSampler::UpdateDescriptorSet(std::span<VkDescriptorImageInfo> imageInfos, int32_t descriptorSetIndex, const int32_t descriptorBindingIndex)
 {
     if (descriptorSetIndex < 0 || descriptorSetIndex >= maxDescriptorSets) {
         LOG_ERROR("Invalid descriptor set index: {}", descriptorSetIndex);
@@ -89,8 +87,12 @@ bool DescriptorBufferCombinedImageSampler::UpdateDescriptorSet(std::span<VkDescr
         return false;
     }
 
-    // Base offset
-    const uint64_t offset = metadataOffset + descriptorSetIndex * descriptorSetSize;
+
+    // location = bufferAddress + setOffset + descriptorOffset + (arrayElement × descriptorSize)
+    size_t setOffset = descriptorSetIndex * descriptorSetSize;
+    size_t bindingOffset;
+    vkGetDescriptorSetLayoutBindingOffsetEXT(context->device, descriptorSetLayout, descriptorBindingIndex, &bindingOffset);
+    char* basePtr = static_cast<char*>(buffer.allocationInfo.pMappedData) + setOffset + bindingOffset;
 
     VkDescriptorGetInfoEXT descriptorGetInfo{};
     descriptorGetInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT;
@@ -101,14 +103,14 @@ bool DescriptorBufferCombinedImageSampler::UpdateDescriptorSet(std::span<VkDescr
     for (int32_t i = 0; i < imageInfos.size(); i++) {
         descriptorGetInfo.data.pCombinedImageSampler = &imageInfos[i];
 
-        char* bufferPtr = static_cast<char*>(buffer.allocationInfo.pMappedData) + offset + i * combinedImageSamplerSize;
-        vkGetDescriptorEXT(context->device, &descriptorGetInfo, combinedImageSamplerSize, bufferPtr);
+        char* bindingElementPtr = basePtr + i * combinedImageSamplerSize;
+        vkGetDescriptorEXT(context->device, &descriptorGetInfo, combinedImageSamplerSize, bindingElementPtr);
     }
 
     return true;
 }
 
-bool DescriptorBufferCombinedImageSampler::UpdateDescriptor(const VkDescriptorImageInfo& imageInfo, int32_t descriptorSetIndex, int32_t bindingIndex)
+bool DescriptorBufferCombinedImageSampler::UpdateDescriptor(const VkDescriptorImageInfo& imageInfo, int32_t descriptorSetIndex, int32_t descriptorBindingIndex, int32_t bindingArrayIndex)
 {
     if (descriptorSetIndex < 0 || descriptorSetIndex >= maxDescriptorSets) {
         LOG_ERROR("Invalid descriptor set index: {}", descriptorSetIndex);
@@ -120,7 +122,11 @@ bool DescriptorBufferCombinedImageSampler::UpdateDescriptor(const VkDescriptorIm
         return false;
     }
 
-    const uint64_t offset = metadataOffset + descriptorSetIndex * descriptorSetSize;
+    // location = bufferAddress + setOffset + descriptorOffset + (arrayElement × descriptorSize)
+    size_t setOffset = descriptorSetIndex * descriptorSetSize;
+    size_t bindingOffset;
+    vkGetDescriptorSetLayoutBindingOffsetEXT(context->device, descriptorSetLayout, descriptorBindingIndex, &bindingOffset);
+    char* basePtr = static_cast<char*>(buffer.allocationInfo.pMappedData) + setOffset + bindingOffset;
 
     VkDescriptorGetInfoEXT descriptorGetInfo{};
     descriptorGetInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT;
@@ -128,7 +134,7 @@ bool DescriptorBufferCombinedImageSampler::UpdateDescriptor(const VkDescriptorIm
     descriptorGetInfo.data.pCombinedImageSampler = &imageInfo;
 
     const size_t combinedImageSamplerSize = VulkanContext::deviceInfo.descriptorBufferProps.combinedImageSamplerDescriptorSize;
-    char* bufferPtr = static_cast<char*>(buffer.allocationInfo.pMappedData) + offset + bindingIndex * combinedImageSamplerSize;
+    char* bufferPtr = basePtr + bindingArrayIndex * combinedImageSamplerSize;
     vkGetDescriptorEXT(context->device, &descriptorGetInfo, combinedImageSamplerSize, bufferPtr);
 
     return true;

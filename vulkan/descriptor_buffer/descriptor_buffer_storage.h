@@ -35,18 +35,20 @@ struct DescriptorBufferStorage
      * Updates all bindings in a descriptor set.
      * @param storageBuffers Buffers to bind. Must match descriptor set layout binding count.
      * @param descriptorSetIndex Index of descriptor set to update.
+     * @param descriptorBindingIndex Index of the binding in the descriptor set
      * @return True if successful, false if index is invalid or not allocated.
      */
-    bool UpdateDescriptorSet(std::span<AllocatedBuffer> storageBuffers, int32_t descriptorSetIndex);
+    bool UpdateDescriptorSet(std::span<AllocatedBuffer> storageBuffers, int32_t descriptorSetIndex, int32_t descriptorBindingIndex);
 
     /**
      * Updates a single binding in a descriptor set.
      * @param storageBuffer Buffer to bind.
      * @param descriptorSetIndex Index of descriptor set to update.
-     * @param bindingIndex Binding index within the descriptor set. Must be valid for the layout.
+     * @param descriptorBindingIndex Index of the binding in the descriptor set
+     * @param bindingArrayIndex Binding index within the descriptor set. Must be valid for the layout.
      * @return True if successful, false if indices are invalid or set not allocated.
      */
-    bool UpdateDescriptor(const AllocatedBuffer& storageBuffer, int32_t descriptorSetIndex, int32_t bindingIndex);
+    bool UpdateDescriptor(const AllocatedBuffer& storageBuffer, int32_t descriptorSetIndex, int32_t descriptorBindingIndex, int32_t bindingArrayIndex);
 
     [[nodiscard]] VkDescriptorBufferBindingInfoEXT GetBindingInfo() const;
 
@@ -55,16 +57,13 @@ struct DescriptorBufferStorage
 private:
     VulkanContext* context{};
     AllocatedBuffer buffer{};
+    VkDescriptorSetLayout descriptorSetLayout;
 
     /**
      * The size of 1 descriptor set
      */
     int32_t maxDescriptorSets{};
 
-    /**
-     * The offset for potential metadata of the buffer
-     */
-    VkDeviceSize metadataOffset{};
     VkDeviceSize descriptorSetSize{};
 
     std::vector<int32_t> freeIndices;

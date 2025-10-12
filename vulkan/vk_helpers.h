@@ -43,7 +43,11 @@ VkImageCreateInfo ImageCreateInfo(VkFormat format, VkExtent3D extent, VkFlags us
 
 VkImageViewCreateInfo ImageViewCreateInfo(VkImage image, VkFormat format, VkFlags aspectFlags);
 
-bool LoadShaderModule(const char *filePath, VkDevice device, VkShaderModule *outShaderModule);
+bool LoadShaderModule(const char* filePath, VkDevice device, VkShaderModule* outShaderModule);
+
+VkPipelineShaderStageCreateInfo PipelineShaderStageCreateInfo(VkShaderModule computeShader, VkShaderStageFlagBits shaderStage);
+
+VkComputePipelineCreateInfo ComputePipelineCreateInfo(VkPipelineLayout pipelineLayout, const VkPipelineShaderStageCreateInfo& pipelineStageCreateInfo);
 }
 
 

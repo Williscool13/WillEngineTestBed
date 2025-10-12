@@ -76,9 +76,22 @@ void Renderer::Initialize()
 
 void Renderer::CreateResources()
 {
-    DescriptorLayoutBuilder layoutBuilder{1};
+    DescriptorLayoutBuilder layoutBuilder{2};
     //
     {
+        layoutBuilder.AddBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1); // Draw Image
+        layoutBuilder.AddBinding(1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1); // Depth Image
+        // Add render targets as needed
+        VkDescriptorSetLayoutCreateInfo layoutCreateInfo = layoutBuilder.Build(
+            static_cast<VkShaderStageFlagBits>(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT),
+            VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT
+        );
+        VK_CHECK(vkCreateDescriptorSetLayout(vulkanContext->device, &layoutCreateInfo, nullptr, &renderTargetSetLayout));
+        renderTargets = std::make_unique<DescriptorBufferStorageImage>(vulkanContext.get(), renderTargetSetLayout, 1);
+    }
+    //
+    {
+        layoutBuilder.Clear();
         layoutBuilder.AddBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, BINDLESS_UNIFORM_BUFFER_COUNT);
         VkDescriptorSetLayoutCreateInfo layoutCreateInfo = layoutBuilder.Build(
             static_cast<VkShaderStageFlagBits>(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT),
@@ -134,7 +147,7 @@ void Renderer::CreateResources()
     drawDescriptorInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
     // Manually update all FIF descriptor sets
     for (int i = 0; i < renderFramesInFlight; ++i) {
-        bindlessStorageImages->UpdateDescriptor(drawDescriptorInfo, i, 0);
+        bindlessStorageImages->UpdateDescriptor(drawDescriptorInfo, i, 0, 0);
     }
 
     //
@@ -159,20 +172,8 @@ void Renderer::CreateResources()
             throw std::runtime_error("Error when building the compute shader (compute.comp.spv)");
         }
 
-        VkPipelineShaderStageCreateInfo stageinfo{};
-        stageinfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-        stageinfo.pNext = nullptr;
-        stageinfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-        stageinfo.module = computeShader;
-        stageinfo.pName = "main";
-
-        VkComputePipelineCreateInfo computePipelineCreateInfo{};
-        computePipelineCreateInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-        computePipelineCreateInfo.pNext = nullptr;
-        computePipelineCreateInfo.layout = computePipelineLayout;
-        computePipelineCreateInfo.stage = stageinfo;
-        computePipelineCreateInfo.flags = VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT;
-
+        VkPipelineShaderStageCreateInfo pipelineShaderStageCreateInfo = VkHelpers::PipelineShaderStageCreateInfo(computeShader, VK_SHADER_STAGE_COMPUTE_BIT);
+        VkComputePipelineCreateInfo computePipelineCreateInfo = VkHelpers::ComputePipelineCreateInfo(computePipelineLayout, pipelineShaderStageCreateInfo);
         VK_CHECK(vkCreateComputePipelines(vulkanContext->device, VK_NULL_HANDLE, 1, &computePipelineCreateInfo, nullptr, &computePipeline));
 
         // Cleanup
@@ -493,6 +494,7 @@ void Renderer::Cleanup()
 {
     vkDeviceWaitIdle(vulkanContext->device);
 
+    vkDestroyDescriptorSetLayout(vulkanContext->device, renderTargetSetLayout, nullptr);
     vkDestroyDescriptorSetLayout(vulkanContext->device, bindlessUniformSetLayout, nullptr);
     vkDestroyDescriptorSetLayout(vulkanContext->device, bindlessCombinedImageSamplerSetLayout, nullptr);
     vkDestroyDescriptorSetLayout(vulkanContext->device, bindlessStorageImageSetLayout, nullptr);

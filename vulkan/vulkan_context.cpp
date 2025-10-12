@@ -54,18 +54,29 @@ VulkanContext:: VulkanContext(SDL_Window* window)
     // vk 1.3
     VkPhysicalDeviceVulkan13Features features{};
     features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
-    features.dynamicRendering = VK_TRUE;
-    features.synchronization2 = VK_TRUE;
-
     // vk 1.2
     VkPhysicalDeviceVulkan12Features features12{};
     features12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
-    features12.bufferDeviceAddress = VK_TRUE;
-
     // Descriptor Buffer Extension
     VkPhysicalDeviceDescriptorBufferFeaturesEXT descriptorBufferFeatures = {};
     descriptorBufferFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_FEATURES_EXT;
+
+    // Dynamic Rendering
+    features.dynamicRendering = VK_TRUE;
+
+    // Synchronization
+    features.synchronization2 = VK_TRUE;
+
+    // Bindless
+    features12.bufferDeviceAddress = VK_TRUE;
+    features12.runtimeDescriptorArray = VK_TRUE;
     descriptorBufferFeatures.descriptorBuffer = VK_TRUE;
+    features12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
+    features12.shaderStorageImageArrayNonUniformIndexing = VK_TRUE;
+    features12.shaderUniformBufferArrayNonUniformIndexing  = VK_TRUE;
+    features12.shaderStorageBufferArrayNonUniformIndexing = VK_TRUE;
+
+
 
     vkb::PhysicalDeviceSelector selector{vkb_inst};
     vkb::PhysicalDevice targetDevice = selector

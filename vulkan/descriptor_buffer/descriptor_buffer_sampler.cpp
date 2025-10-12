@@ -13,13 +13,11 @@ namespace Renderer
 DescriptorBufferSampler::DescriptorBufferSampler() = default;
 
 DescriptorBufferSampler::DescriptorBufferSampler(VulkanContext* context, VkDescriptorSetLayout setLayout, int32_t maxSetCount)
-    : context(context)
+    : context(context), descriptorSetLayout(setLayout)
 {
     // Get size per descriptor set (Aligned).
     vkGetDescriptorSetLayoutSizeEXT(context->device, setLayout, &descriptorSetSize);
     descriptorSetSize = VkHelpers::GetAlignedSize(descriptorSetSize, VulkanContext::deviceInfo.descriptorBufferProps.descriptorBufferOffsetAlignment);
-    // Get descriptor buffer ptr after offset (potential metadata)
-    vkGetDescriptorSetLayoutBindingOffsetEXT(context->device, setLayout, 0u, &metadataOffset);
 
     // Set up indices in the descriptor buffer
     freeIndices.clear();
@@ -76,7 +74,7 @@ int32_t DescriptorBufferSampler::AllocateDescriptorSet()
     return descriptorSetIndex;
 }
 
-bool DescriptorBufferSampler::UpdateDescriptorSet(std::span<VkDescriptorImageInfo> imageInfos, int32_t descriptorSetIndex)
+bool DescriptorBufferSampler::UpdateDescriptorSet(std::span<VkDescriptorImageInfo> imageInfos, int32_t descriptorSetIndex, int32_t descriptorBindingIndex)
 {
     if (descriptorSetIndex < 0 || descriptorSetIndex >= maxDescriptorSets) {
         LOG_ERROR("Invalid descriptor set index: {}", descriptorSetIndex);
@@ -89,8 +87,11 @@ bool DescriptorBufferSampler::UpdateDescriptorSet(std::span<VkDescriptorImageInf
         return false;
     }
 
-    // Base offset
-    const uint64_t offset = metadataOffset + descriptorSetIndex * descriptorSetSize;
+    // location = bufferAddress + setOffset + descriptorOffset + (arrayElement × descriptorSize)
+    size_t setOffset = descriptorSetIndex * descriptorSetSize;
+    size_t bindingOffset;
+    vkGetDescriptorSetLayoutBindingOffsetEXT(context->device, descriptorSetLayout, descriptorBindingIndex, &bindingOffset);
+    char* basePtr = static_cast<char*>(buffer.allocationInfo.pMappedData) + setOffset + bindingOffset;
 
     VkDescriptorGetInfoEXT descriptorGetInfo{};
     descriptorGetInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT;
@@ -101,14 +102,14 @@ bool DescriptorBufferSampler::UpdateDescriptorSet(std::span<VkDescriptorImageInf
     for (int32_t i = 0; i < imageInfos.size(); i++) {
         descriptorGetInfo.data.pSampler = &imageInfos[i].sampler;
 
-        char* bufferPtr = static_cast<char*>(buffer.allocationInfo.pMappedData) + offset + i * samplerSamplerSize;
+        char* bufferPtr = basePtr + i * samplerSamplerSize;
         vkGetDescriptorEXT(context->device, &descriptorGetInfo, samplerSamplerSize, bufferPtr);
     }
 
     return true;
 }
 
-bool DescriptorBufferSampler::UpdateDescriptor(const VkDescriptorImageInfo& imageInfo, int32_t descriptorSetIndex, int32_t bindingIndex)
+bool DescriptorBufferSampler::UpdateDescriptor(const VkDescriptorImageInfo& imageInfo, int32_t descriptorSetIndex, int32_t descriptorBindingIndex, int32_t bindingArrayIndex)
 {
     if (descriptorSetIndex < 0 || descriptorSetIndex >= maxDescriptorSets) {
         LOG_ERROR("Invalid descriptor set index: {}", descriptorSetIndex);
@@ -120,7 +121,11 @@ bool DescriptorBufferSampler::UpdateDescriptor(const VkDescriptorImageInfo& imag
         return false;
     }
 
-    const uint64_t offset = metadataOffset + descriptorSetIndex * descriptorSetSize;
+    // location = bufferAddress + setOffset + descriptorOffset + (arrayElement × descriptorSize)
+    size_t setOffset = descriptorSetIndex * descriptorSetSize;
+    size_t bindingOffset;
+    vkGetDescriptorSetLayoutBindingOffsetEXT(context->device, descriptorSetLayout, descriptorBindingIndex, &bindingOffset);
+    char* basePtr = static_cast<char*>(buffer.allocationInfo.pMappedData) + setOffset + bindingOffset;
 
     VkDescriptorGetInfoEXT descriptorGetInfo{};
     descriptorGetInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT;
@@ -128,7 +133,7 @@ bool DescriptorBufferSampler::UpdateDescriptor(const VkDescriptorImageInfo& imag
     descriptorGetInfo.data.pSampler = &imageInfo.sampler;
 
     const size_t samplerSamplerSize = VulkanContext::deviceInfo.descriptorBufferProps.samplerDescriptorSize;
-    char* bufferPtr = static_cast<char*>(buffer.allocationInfo.pMappedData) + offset + bindingIndex * samplerSamplerSize;
+    char* bufferPtr = basePtr + bindingArrayIndex * samplerSamplerSize;
     vkGetDescriptorEXT(context->device, &descriptorGetInfo, samplerSamplerSize, bufferPtr);
 
     return true;
