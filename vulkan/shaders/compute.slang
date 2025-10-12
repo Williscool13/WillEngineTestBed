@@ -1,5 +1,5 @@
-[[vk::binding(0, 0)]]
-RWTexture2D<float4> storageImages[];
+[[vk::binding(0, 0)]] RWTexture2D<float4> drawImage;
+[[vk::binding(1, 0)]] RWTexture2D<float4> depthImage;
 
 float3 ray_color(float3 rayDirection)
 {
@@ -20,7 +20,7 @@ void computeMain(uint3 threadId : SV_DispatchThreadID)
 
     int2 texelCoord = int2(threadId.xy);
     int2 size;
-    storageImages[0].GetDimensions(size.x, size.y);
+    drawImage.GetDimensions(size.x, size.y);
 
     if(texelCoord.x < size.x && texelCoord.y < size.y)
     {
@@ -40,6 +40,6 @@ void computeMain(uint3 threadId : SV_DispatchThreadID)
         color.x = float(texelCoord.x)/(size.x);
         color.y = float(texelCoord.y)/(size.y);
         color = float4(ray_color(ray_direction), 1.0);
-        storageImages[0][texelCoord] = color;
+        drawImage[texelCoord] = color;
     };
 }

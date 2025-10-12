@@ -88,6 +88,7 @@ void Renderer::CreateResources()
         );
         VK_CHECK(vkCreateDescriptorSetLayout(vulkanContext->device, &layoutCreateInfo, nullptr, &renderTargetSetLayout));
         renderTargets = std::make_unique<DescriptorBufferStorageImage>(vulkanContext.get(), renderTargetSetLayout, 1);
+        renderTargets->AllocateDescriptorSet();
     }
     //
     {
@@ -99,6 +100,10 @@ void Renderer::CreateResources()
         );
         VK_CHECK(vkCreateDescriptorSetLayout(vulkanContext->device, &layoutCreateInfo, nullptr, &bindlessUniformSetLayout));
         bindlessUniforms = std::make_unique<DescriptorBufferUniform>(vulkanContext.get(), bindlessUniformSetLayout, renderFramesInFlight);
+
+        for (int32_t i = 0; i < renderFramesInFlight; ++i) {
+            bindlessUniforms->AllocateDescriptorSet();
+        }
     }
 
     //
@@ -111,6 +116,10 @@ void Renderer::CreateResources()
         );
         VK_CHECK(vkCreateDescriptorSetLayout(vulkanContext->device, &layoutCreateInfo, nullptr, &bindlessCombinedImageSamplerSetLayout));
         bindlessCombinedImageSamplers = std::make_unique<DescriptorBufferCombinedImageSampler>(vulkanContext.get(), bindlessCombinedImageSamplerSetLayout, renderFramesInFlight);
+
+        for (int32_t i = 0; i < renderFramesInFlight; ++i) {
+            bindlessCombinedImageSamplers->AllocateDescriptorSet();
+        }
     }
 
     //
@@ -145,10 +154,9 @@ void Renderer::CreateResources()
     VkDescriptorImageInfo drawDescriptorInfo;
     drawDescriptorInfo.imageView = drawImageView.imageView;
     drawDescriptorInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-    // Manually update all FIF descriptor sets
-    for (int i = 0; i < renderFramesInFlight; ++i) {
-        bindlessStorageImages->UpdateDescriptor(drawDescriptorInfo, i, 0, 0);
-    }
+
+    // only 1 set (invariant), binding 1 is the drawImage binding, not an array so 0
+    renderTargets->UpdateDescriptor(drawDescriptorInfo, 0, 0, 0);
 
     //
     {
@@ -359,7 +367,7 @@ void Renderer::Render()
         //vkCmdPushConstants(cmd, _backgroundEffectPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(ComputePushConstants), &selected._data);
         VkDescriptorBufferBindingInfoEXT descriptorBufferBindingInfo[1]{};
         //descriptor_buffer_binding_info[0] = computeImageDescriptorBuffer.get_descriptor_buffer_binding_info(_device);
-        descriptorBufferBindingInfo[0] = bindlessStorageImages->GetBindingInfo();
+        descriptorBufferBindingInfo[0] = renderTargets->GetBindingInfo();
         vkCmdBindDescriptorBuffersEXT(cmd, 1, descriptorBufferBindingInfo);
 
         uint32_t bufferIndexImage = 0;

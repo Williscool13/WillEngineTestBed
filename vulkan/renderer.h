@@ -51,7 +51,6 @@ private:
 
     // Probably want separate descriptor buffers/layouts for:
     //  - Scene Data
-    //  - Render Targets / Depth Image (only need 1 descriptor set because they're invariant)
     VkDescriptorSetLayout renderTargetSetLayout;
     std::unique_ptr<DescriptorBufferStorageImage> renderTargets;
 
