@@ -46,6 +46,14 @@ namespace Physics
 {
 void Physics::Initialize()
 {
+    // enkiTS
+    {
+        enki::TaskSchedulerConfig config;
+        config.numTaskThreadsToCreate = enki::GetNumHardwareThreads() - 1;
+        LOG_INFO("Scheduler operating with {} threads.", config.numTaskThreadsToCreate + 1);
+        scheduler.Initialize(config);
+    }
+
     JPH::RegisterDefaultAllocator();
     JPH::Trace = TraceImpl;
     JPH_IF_ENABLE_ASSERTS(JPH::AssertFailed = AssertFailedImpl;)
@@ -53,10 +61,10 @@ void Physics::Initialize()
     JPH::Factory::sInstance = new JPH::Factory();
     JPH::RegisterTypes();
 
-    JPH::TempAllocatorImpl temp_allocator(10 * 1024 * 1024);
+    tempAllocator = new JPH::TempAllocatorImpl(10 * 1024 * 1024);
 
     // Todo: enkiTS wrapper for a Jolt job system
-    //JPH::JobSystemThreadPool job_system(cMaxPhysicsJobs, cMaxPhysicsBarriers, thread::hardware_concurrency() - 1);
+    jobSystem = new PhysicsJobSystem(&scheduler, MAX_PHYSICS_JOBS, 8);
 
     constexpr uint32_t cMaxBodies = 65536;
     constexpr uint32_t cNumBodyMutexes = 0;
@@ -85,8 +93,6 @@ void Physics::Initialize()
 
     // Expensive, call when streaming new level
     physicsSystem.OptimizeBroadPhase();
-
-
 }
 
 void Physics::Run()
@@ -104,14 +110,13 @@ void Physics::Run()
         // If you take larger steps than 1 / 60th of a second you need to do multiple collision steps in order to keep the simulation stable. Do 1 collision step per 1 / 60th of a second (round up).
         constexpr int cCollisionSteps = 1;
         constexpr float physicsDeltaTime = 1.0f / 60.0f;
-        //physicsSystem.Update(physicsDeltaTime, cCollisionSteps, &temp_allocator, &job_system);
+        physicsSystem.Update(physicsDeltaTime, cCollisionSteps, tempAllocator, jobSystem);
+        jobSystem->ResetTaskPool();
 
         if (step >= 100) {
             break;
         }
     }
-
-
 }
 
 void Physics::Cleanup()
@@ -129,5 +134,7 @@ void Physics::Cleanup()
     JPH::UnregisterTypes();
     delete JPH::Factory::sInstance;
     JPH::Factory::sInstance = nullptr;
+
+    scheduler.WaitforAllAndShutdown();
 }
 } // Physics

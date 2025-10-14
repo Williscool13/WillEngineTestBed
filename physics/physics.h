@@ -7,6 +7,8 @@
 #include "body_activation_listener.h"
 #include "contact_listener.h"
 #include "layer_interface.h"
+#include "physics_job_system.h"
+#include "TaskScheduler.h"
 #include "Jolt/Physics/PhysicsSystem.h"
 
 namespace Physics
@@ -35,6 +37,10 @@ private:
 
     JPH::BodyID sphere{};
     std::vector<JPH::BodyID> otherBodies{};
+
+    enki::TaskScheduler scheduler{};
+    PhysicsJobSystem* jobSystem{};
+    JPH::TempAllocatorImpl* tempAllocator{};
 };
 } // Physics
 

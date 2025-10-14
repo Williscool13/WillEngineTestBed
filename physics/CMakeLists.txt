@@ -8,10 +8,17 @@ add_executable(physics
         contact_listener.h
         body_activation_listener.cpp
         body_activation_listener.h
+        physics_job_system.cpp
+        physics_job_system.h
+        physics_job.cpp
+        physics_job.h
+        physics_constants.cpp
+        physics_constants.h
 )
 
 target_link_libraries(physics PRIVATE
         engine-common
         crash-handling
         Jolt
+        enkiTS
 )
