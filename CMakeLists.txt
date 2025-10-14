@@ -44,6 +44,11 @@ target_link_libraries(imgui PUBLIC
         volk
 )
 
+# Jolt
+set(PHYSICS_REPO_ROOT "${CMAKE_SOURCE_DIR}/extern/JoltPhysics")
+include("${PHYSICS_REPO_ROOT}/Jolt/Jolt.cmake")
+set(CMAKE_CXX_STANDARD 20)
+
 # Common
 add_library(engine-common INTERFACE)
 target_compile_definitions(engine-common INTERFACE
@@ -64,3 +69,4 @@ add_subdirectory(representing-and-manipulating-information)
 add_subdirectory(parallelization)
 add_subdirectory(entity-component-system)
 add_subdirectory(vulkan)
+add_subdirectory(physics)
