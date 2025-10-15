@@ -9,6 +9,7 @@
 #include "layer_interface.h"
 #include "physics_job_system.h"
 #include "TaskScheduler.h"
+#include "Jolt/Core/JobSystemThreadPool.h"
 #include "Jolt/Physics/PhysicsSystem.h"
 
 namespace Physics
@@ -21,10 +22,18 @@ public:
 
     void Initialize();
 
-    void Run();
+    void BasicRun();
+
+    void StressTest();
+
+    void StressTestJoltJobSystem();
+
+    void MegaStressTest();
 
     void Cleanup();
 
+    PhysicsJobSystem* jobSystem{};
+    JPH::JobSystemThreadPool* jobSystem_{};
 private:
     BPLayerInterfaceImpl broadPhaseLayerInterface{};
     ObjectVsBroadPhaseLayerFilterImpl objectVsBroadPhaseLayerFilter{};
@@ -35,11 +44,9 @@ private:
 
     JPH::PhysicsSystem physicsSystem{};
 
-    JPH::BodyID sphere{};
-    std::vector<JPH::BodyID> otherBodies{};
+
 
     enki::TaskScheduler scheduler{};
-    PhysicsJobSystem* jobSystem{};
     JPH::TempAllocatorImpl* tempAllocator{};
 };
 } // Physics

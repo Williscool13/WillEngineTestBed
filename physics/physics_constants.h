@@ -9,7 +9,8 @@
 namespace Physics
 {
 inline static constexpr int32_t MAX_PHYSICS_JOBS = 2048;
-inline static constexpr int32_t MAX_PHYSICS_TASKS = MAX_PHYSICS_JOBS * 2;
+// Mege Stress Test (6703 bodies, no sleep) shows max used tasks is never greater than 48
+inline static constexpr int32_t MAX_PHYSICS_TASKS = 256;
 
 } // Physics
 

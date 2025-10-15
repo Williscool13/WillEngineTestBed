@@ -16,19 +16,27 @@ class PhysicsJobSystem : public JPH::JobSystemWithBarrier
 {
     struct PhysicsJobTask final : enki::ITaskSet
     {
-        Job* job{nullptr};
+        std::vector<Job*> jobs;
 
         PhysicsJobTask()
         {
-            m_SetSize = 1;
+            jobs.reserve(16);
+            m_SetSize = 0;
         }
 
-        explicit PhysicsJobTask(Job* job_) : job(job_)
+        void ExecuteRange(enki::TaskSetPartition range_, uint32_t threadnum_) override
         {
-            m_SetSize = 1;
+            for (uint32_t i = range_.start; i < range_.end; ++i) {
+                jobs[i]->Execute();
+                jobs[i]->Release();
+            }
         }
 
-        void ExecuteRange(enki::TaskSetPartition range_, uint32_t threadnum_) override;
+        void Reset()
+        {
+            jobs.clear();
+            m_SetSize = 0;
+        }
     };
 
 public:
@@ -38,11 +46,11 @@ public:
 
     ~PhysicsJobSystem() override = default;
 
-    int GetMaxConcurrency() const override;
+    int32_t GetMaxConcurrency() const override;
 
     JobHandle CreateJob(const char* inName, JPH::ColorArg inColor, const JobFunction& inJobFunction, JPH::uint32 inNumDependencies) override;
 
-    void ResetTaskPool();
+    uint64_t ResetTaskPool();
 
 protected:
     void QueueJob(Job* inJob) override;
@@ -58,7 +66,7 @@ private:
     using AvailableJobs = JPH::FixedSizeFreeList<Job>;
     AvailableJobs mJobs;
     PhysicsJobTask mTasks[Physics::MAX_PHYSICS_TASKS];
-    std::atomic<int32_t> mTaskIndex{0};
+    std::atomic<uint64_t> mTaskIndex{0};
 };
 
 

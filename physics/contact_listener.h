@@ -30,6 +30,8 @@ public:
 
     ~ContactListener() override = default;
 
+    void Clear() { deferredEvents.clear(); }
+
 private:
     void OnContactAdded(const JPH::Body& inBody1, const JPH::Body& inBody2, const JPH::ContactManifold& inManifold, JPH::ContactSettings& ioSettings) override;
 

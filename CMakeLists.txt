@@ -3,6 +3,8 @@ project(WillEngineTestBed)
 
 set(CMAKE_CXX_STANDARD 20)
 
+add_compile_definitions(NOMINMAX)
+
 # Dependencies
 add_subdirectory(extern/fmt)
 set(SPDLOG_FMT_EXTERNAL ON)

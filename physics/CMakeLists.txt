@@ -14,6 +14,8 @@ add_executable(physics
         physics_job.h
         physics_constants.cpp
         physics_constants.h
+        utils.cpp
+        utils.h
 )
 
 target_link_libraries(physics PRIVATE

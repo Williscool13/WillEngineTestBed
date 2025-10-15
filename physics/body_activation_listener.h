@@ -24,6 +24,8 @@ public:
 
     ~BodyActivationListener() override = default;
 
+    void Clear() { activatedEvents.clear(); deactivatedEvents.clear(); }
+
 private:
     void OnBodyActivated(const JPH::BodyID& inBodyID, uint64_t inBodyUserData) override;
 
