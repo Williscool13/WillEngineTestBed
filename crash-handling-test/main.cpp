@@ -1,9 +1,9 @@
 #include <iostream>
 #include <fmt/format.h>
 
-#include "src/crash-handling/crash_context.h"
-#include "src/crash-handling/crash_handler.h"
-#include "src/crash-handling/logger.h"
+#include "crash-handling/crash_context.h"
+#include "crash-handling/crash_handler.h"
+#include "crash-handling/logger.h"
 
 int main()
 {

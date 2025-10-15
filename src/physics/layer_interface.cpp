@@ -4,11 +4,14 @@
 
 #include "layer_interface.h"
 
+namespace Physics
+{
 BPLayerInterfaceImpl::BPLayerInterfaceImpl()
 {
     mObjectToBroadPhase[Layers::STATIC] = BroadPhaseLayers::STATIC;
     mObjectToBroadPhase[Layers::DYNAMIC] = BroadPhaseLayers::DYNAMIC;
 }
+
 JPH::uint BPLayerInterfaceImpl::GetNumBroadPhaseLayers() const
 {
     return BroadPhaseLayers::NUM_LAYERS;
@@ -28,4 +31,5 @@ bool ObjectVsBroadPhaseLayerFilterImpl::ShouldCollide(JPH::ObjectLayer inLayer1,
 bool ObjectLayerPairFilterImpl::ShouldCollide(JPH::ObjectLayer inLayer1, JPH::ObjectLayer inLayer2) const
 {
     return !(inLayer1 == Layers::STATIC && inLayer2 == Layers::STATIC);
+}
 }

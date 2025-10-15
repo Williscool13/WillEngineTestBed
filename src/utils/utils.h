@@ -7,10 +7,11 @@
 #include <chrono>
 #include <string>
 
-#include "logger.h"
+#include "crash-handling/logger.h"
 
-
-class ScopedTimer
+namespace Utils
+{
+struct ScopedTimer
 {
 public:
     explicit ScopedTimer(std::string name)
@@ -27,6 +28,6 @@ private:
     std::string name;
     std::chrono::high_resolution_clock::time_point start;
 };
-
+} // Utils
 
 #endif //WILLENGINETESTBED_UTILS_H

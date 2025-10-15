@@ -19,6 +19,7 @@ add_subdirectory(extern/vk-bootstrap)
 
 # My Libs
 add_subdirectory(src/crash-handling)
+add_subdirectory(src/physics)
 
 # Imgui
 set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/extern/imgui)
@@ -49,15 +50,21 @@ target_link_libraries(imgui PUBLIC
 # Jolt
 set(PHYSICS_REPO_ROOT "${CMAKE_SOURCE_DIR}/extern/JoltPhysics")
 include("${PHYSICS_REPO_ROOT}/Jolt/Jolt.cmake")
-set(CMAKE_CXX_STANDARD 20)
-
+target_include_directories(Jolt PUBLIC
+        ${PHYSICS_REPO_ROOT}
+)
+set(CMAKE_CXX_STANDARD 20) # Jolt sets cxx standard to 17
 # Common
-add_library(engine-common INTERFACE)
+add_library(engine-common INTERFACE
+        src/utils/utils.cpp
+        src/utils/utils.h)
+
 target_compile_definitions(engine-common INTERFACE
         BUILD_CONFIG_NAME="$<CONFIG>"
 )
 target_include_directories(engine-common INTERFACE
         ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/src
         ${CMAKE_SOURCE_DIR}/extern
 )
 target_link_libraries(engine-common INTERFACE

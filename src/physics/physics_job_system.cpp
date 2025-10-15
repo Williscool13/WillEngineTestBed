@@ -6,8 +6,10 @@
 
 #include <enkiTS/src/TaskScheduler.h>
 
-#include "logger.h"
+#include "crash-handling/logger.h"
 
+namespace Physics
+{
 PhysicsJobSystem::PhysicsJobSystem(enki::TaskScheduler* scheduler, uint32_t maxJobs, uint32_t inMaxBarriers)
     : scheduler(scheduler)
 {
@@ -88,4 +90,5 @@ void PhysicsJobSystem::QueueJobs(Job** inJobs, JPH::uint inNumJobs)
 void PhysicsJobSystem::FreeJob(Job* inJob)
 {
     mJobs.DestructObject(inJob);
+}
 }

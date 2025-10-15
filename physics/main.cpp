@@ -1,10 +1,10 @@
 #include <fmt/format.h>
 
 #include "physics.h"
-#include "src/crash-handling/crash_context.h"
-#include "src/crash-handling/crash_handler.h"
-#include "src/crash-handling/logger.h"
-#include "utils.h"
+#include "crash-handling/crash_context.h"
+#include "crash-handling/crash_handler.h"
+#include "crash-handling/logger.h"
+#include "utils/utils.h"
 
 int main()
 {
@@ -17,18 +17,18 @@ int main()
 
     Physics::Physics p{};
     p.Initialize(); {
-        ScopedTimer a{"enkiTS Job System Time"};
+        Utils::ScopedTimer a{"enkiTS Job System Time"};
         //p.BasicRun();
     } {
-        ScopedTimer a{"enkiTS Job System Time"};
+        Utils::ScopedTimer a{"enkiTS Job System Time"};
         p.StressTest();
         // [info] enkiTS Job System Time: 222584 us (222.584 ms)
     } {
-        ScopedTimer a{"Jolt Job System Time"};
+        Utils::ScopedTimer a{"Jolt Job System Time"};
         p.StressTestJoltJobSystem();
         // [info] Jolt Job System Time: 168462 us (168.462 ms)
     } {
-        ScopedTimer a{"Mega Stress Test"};
+        Utils::ScopedTimer a{"Mega Stress Test"};
         // p.MegaStressTest();
         // [info] (Jolt)   Mega Stress Test: 7209668 us (7209.668 ms)
         // [info] (enkiTS) Mega Stress Test: 7538440 us (7538.440 ms)

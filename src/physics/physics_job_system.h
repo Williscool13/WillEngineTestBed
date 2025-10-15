@@ -5,13 +5,15 @@
 #ifndef WILLENGINETESTBED_PHYSICS_JOB_SYSTEM_H
 #define WILLENGINETESTBED_PHYSICS_JOB_SYSTEM_H
 
-#include <Jolt/Jolt.h>
+#include <JoltPhysics/Jolt/Jolt.h>
 
 #include "physics_constants.h"
 #include "enkiTS/src/TaskScheduler.h"
-#include "Jolt/Core/FixedSizeFreeList.h"
-#include "Jolt/Core/JobSystemWithBarrier.h"
+#include "JoltPhysics/Jolt/Core/FixedSizeFreeList.h"
+#include "JoltPhysics/Jolt/Core/JobSystemWithBarrier.h"
 
+namespace Physics
+{
 class PhysicsJobSystem : public JPH::JobSystemWithBarrier
 {
     struct PhysicsJobTask final : enki::ITaskSet
@@ -39,12 +41,14 @@ class PhysicsJobSystem : public JPH::JobSystemWithBarrier
         }
     };
 
-public:
+public
+:
     PhysicsJobSystem() = default;
 
     PhysicsJobSystem(enki::TaskScheduler* scheduler, uint32_t maxJobs, uint32_t inMaxBarriers);
 
-    ~PhysicsJobSystem() override = default;
+    ~PhysicsJobSystem()
+    override = default;
 
     int32_t GetMaxConcurrency() const override;
 
@@ -52,14 +56,16 @@ public:
 
     uint64_t ResetTaskPool();
 
-protected:
+protected
+:
     void QueueJob(Job* inJob) override;
 
     void QueueJobs(Job** inJobs, JPH::uint inNumJobs) override;
 
     void FreeJob(Job* inJob) override;
 
-private:
+private
+:
     enki::TaskScheduler* scheduler;
 
     /// Array of jobs (fixed size)
@@ -68,6 +74,7 @@ private:
     PhysicsJobTask mTasks[Physics::MAX_PHYSICS_TASKS];
     std::atomic<uint64_t> mTaskIndex{0};
 };
+}
 
 
 #endif //WILLENGINETESTBED_PHYSICS_JOB_SYSTEM_H

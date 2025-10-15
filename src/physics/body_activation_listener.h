@@ -11,10 +11,12 @@
 #include "Jolt/Physics/Body/BodyActivationListener.h"
 #include "Jolt/Physics/Body/BodyID.h"
 
+namespace Physics
+{
 struct DeferredBodyActivationEvent
 {
     JPH::BodyID bodyId;
-    uint64_t bodyUserData;
+    uint64_t bodyUserData{};
 };
 
 class BodyActivationListener : public JPH::BodyActivationListener
@@ -24,7 +26,11 @@ public:
 
     ~BodyActivationListener() override = default;
 
-    void Clear() { activatedEvents.clear(); deactivatedEvents.clear(); }
+    void Clear()
+    {
+        activatedEvents.clear();
+        deactivatedEvents.clear();
+    }
 
 private:
     void OnBodyActivated(const JPH::BodyID& inBodyID, uint64_t inBodyUserData) override;
@@ -35,6 +41,7 @@ private:
     std::vector<DeferredBodyActivationEvent> deactivatedEvents;
     std::mutex mutex;
 };
+}
 
 
 #endif //WILLENGINETESTBED_BODY_ACTIVATION_LISTENER_H

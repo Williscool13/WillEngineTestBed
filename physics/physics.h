@@ -4,10 +4,11 @@
 
 #ifndef WILLENGINETESTBED_PHYSICS_H
 #define WILLENGINETESTBED_PHYSICS_H
-#include "body_activation_listener.h"
-#include "contact_listener.h"
-#include "layer_interface.h"
-#include "physics_job_system.h"
+#include "physics/body_activation_listener.h"
+#include "physics/contact_listener.h"
+#include "physics/layer_interface.h"
+#include "physics/physics_job_system.h"
+
 #include "TaskScheduler.h"
 #include "Jolt/Core/JobSystemThreadPool.h"
 #include "Jolt/Physics/PhysicsSystem.h"
@@ -43,9 +44,6 @@ private:
     ContactListener contactListener{};
 
     JPH::PhysicsSystem physicsSystem{};
-
-
-
     enki::TaskScheduler scheduler{};
     JPH::TempAllocatorImpl* tempAllocator{};
 };

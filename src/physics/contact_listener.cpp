@@ -4,8 +4,10 @@
 
 #include "contact_listener.h"
 
-#include "Jolt/Physics/Body/Body.h"
+#include "JoltPhysics/Jolt/Physics/Body/Body.h"
 
+namespace Physics
+{
 ContactListener::ContactListener()
 {
     deferredEvents.reserve(1000);
@@ -22,4 +24,5 @@ void ContactListener::OnContactAdded(const JPH::Body& inBody1, const JPH::Body& 
         inManifold.mPenetrationDepth
     });
     JPH::ContactListener::OnContactAdded(inBody1, inBody2, inManifold, ioSettings);
+}
 }

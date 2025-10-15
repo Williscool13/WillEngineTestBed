@@ -18,10 +18,11 @@
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Body/BodyActivationListener.h>
 
-#include "contact_listener.h"
-#include "crash_handler.h"
-#include "layer_interface.h"
-#include "logger.h"
+#include "physics/contact_listener.h"
+#include "physics/layer_interface.h"
+
+#include "crash-handling/crash_handler.h"
+#include "crash-handling/logger.h"
 
 
 #ifdef JPH_ENABLE_ASSERTS

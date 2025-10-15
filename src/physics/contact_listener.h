@@ -7,10 +7,12 @@
 #include <mutex>
 #include <vector>
 
-#include <Jolt/Jolt.h>
-#include <Jolt/Physics/Body/BodyID.h>
-#include <Jolt/Physics/Collision/ContactListener.h>
+#include <JoltPhysics/Jolt/Jolt.h>
+#include <JoltPhysics/Jolt/Physics/Body/BodyID.h>
+#include <JoltPhysics/Jolt/Physics/Collision/ContactListener.h>
 
+namespace Physics
+{
 struct DeferredCollisionEvent
 {
     JPH::BodyID body1;
@@ -38,5 +40,6 @@ private:
     std::vector<DeferredCollisionEvent> deferredEvents;
     std::mutex mutex;
 };
+}
 
 #endif //WILLENGINETESTBED_CONTACT_LISTENER_H
