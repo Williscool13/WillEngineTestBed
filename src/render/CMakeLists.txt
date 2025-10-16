@@ -15,6 +15,10 @@ add_library(render-lib STATIC
         vk_resources.h
         vk_helpers.cpp
         vk_helpers.h
+        render_utils.cpp
+        render_utils.h
+        render_constants.cpp
+        render_constants.h
         descriptor_buffer/descriptor_buffer_uniform.cpp
         descriptor_buffer/descriptor_buffer_uniform.h
         descriptor_buffer/descriptor_buffer_storage.cpp
