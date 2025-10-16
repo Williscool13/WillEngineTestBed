@@ -2,17 +2,17 @@
 // Created by William on 2025-10-11.
 //
 
-#include "descriptor_buffer_storage_image.h"
+#include "descriptor_buffer_sampled_image.h"
 
-#include "vulkan/utils.h"
-#include "vulkan/vk_helpers.h"
-#include "vulkan/vulkan_context.h"
+#include "../render_utils.h"
+#include "../vk_helpers.h"
+#include "../vk_context.h"
 
 namespace Renderer
 {
-DescriptorBufferStorageImage::DescriptorBufferStorageImage() = default;
+DescriptorBufferSampledImage::DescriptorBufferSampledImage() = default;
 
-DescriptorBufferStorageImage::DescriptorBufferStorageImage(VulkanContext* context, VkDescriptorSetLayout setLayout, int32_t maxSetCount)
+DescriptorBufferSampledImage::DescriptorBufferSampledImage(VulkanContext* context, VkDescriptorSetLayout setLayout, int32_t maxSetCount)
     : context(context), descriptorSetLayout(setLayout)
 {
     // Get size per descriptor set (Aligned).
@@ -39,12 +39,12 @@ DescriptorBufferStorageImage::DescriptorBufferStorageImage(VulkanContext* contex
     buffer.address = VkHelpers::GetDeviceAddress(context->device, buffer.handle);
 }
 
-DescriptorBufferStorageImage::~DescriptorBufferStorageImage()
+DescriptorBufferSampledImage::~DescriptorBufferSampledImage()
 {
     buffer.Cleanup(context);
 }
 
-void DescriptorBufferStorageImage::ReleaseDescriptorSet(int32_t descriptorSetIndex)
+void DescriptorBufferSampledImage::ReleaseDescriptorSet(int32_t descriptorSetIndex)
 {
     if (std::ranges::find(freeIndices, descriptorSetIndex) != freeIndices.end()) {
         LOG_ERROR("[DescriptorBufferUniform] Descriptor set {} is already unallocated", descriptorSetIndex);
@@ -54,7 +54,7 @@ void DescriptorBufferStorageImage::ReleaseDescriptorSet(int32_t descriptorSetInd
     freeIndices.push_back(descriptorSetIndex);
 }
 
-void DescriptorBufferStorageImage::ReleaseAllDescriptorSets()
+void DescriptorBufferSampledImage::ReleaseAllDescriptorSets()
 {
     freeIndices.clear();
     for (int32_t i = 0; i < maxDescriptorSets; ++i) {
@@ -62,7 +62,7 @@ void DescriptorBufferStorageImage::ReleaseAllDescriptorSets()
     }
 }
 
-int32_t DescriptorBufferStorageImage::AllocateDescriptorSet()
+int32_t DescriptorBufferSampledImage::AllocateDescriptorSet()
 {
     if (freeIndices.empty()) {
         LOG_WARN("No more descriptor sets available to use in this descriptor buffer storage");
@@ -74,7 +74,7 @@ int32_t DescriptorBufferStorageImage::AllocateDescriptorSet()
     return descriptorSetIndex;
 }
 
-bool DescriptorBufferStorageImage::UpdateDescriptorSet(std::span<VkDescriptorImageInfo> imageInfos, int32_t descriptorSetIndex, int32_t descriptorBindingIndex)
+bool DescriptorBufferSampledImage::UpdateDescriptorSet(std::span<VkDescriptorImageInfo> imageInfos, int32_t descriptorSetIndex, int32_t descriptorBindingIndex)
 {
     if (descriptorSetIndex < 0 || descriptorSetIndex >= maxDescriptorSets) {
         LOG_ERROR("Invalid descriptor set index: {}", descriptorSetIndex);
@@ -95,21 +95,21 @@ bool DescriptorBufferStorageImage::UpdateDescriptorSet(std::span<VkDescriptorIma
 
     VkDescriptorGetInfoEXT descriptorGetInfo{};
     descriptorGetInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT;
-    descriptorGetInfo.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    descriptorGetInfo.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
 
 
-    const size_t storageImageSize = VulkanContext::deviceInfo.descriptorBufferProps.storageImageDescriptorSize;
+    const size_t sampledImageSize = VulkanContext::deviceInfo.descriptorBufferProps.sampledImageDescriptorSize;
     for (int32_t i = 0; i < imageInfos.size(); i++) {
-        descriptorGetInfo.data.pStorageImage = &imageInfos[i];
+        descriptorGetInfo.data.pSampledImage = &imageInfos[i];
 
-        char* bufferPtr = basePtr + i * storageImageSize;
-        vkGetDescriptorEXT(context->device, &descriptorGetInfo, storageImageSize, bufferPtr);
+        char* bufferPtr = basePtr + i * sampledImageSize;
+        vkGetDescriptorEXT(context->device, &descriptorGetInfo, sampledImageSize, bufferPtr);
     }
 
     return true;
 }
 
-bool DescriptorBufferStorageImage::UpdateDescriptor(const VkDescriptorImageInfo& imageInfo, int32_t descriptorSetIndex, int32_t descriptorBindingIndex, int32_t bindingArrayIndex)
+bool DescriptorBufferSampledImage::UpdateDescriptor(const VkDescriptorImageInfo& imageInfo, int32_t descriptorSetIndex, int32_t descriptorBindingIndex, int32_t bindingArrayIndex)
 {
     if (descriptorSetIndex < 0 || descriptorSetIndex >= maxDescriptorSets) {
         LOG_ERROR("Invalid descriptor set index: {}", descriptorSetIndex);
@@ -129,17 +129,17 @@ bool DescriptorBufferStorageImage::UpdateDescriptor(const VkDescriptorImageInfo&
 
     VkDescriptorGetInfoEXT descriptorGetInfo{};
     descriptorGetInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT;
-    descriptorGetInfo.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-    descriptorGetInfo.data.pStorageImage = &imageInfo;
+    descriptorGetInfo.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    descriptorGetInfo.data.pSampledImage = &imageInfo;
 
-    const size_t storageImageSize = VulkanContext::deviceInfo.descriptorBufferProps.storageImageDescriptorSize;
-    char* bufferPtr = basePtr + bindingArrayIndex * storageImageSize;
-    vkGetDescriptorEXT(context->device, &descriptorGetInfo, storageImageSize, bufferPtr);
+    const size_t sampledImageSize = VulkanContext::deviceInfo.descriptorBufferProps.sampledImageDescriptorSize;
+    char* bufferPtr = basePtr + bindingArrayIndex * sampledImageSize;
+    vkGetDescriptorEXT(context->device, &descriptorGetInfo, sampledImageSize, bufferPtr);
 
     return true;
 }
 
-VkDescriptorBufferBindingInfoEXT DescriptorBufferStorageImage::GetBindingInfo() const
+VkDescriptorBufferBindingInfoEXT DescriptorBufferSampledImage::GetBindingInfo() const
 {
     VkDescriptorBufferBindingInfoEXT descriptorBufferBindingInfo{};
     descriptorBufferBindingInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT;

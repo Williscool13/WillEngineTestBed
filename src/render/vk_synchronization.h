@@ -21,9 +21,6 @@ struct FrameData
 
     void Cleanup(const VulkanContext* context) const;
 };
-
-class Synchronization
-{};
 } // Renderer
 
 #endif //WILLENGINETESTBED_SYNCHRONIZATION_H

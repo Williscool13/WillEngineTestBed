@@ -9,8 +9,8 @@
 #include <vector>
 #include <SDL3/SDL.h>
 
-#include "synchronization.h"
-#include "vk_resources.h"
+#include "render/vk_synchronization.h"
+#include "render/vk_resources.h"
 
 
 namespace Renderer

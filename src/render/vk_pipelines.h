@@ -6,10 +6,7 @@
 #define WILLENGINETESTBED_VK_PIPELINESA_H
 
 #include <vector>
-
-#include <vulkan/vulkan_core.h>
-
-#include "vk_helpers.h"
+#include <volk/volk.h>
 
 namespace Renderer
 {
@@ -53,38 +50,16 @@ public:
 
     void setupRenderer(const std::vector<VkFormat>& colorAttachmentFormat, VkFormat depthAttachmentFormat = VK_FORMAT_UNDEFINED, VkFormat stencilAttachmentFormat = VK_FORMAT_UNDEFINED);
 
-    /**
-     * Set up the depth and stencil for this pipeline
-     * @param depthTestEnable enable depth test
-     * @param depthWriteEnable enable depth write
-     * @param compareOp compare operation to use
-     * @param depthBoundsTestEnable
-     * @param stencilTestEnable
-     * @param front
-     * @param back
-     * @param minDepthBounds
-     * @param maxDepthBounds
-     */
     void setupDepthStencil(VkBool32 depthTestEnable, VkBool32 depthWriteEnable, VkCompareOp compareOp, VkBool32 depthBoundsTestEnable, VkBool32 stencilTestEnable, const VkStencilOpState& front,
                            const VkStencilOpState& back, float minDepthBounds, float maxDepthBounds);
 
-    /**
-     * Shortcut for setupDepthStencil
-     * @param depthWriteEnable
-     * @param op
-     */
     void enableDepthTest(VkBool32 depthWriteEnable, VkCompareOp op);
 
-    /**
-     * shortcut for setupDepthStencil
-     */
     void disableDepthTest();
 
-    void setupBlending(const std::vector<VkPipelineColorBlendAttachmentState>& blendAttachmentStates);
+    void setupBlending(const std::vector<VkPipelineColorBlendAttachmentState>& blendAttachmentStates_);
 
-    void disableBlending();
-
-    void setupPipelineLayout(VkPipelineLayout pipelineLayout);
+    void setupPipelineLayout(VkPipelineLayout pipelineLayout_);
 
     void setupTessellation(int32_t controlPoints = 4);
 
@@ -92,8 +67,6 @@ public:
 
 private:
     std::vector<VkPipelineShaderStageCreateInfo> shaderStages;
-
-    bool vertexInputEnabled{false};
 
     // Viewport, details not necessary here (dynamic rendering)
     VkPipelineViewportStateCreateInfo viewportState = {
@@ -143,7 +116,6 @@ private:
 
     std::vector<VkFormat> colorAttachmentFormats;
 
-    bool bBlendingEnabled{false};
     std::vector<VkPipelineColorBlendAttachmentState> blendAttachmentStates{};
 
     bool bIsTessellationEnabled{false};

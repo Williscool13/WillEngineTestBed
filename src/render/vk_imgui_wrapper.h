@@ -23,7 +23,7 @@ public:
 
     ~ImguiWrapper();
 
-    void HandleInput(const SDL_Event& e);
+    static void HandleInput(const SDL_Event& e);
 
 private:
     VulkanContext* context{nullptr};

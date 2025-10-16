@@ -2,26 +2,25 @@
 // Created by William on 2025-10-11.
 //
 
-#ifndef WILLENGINETESTBED_DESCRIPTOR_BUFFER_SAMPLER_H
-#define WILLENGINETESTBED_DESCRIPTOR_BUFFER_SAMPLER_H
+#ifndef WILLENGINETESTBED_DESCRIPTOR_BUFFER_COMBINED_IMAGE_SAMPLER_H
+#define WILLENGINETESTBED_DESCRIPTOR_BUFFER_COMBINED_IMAGE_SAMPLER_H
 
 #include <span>
 #include <vector>
-#include <volk/volk.h>
 
-#include "vulkan/vk_resources.h"
+#include "../vk_resources.h"
 
 namespace Renderer
 {
 struct VulkanContext;
 
-struct DescriptorBufferSampler
+struct DescriptorBufferCombinedImageSampler
 {
-    DescriptorBufferSampler();
+    DescriptorBufferCombinedImageSampler();
 
-    explicit DescriptorBufferSampler(VulkanContext* context, VkDescriptorSetLayout setLayout, int32_t maxSetCount = 3);
+    explicit DescriptorBufferCombinedImageSampler(VulkanContext* context, VkDescriptorSetLayout setLayout, int32_t maxSetCount = 3);
 
-    ~DescriptorBufferSampler();
+    ~DescriptorBufferCombinedImageSampler();
 
     void ReleaseDescriptorSet(int32_t descriptorSetIndex);
 
@@ -59,7 +58,7 @@ struct DescriptorBufferSampler
 private:
     VulkanContext* context{};
     AllocatedBuffer buffer{};
-    VkDescriptorSetLayout descriptorSetLayout;
+    VkDescriptorSetLayout descriptorSetLayout{};
 
     /**
      * The size of 1 descriptor set
@@ -72,4 +71,4 @@ private:
 };
 } // Renderer
 
-#endif //WILLENGINETESTBED_DESCRIPTOR_BUFFER_SAMPLER_H
+#endif //WILLENGINETESTBED_DESCRIPTOR_BUFFER_COMBINED_IMAGE_SAMPLER_H

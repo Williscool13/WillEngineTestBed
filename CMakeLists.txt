@@ -20,6 +20,8 @@ add_subdirectory(extern/vk-bootstrap)
 # My Libs
 add_subdirectory(src/crash-handling)
 add_subdirectory(src/physics)
+add_subdirectory(src/render)
+add_subdirectory(src/input)
 
 # Imgui
 set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/extern/imgui)
@@ -57,7 +59,11 @@ set(CMAKE_CXX_STANDARD 20) # Jolt sets cxx standard to 17
 # Common
 add_library(engine-common INTERFACE
         src/utils/utils.cpp
-        src/utils/utils.h)
+        src/utils/utils.h
+        src/render/render_utils.cpp
+        src/render/render_utils.h
+        src/render/render_constants.cpp
+        src/render/render_constants.h)
 
 target_compile_definitions(engine-common INTERFACE
         BUILD_CONFIG_NAME="$<CONFIG>"

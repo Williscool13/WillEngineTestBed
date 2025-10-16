@@ -1,0 +1,40 @@
+add_library(render-lib STATIC
+        vk_context.cpp
+        vk_context.h
+        vk_swapchain.cpp
+        vk_swapchain.h
+        vk_synchronization.cpp
+        vk_synchronization.h
+        vk_imgui_wrapper.cpp
+        vk_imgui_wrapper.h
+        vk_descriptors.h
+        vk_descriptors.cpp
+        vk_pipelines.cpp
+        vk_pipelines.h
+        vk_resources.cpp
+        vk_resources.h
+        vk_helpers.cpp
+        vk_helpers.h
+        descriptor_buffer/descriptor_buffer_uniform.cpp
+        descriptor_buffer/descriptor_buffer_uniform.h
+        descriptor_buffer/descriptor_buffer_storage.cpp
+        descriptor_buffer/descriptor_buffer_storage.h
+        descriptor_buffer/descriptor_buffer_combined_image_sampler.cpp
+        descriptor_buffer/descriptor_buffer_combined_image_sampler.h
+        descriptor_buffer/descriptor_buffer_sampled_image.cpp
+        descriptor_buffer/descriptor_buffer_sampled_image.h
+        descriptor_buffer/descriptor_buffer_sampler.cpp
+        descriptor_buffer/descriptor_buffer_sampler.h
+        descriptor_buffer/descriptor_buffer_storage_image.cpp
+        descriptor_buffer/descriptor_buffer_storage_image.h
+)
+
+target_link_libraries(render-lib PUBLIC
+        engine-common
+        crash-handling
+        volk
+        imgui
+        VulkanMemoryAllocator
+        vk-bootstrap::vk-bootstrap
+        SDL3::SDL3
+)

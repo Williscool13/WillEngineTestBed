@@ -2,38 +2,7 @@ add_executable(renderer
         main.cpp
         renderer.cpp
         renderer.h
-        vulkan_context.cpp
-        vulkan_context.h
-        imgui_wrapper.cpp
-        imgui_wrapper.h
-        utils.cpp
-        utils.h
-        swapchain.cpp
-        swapchain.h
-        synchronization.cpp
-        synchronization.h
-        input.cpp
-        input.h
-        vk_helpers.cpp
-        vk_helpers.h
-        vk_resources.cpp
-        vk_resources.h
-        descriptor_buffer/descriptor_buffer_uniform.cpp
-        descriptor_buffer/descriptor_buffer_uniform.h
-        descriptor_buffer/descriptor_buffer_storage.cpp
-        descriptor_buffer/descriptor_buffer_storage.h
-        descriptor_buffer/descriptor_buffer_combined_image_sampler.cpp
-        descriptor_buffer/descriptor_buffer_combined_image_sampler.h
-        descriptor_buffer/descriptor_buffer_sampled_image.cpp
-        descriptor_buffer/descriptor_buffer_sampled_image.h
-        descriptor_buffer/descriptor_buffer_sampler.cpp
-        descriptor_buffer/descriptor_buffer_sampler.h
-        descriptor_buffer/descriptor_buffer_storage_image.cpp
-        descriptor_buffer/descriptor_buffer_storage_image.h
-        vk_descriptors.h
-        vk_descriptors.cpp
-        vk_pipelines.cpp
-        vk_pipelines.h
+
 
 )
 
@@ -46,9 +15,6 @@ add_custom_command(TARGET renderer POST_BUILD
 target_link_libraries(renderer PRIVATE
         engine-common
         crash-handling
-        volk
-        imgui
-        VulkanMemoryAllocator
-        vk-bootstrap::vk-bootstrap
-        SDL3::SDL3
+        render-lib
+        input-lib
 )

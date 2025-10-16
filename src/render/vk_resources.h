@@ -8,7 +8,7 @@
 #include <volk/volk.h>
 #include <vma/include/vk_mem_alloc.h>
 
-#include "vulkan_context.h"
+#include "vk_context.h"
 
 namespace Renderer
 {

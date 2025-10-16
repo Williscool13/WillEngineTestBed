@@ -11,4 +11,9 @@ add_library(physics-lib STATIC
         physics_constants.h
 )
 
-target_link_libraries(physics-lib PUBLIC engine-common crash-handling Jolt enkiTS)
+target_link_libraries(physics-lib PUBLIC
+        engine-common
+        crash-handling
+        Jolt
+        enkiTS
+)

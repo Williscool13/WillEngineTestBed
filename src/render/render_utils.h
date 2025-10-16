@@ -1,26 +1,17 @@
 //
-// Created by William on 2025-10-09.
+// Created by William on 2025-10-16.
 //
 
-#ifndef WILLENGINETESTBED_UTILS_H
-#define WILLENGINETESTBED_UTILS_H
+#ifndef WILLENGINETESTBED_RENDER_UTILS_H
+#define WILLENGINETESTBED_RENDER_UTILS_H
 
-#include <crash_handler.h>
-#include <logger.h>
+#include <crash-handling/crash_handler.h>
+#include <crash-handling/logger.h>
 #include <vulkan/vk_enum_string_helper.h>
 #include <volk.h>
 
 namespace Renderer
 {
-
-} // Renderer
-inline static int32_t SWAPCHAIN_MINIMUM_IMAGE_COUNT = 2;
-inline static int32_t SWAPCHAIN_DESIRED_IMAGE_COUNT = 3;
-inline static VkFormat SWAPCHAIN_IMAGE_FORMAT = VK_FORMAT_R8G8B8A8_UNORM;
-inline static int32_t BINDLESS_UNIFORM_BUFFER_COUNT = 1000;
-inline static int32_t BINDLESS_COMBINED_IMAGE_SAMPLER_COUNT = 1000;
-inline static int32_t BINDLESS_STORAGE_IMAGE_COUNT = 1000;
-
 #define VK_CHECK(x)                                                          \
     do {                                                                     \
         VkResult err = x;                                                    \
@@ -29,6 +20,7 @@ inline static int32_t BINDLESS_STORAGE_IMAGE_COUNT = 1000;
             CrashHandler::TriggerManualDump("Vulkan Error");                 \
             exit(1);                                                         \
         }                                                                    \
-    } while (0)
+} while (0)
+} // Renderer
 
-#endif //WILLENGINETESTBED_UTILS_H
+#endif //WILLENGINETESTBED_RENDER_UTILS_H

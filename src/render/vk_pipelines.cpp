@@ -6,6 +6,8 @@
 
 #include <cassert>
 
+#include "vk_helpers.h"
+
 namespace Renderer
 {
 RenderPipelineBuilder::RenderPipelineBuilder()
@@ -17,19 +19,17 @@ RenderPipelineBuilder::RenderPipelineBuilder()
 
 VkGraphicsPipelineCreateInfo RenderPipelineBuilder::generatePipelineCreateInfo(VkPipelineCreateFlagBits flags)
 {
-    if (!bBlendingEnabled) {
-        constexpr VkPipelineColorBlendAttachmentState colorBlendAttachment{
-            VK_FALSE,
-            VK_BLEND_FACTOR_ZERO,
-            VK_BLEND_FACTOR_ZERO,
-            VK_BLEND_OP_ADD,
-            VK_BLEND_FACTOR_ZERO,
-            VK_BLEND_FACTOR_ZERO,
-            VK_BLEND_OP_ADD,
-            VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT
-        };
-
-        blendAttachmentStates.clear();
+    constexpr VkPipelineColorBlendAttachmentState colorBlendAttachment{
+        VK_FALSE,
+        VK_BLEND_FACTOR_ZERO,
+        VK_BLEND_FACTOR_ZERO,
+        VK_BLEND_OP_ADD,
+        VK_BLEND_FACTOR_ZERO,
+        VK_BLEND_FACTOR_ZERO,
+        VK_BLEND_OP_ADD,
+        VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT
+    };
+    if (blendAttachmentStates.empty()) {
         for (int i = 0; i < colorAttachmentFormats.size(); i++) {
             blendAttachmentStates.push_back(colorBlendAttachment);
         }
@@ -68,27 +68,63 @@ void RenderPipelineBuilder::clear()
     inputAssembly = {.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
     rasterizer = {.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
     multisampling = {.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
-    pipelineLayout = {};
+    pipelineLayout = VK_NULL_HANDLE;
     depthStencil = {.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
     renderInfo = {.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO};
     tessellation = {.sType = VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_STATE_CREATE_INFO};
+
+    colorBlending = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+        .pNext = nullptr,
+        .logicOpEnable = VK_FALSE,
+        .logicOp = VK_LOGIC_OP_COPY,
+        .attachmentCount = 0,
+    };
+
+    vertexInputInfo = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+        .vertexBindingDescriptionCount = 0,
+        .pVertexBindingDescriptions = nullptr,
+        .vertexAttributeDescriptionCount = 0,
+        .pVertexAttributeDescriptions = nullptr,
+    };
+
+    dynamicStates = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+    dynamicInfo = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+        .dynamicStateCount = 0,
+        .pDynamicStates = nullptr,
+    };
+    dynamicInfo.pDynamicStates = dynamicStates.data();
+    dynamicInfo.dynamicStateCount = dynamicStates.size();
+
+
+    vertexBindings.clear();
+    vertexAttributes.clear();
+    colorAttachmentFormats.clear();
+    colorAttachmentFormats.clear();
+    bIsTessellationEnabled = false;
+    tessellation = {};
 }
 
-void RenderPipelineBuilder::setShaders(const VkShaderModule vertexShader)
+void RenderPipelineBuilder::setShaders(VkShaderModule vertexShader)
 {
     shaderStages.clear();
     shaderStages.push_back(VkHelpers::PipelineShaderStageCreateInfo(vertexShader, VK_SHADER_STAGE_VERTEX_BIT));
 }
 
-void RenderPipelineBuilder::setShaders(const VkShaderModule vertexShader, const VkShaderModule fragmentShader)
+void RenderPipelineBuilder::setShaders(VkShaderModule vertexShader, VkShaderModule fragmentShader)
 {
     shaderStages.clear();
     shaderStages.push_back(VkHelpers::PipelineShaderStageCreateInfo(vertexShader, VK_SHADER_STAGE_VERTEX_BIT));
     shaderStages.push_back(VkHelpers::PipelineShaderStageCreateInfo(fragmentShader, VK_SHADER_STAGE_FRAGMENT_BIT));
 }
 
-void RenderPipelineBuilder::setShaders(const VkShaderModule vertexShader, const VkShaderModule tessControlShader, const VkShaderModule tessEvalShader,
-                                       const VkShaderModule fragmentShader)
+void RenderPipelineBuilder::setShaders(VkShaderModule vertexShader, VkShaderModule tessControlShader, VkShaderModule tessEvalShader, VkShaderModule fragmentShader)
 {
     shaderStages.clear();
 
@@ -103,11 +139,11 @@ void RenderPipelineBuilder::setupVertexInput(const std::vector<VkVertexInputBind
     this->vertexBindings = bindings;
     this->vertexAttributes = attributes;
 
-    if (vertexAttributes.size() > 0) {
+    if (!vertexAttributes.empty()) {
         vertexInputInfo.pVertexAttributeDescriptions = vertexAttributes.data();
         vertexInputInfo.vertexAttributeDescriptionCount = vertexAttributes.size();
     }
-    if (vertexBindings.size() > 0) {
+    if (!vertexBindings.empty()) {
         vertexInputInfo.pVertexBindingDescriptions = vertexBindings.data();
         vertexInputInfo.vertexBindingDescriptionCount = vertexBindings.size();
     }
@@ -159,8 +195,7 @@ void RenderPipelineBuilder::disableMultisampling()
     setupMultisampling(VK_FALSE, VK_SAMPLE_COUNT_1_BIT, 1.0f, nullptr, VK_FALSE, VK_FALSE);
 }
 
-void RenderPipelineBuilder::setupRenderer(const std::vector<VkFormat>& colorAttachmentFormat, const VkFormat depthAttachmentFormat,
-                                          const VkFormat stencilAttachmentFormat)
+void RenderPipelineBuilder::setupRenderer(const std::vector<VkFormat>& colorAttachmentFormat, const VkFormat depthAttachmentFormat, const VkFormat stencilAttachmentFormat)
 {
     // Color Format
     if (!colorAttachmentFormat.empty()) {
@@ -170,14 +205,11 @@ void RenderPipelineBuilder::setupRenderer(const std::vector<VkFormat>& colorAtta
     }
 
     // Depth Format
-    if (depthAttachmentFormat != VK_FORMAT_UNDEFINED) {
-        renderInfo.depthAttachmentFormat = depthAttachmentFormat;
-    }
+    renderInfo.depthAttachmentFormat = depthAttachmentFormat;
+
 
     // Stencil Format
-    if (stencilAttachmentFormat != VK_FORMAT_UNDEFINED) {
-        renderInfo.stencilAttachmentFormat = stencilAttachmentFormat;
-    }
+    renderInfo.stencilAttachmentFormat = stencilAttachmentFormat;
 }
 
 void RenderPipelineBuilder::setupDepthStencil(const VkBool32 depthTestEnable, const VkBool32 depthWriteEnable, const VkCompareOp compareOp,
@@ -197,34 +229,22 @@ void RenderPipelineBuilder::setupDepthStencil(const VkBool32 depthTestEnable, co
 
 void RenderPipelineBuilder::enableDepthTest(const VkBool32 depthWriteEnable, const VkCompareOp op)
 {
-    setupDepthStencil(
-        VK_TRUE, depthWriteEnable, op,
-        VK_FALSE, VK_FALSE, {}, {}, 0.0f, 1.0f
-    );
+    setupDepthStencil(VK_TRUE, depthWriteEnable, op,VK_FALSE, VK_FALSE, {}, {}, 0.0f, 1.0f);
 }
 
 void RenderPipelineBuilder::disableDepthTest()
 {
-    setupDepthStencil(
-        VK_FALSE, VK_FALSE, VK_COMPARE_OP_NEVER,
-        VK_FALSE, VK_FALSE, {}, {}, 0.0f, 1.0f
-    );
+    setupDepthStencil(VK_FALSE, VK_FALSE, VK_COMPARE_OP_NEVER,VK_FALSE, VK_FALSE, {}, {}, 0.0f, 1.0f);
 }
 
-void RenderPipelineBuilder::setupBlending(const std::vector<VkPipelineColorBlendAttachmentState>& blendAttachmentStates)
+void RenderPipelineBuilder::setupBlending(const std::vector<VkPipelineColorBlendAttachmentState>& blendAttachmentStates_)
 {
-    bBlendingEnabled = true;
-    this->blendAttachmentStates = blendAttachmentStates;
+    this->blendAttachmentStates = blendAttachmentStates_;
 }
 
-void RenderPipelineBuilder::disableBlending()
+void RenderPipelineBuilder::setupPipelineLayout(VkPipelineLayout pipelineLayout_)
 {
-    bBlendingEnabled = false;
-}
-
-void RenderPipelineBuilder::setupPipelineLayout(const VkPipelineLayout pipelineLayout)
-{
-    this->pipelineLayout = pipelineLayout;
+    this->pipelineLayout = pipelineLayout_;
 }
 
 void RenderPipelineBuilder::setupTessellation(const int32_t controlPoints)

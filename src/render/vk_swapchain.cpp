@@ -2,13 +2,14 @@
 // Created by William on 2025-10-10.
 //
 
-#include "swapchain.h"
+#include "vk_swapchain.h"
 
-#include "crash_handler.h"
-#include "logger.h"
-#include "utils.h"
 #include "VkBootstrap.h"
-#include "vulkan_context.h"
+
+#include "vk_context.h"
+#include "crash-handling/crash_handler.h"
+#include "crash-handling/logger.h"
+#include "render_constants.h"
 
 namespace Renderer
 {
@@ -17,13 +18,14 @@ Swapchain::Swapchain(const VulkanContext* context)
 {
     vkb::SwapchainBuilder swapchainBuilder{context->physicalDevice, context->device, context->surface};
 
+    // todo: check vkGetPhysicalDeviceSurfaceFormatsKHR and generate HDR swapchain if needed
     auto swapchainResult = swapchainBuilder
             .set_desired_format(VkSurfaceFormatKHR{.format = SWAPCHAIN_IMAGE_FORMAT, .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR})
             .set_desired_present_mode(VK_PRESENT_MODE_IMMEDIATE_KHR)
             //.set_desired_present_mode(VK_PRESENT_MODE_FIFO_KHR)
             .set_desired_extent(800, 600)
             .add_image_usage_flags(VK_IMAGE_USAGE_TRANSFER_DST_BIT)
-             .set_desired_min_image_count(vkb::SwapchainBuilder::TRIPLE_BUFFERING)
+            .set_desired_min_image_count(vkb::SwapchainBuilder::TRIPLE_BUFFERING)
             //.set_desired_min_image_count(vkb::SwapchainBuilder::DOUBLE_BUFFERING)
             .build();
 

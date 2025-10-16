@@ -2,17 +2,17 @@
 // Created by William on 2025-10-11.
 //
 
-#include "descriptor_buffer_sampler.h"
+#include "descriptor_buffer_uniform.h"
 
-#include "vulkan/utils.h"
-#include "vulkan/vk_helpers.h"
-#include "vulkan/vulkan_context.h"
+#include "../render_utils.h"
+#include "../vk_helpers.h"
+#include "../vk_context.h"
 
 namespace Renderer
 {
-DescriptorBufferSampler::DescriptorBufferSampler() = default;
+DescriptorBufferUniform::DescriptorBufferUniform() = default;
 
-DescriptorBufferSampler::DescriptorBufferSampler(VulkanContext* context, VkDescriptorSetLayout setLayout, int32_t maxSetCount)
+DescriptorBufferUniform::DescriptorBufferUniform(VulkanContext* context, VkDescriptorSetLayout setLayout, int32_t maxSetCount)
     : context(context), descriptorSetLayout(setLayout)
 {
     // Get size per descriptor set (Aligned).
@@ -39,12 +39,12 @@ DescriptorBufferSampler::DescriptorBufferSampler(VulkanContext* context, VkDescr
     buffer.address = VkHelpers::GetDeviceAddress(context->device, buffer.handle);
 }
 
-DescriptorBufferSampler::~DescriptorBufferSampler()
+DescriptorBufferUniform::~DescriptorBufferUniform()
 {
     buffer.Cleanup(context);
 }
 
-void DescriptorBufferSampler::ReleaseDescriptorSet(int32_t descriptorSetIndex)
+void DescriptorBufferUniform::ReleaseDescriptorSet(int32_t descriptorSetIndex)
 {
     if (std::ranges::find(freeIndices, descriptorSetIndex) != freeIndices.end()) {
         LOG_ERROR("[DescriptorBufferUniform] Descriptor set {} is already unallocated", descriptorSetIndex);
@@ -54,7 +54,7 @@ void DescriptorBufferSampler::ReleaseDescriptorSet(int32_t descriptorSetIndex)
     freeIndices.push_back(descriptorSetIndex);
 }
 
-void DescriptorBufferSampler::ReleaseAllDescriptorSets()
+void DescriptorBufferUniform::ReleaseAllDescriptorSets()
 {
     freeIndices.clear();
     for (int32_t i = 0; i < maxDescriptorSets; ++i) {
@@ -62,10 +62,10 @@ void DescriptorBufferSampler::ReleaseAllDescriptorSets()
     }
 }
 
-int32_t DescriptorBufferSampler::AllocateDescriptorSet()
+int32_t DescriptorBufferUniform::AllocateDescriptorSet()
 {
     if (freeIndices.empty()) {
-        LOG_WARN("No more descriptor sets available to use in this descriptor buffer storage");
+        LOG_WARN("No more descriptor sets available to use in this descriptor buffer uniform");
         return -1;
     }
 
@@ -74,7 +74,7 @@ int32_t DescriptorBufferSampler::AllocateDescriptorSet()
     return descriptorSetIndex;
 }
 
-bool DescriptorBufferSampler::UpdateDescriptorSet(std::span<VkDescriptorImageInfo> imageInfos, int32_t descriptorSetIndex, int32_t descriptorBindingIndex)
+bool DescriptorBufferUniform::UpdateDescriptorSet(const std::span<AllocatedBuffer> uniformBuffers, int32_t descriptorSetIndex, int32_t descriptorBindingIndex)
 {
     if (descriptorSetIndex < 0 || descriptorSetIndex >= maxDescriptorSets) {
         LOG_ERROR("Invalid descriptor set index: {}", descriptorSetIndex);
@@ -93,23 +93,28 @@ bool DescriptorBufferSampler::UpdateDescriptorSet(std::span<VkDescriptorImageInf
     vkGetDescriptorSetLayoutBindingOffsetEXT(context->device, descriptorSetLayout, descriptorBindingIndex, &bindingOffset);
     char* basePtr = static_cast<char*>(buffer.allocationInfo.pMappedData) + setOffset + bindingOffset;
 
+    VkDescriptorAddressInfoEXT descriptorAddressInfo = {};
+    descriptorAddressInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_ADDRESS_INFO_EXT;
+    descriptorAddressInfo.format = VK_FORMAT_UNDEFINED;
+
     VkDescriptorGetInfoEXT descriptorGetInfo{};
     descriptorGetInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT;
-    descriptorGetInfo.type = VK_DESCRIPTOR_TYPE_SAMPLER;
+    descriptorGetInfo.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptorGetInfo.data.pUniformBuffer = &descriptorAddressInfo;
 
+    size_t uniformBufferSize = VulkanContext::deviceInfo.descriptorBufferProps.uniformBufferDescriptorSize;
+    for (int32_t i = 0; i < uniformBuffers.size(); i++) {
+        descriptorAddressInfo.address = uniformBuffers[i].address;
+        descriptorAddressInfo.range = uniformBuffers[i].size;
 
-    const size_t samplerSamplerSize = VulkanContext::deviceInfo.descriptorBufferProps.samplerDescriptorSize;
-    for (int32_t i = 0; i < imageInfos.size(); i++) {
-        descriptorGetInfo.data.pSampler = &imageInfos[i].sampler;
-
-        char* bufferPtr = basePtr + i * samplerSamplerSize;
-        vkGetDescriptorEXT(context->device, &descriptorGetInfo, samplerSamplerSize, bufferPtr);
+        char* bufferPtr = basePtr + i * uniformBufferSize;
+        vkGetDescriptorEXT(context->device, &descriptorGetInfo, uniformBufferSize, bufferPtr);
     }
 
     return true;
 }
 
-bool DescriptorBufferSampler::UpdateDescriptor(const VkDescriptorImageInfo& imageInfo, int32_t descriptorSetIndex, int32_t descriptorBindingIndex, int32_t bindingArrayIndex)
+bool DescriptorBufferUniform::UpdateDescriptor(const AllocatedBuffer& uniformBuffer, int32_t descriptorSetIndex, int32_t descriptorBindingIndex, int32_t bindingArrayIndex)
 {
     if (descriptorSetIndex < 0 || descriptorSetIndex >= maxDescriptorSets) {
         LOG_ERROR("Invalid descriptor set index: {}", descriptorSetIndex);
@@ -127,19 +132,25 @@ bool DescriptorBufferSampler::UpdateDescriptor(const VkDescriptorImageInfo& imag
     vkGetDescriptorSetLayoutBindingOffsetEXT(context->device, descriptorSetLayout, descriptorBindingIndex, &bindingOffset);
     char* basePtr = static_cast<char*>(buffer.allocationInfo.pMappedData) + setOffset + bindingOffset;
 
+    VkDescriptorAddressInfoEXT descriptorAddressInfo = {};
+    descriptorAddressInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_ADDRESS_INFO_EXT;
+    descriptorAddressInfo.format = VK_FORMAT_UNDEFINED;
+    descriptorAddressInfo.address = uniformBuffer.address;
+    descriptorAddressInfo.range = uniformBuffer.size;
+
     VkDescriptorGetInfoEXT descriptorGetInfo{};
     descriptorGetInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT;
-    descriptorGetInfo.type = VK_DESCRIPTOR_TYPE_SAMPLER;
-    descriptorGetInfo.data.pSampler = &imageInfo.sampler;
+    descriptorGetInfo.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptorGetInfo.data.pUniformBuffer = &descriptorAddressInfo;
 
-    const size_t samplerSamplerSize = VulkanContext::deviceInfo.descriptorBufferProps.samplerDescriptorSize;
-    char* bufferPtr = basePtr + bindingArrayIndex * samplerSamplerSize;
-    vkGetDescriptorEXT(context->device, &descriptorGetInfo, samplerSamplerSize, bufferPtr);
+    const size_t uniformBufferSize = VulkanContext::deviceInfo.descriptorBufferProps.uniformBufferDescriptorSize;
+    char* bufferPtr = basePtr + bindingArrayIndex * uniformBufferSize;
+    vkGetDescriptorEXT(context->device, &descriptorGetInfo, uniformBufferSize, bufferPtr);
 
     return true;
 }
 
-VkDescriptorBufferBindingInfoEXT DescriptorBufferSampler::GetBindingInfo() const
+VkDescriptorBufferBindingInfoEXT DescriptorBufferUniform::GetBindingInfo() const
 {
     VkDescriptorBufferBindingInfoEXT descriptorBufferBindingInfo{};
     descriptorBufferBindingInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT;
@@ -148,4 +159,4 @@ VkDescriptorBufferBindingInfoEXT DescriptorBufferSampler::GetBindingInfo() const
 
     return descriptorBufferBindingInfo;
 }
-} // Renderer
+}

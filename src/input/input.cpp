@@ -2,12 +2,10 @@
 // Created by William on 2024-08-24.
 //
 
-#include "input.h"
+#include "input/input.h"
 
 #include <ranges>
 #include <fmt/format.h>
-
-#include "imgui.h"
 
 namespace Renderer
 {

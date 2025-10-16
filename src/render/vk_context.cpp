@@ -2,7 +2,7 @@
 // Created by William on 2025-10-09.
 //
 
-#include "vulkan_context.h"
+#include "vk_context.h"
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
@@ -10,8 +10,8 @@
 #include <vk-bootstrap/src/VkBootstrap.h>
 #include <vulkan/vk_enum_string_helper.h>
 
-#include "src/crash-handling/crash_handler.h"
-#include "src/crash-handling/logger.h"
+#include "crash-handling/crash_handler.h"
+#include "crash-handling/logger.h"
 
 namespace Renderer
 {

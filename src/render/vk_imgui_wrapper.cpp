@@ -2,18 +2,18 @@
 // Created by William on 2025-10-09.
 //
 
-#include "imgui_wrapper.h"
+#include "vk_imgui_wrapper.h"
 
 #include <volk.h>
 #include <SDL3/SDL.h>
-
 #include <imgui/backends/imgui_impl_vulkan.h>
 #include <imgui/backends/imgui_impl_sdl3.h>
 
-#include "utils.h"
+#include "render_constants.h"
 #include "VkBootstrap.h"
-#include "vulkan_context.h"
-#include "src/crash-handling/logger.h"
+#include "vk_context.h"
+
+#include "crash-handling/logger.h"
 
 
 namespace Renderer

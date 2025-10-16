@@ -1,0 +1,23 @@
+//
+// Created by William on 2025-10-16.
+//
+
+#ifndef WILLENGINETESTBED_RENDER_CONSTANTS_H
+#define WILLENGINETESTBED_RENDER_CONSTANTS_H
+
+#include <volk/volk.h>
+#include <cstdint>
+
+namespace Renderer
+{
+inline static int32_t SWAPCHAIN_MINIMUM_IMAGE_COUNT = 2;
+inline static int32_t SWAPCHAIN_DESIRED_IMAGE_COUNT = 3;
+inline static VkFormat SWAPCHAIN_IMAGE_FORMAT = VK_FORMAT_R8G8B8A8_UNORM;
+inline static int32_t BINDLESS_UNIFORM_BUFFER_COUNT = 1000;
+inline static int32_t BINDLESS_COMBINED_IMAGE_SAMPLER_COUNT = 1000;
+inline static int32_t BINDLESS_STORAGE_IMAGE_COUNT = 1000;
+}
+
+
+
+#endif //WILLENGINETESTBED_RENDER_CONSTANTS_H

@@ -4,8 +4,8 @@
 
 #include "vk_resources.h"
 
-#include "utils.h"
-#include "vulkan_context.h"
+#include "render_utils.h"
+#include "vk_context.h"
 
 void Renderer::AllocatedBuffer::Cleanup(const VulkanContext* context)
 {

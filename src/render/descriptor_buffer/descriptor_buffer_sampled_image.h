@@ -2,26 +2,25 @@
 // Created by William on 2025-10-11.
 //
 
-#ifndef WILLENGINETESTBED_DESCRIPTOR_BUFFER_STORAGE_IMAGE_H
-#define WILLENGINETESTBED_DESCRIPTOR_BUFFER_STORAGE_IMAGE_H
+#ifndef WILLENGINETESTBED_DESCRIPTOR_BUFFER_SAMPLED_IMAGE_H
+#define WILLENGINETESTBED_DESCRIPTOR_BUFFER_SAMPLED_IMAGE_H
 
 #include <span>
 #include <vector>
-#include <volk/volk.h>
 
-#include "vulkan/vk_resources.h"
+#include "../vk_resources.h"
 
 namespace Renderer
 {
 struct VulkanContext;
 
-struct DescriptorBufferStorageImage
+struct DescriptorBufferSampledImage
 {
-    DescriptorBufferStorageImage();
+    DescriptorBufferSampledImage();
 
-    explicit DescriptorBufferStorageImage(VulkanContext* context, VkDescriptorSetLayout setLayout, int32_t maxSetCount = 3);
+    explicit DescriptorBufferSampledImage(VulkanContext* context, VkDescriptorSetLayout setLayout, int32_t maxSetCount = 3);
 
-    ~DescriptorBufferStorageImage();
+    ~DescriptorBufferSampledImage();
 
     void ReleaseDescriptorSet(int32_t descriptorSetIndex);
 
@@ -37,7 +36,7 @@ struct DescriptorBufferStorageImage
      * Updates all bindings in a descriptor set.
      * @param imageInfos Image info to bind. Must match descriptor set layout binding count.
      * @param descriptorSetIndex Index of descriptor set to update.
-     * @param descriptorBindingIndex Index of the binding in the descriptor
+     * @param descriptorBindingIndex Index of the binding in the descriptor set
      * @return True if successful, false if index is invalid or not allocated.
      */
     bool UpdateDescriptorSet(std::span<VkDescriptorImageInfo> imageInfos, int32_t descriptorSetIndex, int32_t descriptorBindingIndex);
@@ -59,7 +58,7 @@ struct DescriptorBufferStorageImage
 private:
     VulkanContext* context{};
     AllocatedBuffer buffer{};
-    VkDescriptorSetLayout descriptorSetLayout;
+    VkDescriptorSetLayout descriptorSetLayout{};
 
     /**
      * The size of 1 descriptor set
@@ -70,7 +69,6 @@ private:
 
     std::vector<int32_t> freeIndices;
 };
-
 } // Renderer
 
-#endif //WILLENGINETESTBED_DESCRIPTOR_BUFFER_STORAGE_IMAGE_H
+#endif //WILLENGINETESTBED_DESCRIPTOR_BUFFER_SAMPLED_IMAGE_H

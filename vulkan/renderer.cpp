@@ -4,22 +4,26 @@
 
 #include "renderer.h"
 
-#include "swapchain.h"
-#include "src/crash-handling/crash_handler.h"
-#include "src/crash-handling/logger.h"
-#include "utils.h"
 #include "VkBootstrap.h"
-#include "vulkan_context.h"
-#include "imgui_wrapper.h"
 #include "backends/imgui_impl_sdl3.h"
 #include "backends/imgui_impl_vulkan.h"
-#include "input.h"
-#include "vk_descriptors.h"
-#include "vk_helpers.h"
-#include "vk_pipelines.h"
-#include "descriptor_buffer/descriptor_buffer_combined_image_sampler.h"
-#include "descriptor_buffer/descriptor_buffer_storage_image.h"
-#include "descriptor_buffer/descriptor_buffer_uniform.h"
+
+#include "crash-handling/crash_handler.h"
+#include "crash-handling/logger.h"
+
+#include "render/vk_context.h"
+#include "render/vk_swapchain.h"
+#include "render/vk_imgui_wrapper.h"
+#include "render/vk_descriptors.h"
+#include "render/vk_pipelines.h"
+#include "render/vk_helpers.h"
+#include "render/render_utils.h"
+#include "render/render_constants.h"
+#include "render/descriptor_buffer/descriptor_buffer_combined_image_sampler.h"
+#include "render/descriptor_buffer/descriptor_buffer_storage_image.h"
+#include "render/descriptor_buffer/descriptor_buffer_uniform.h"
+
+#include "input/input.h"
 
 namespace Renderer
 {
@@ -238,7 +242,6 @@ void Renderer::CreateResources()
         renderPipelineBuilder.setupInputAssembly(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
         renderPipelineBuilder.setupRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_BACK_BIT, VK_FRONT_FACE_CLOCKWISE);
         renderPipelineBuilder.disableMultisampling();
-        renderPipelineBuilder.disableBlending();
         renderPipelineBuilder.enableDepthTest(true, VK_COMPARE_OP_GREATER_OR_EQUAL);
         renderPipelineBuilder.setupRenderer({VK_FORMAT_R8G8B8A8_UNORM}, VK_FORMAT_D32_SFLOAT);
         renderPipelineBuilder.setupPipelineLayout(renderPipelineLayout);

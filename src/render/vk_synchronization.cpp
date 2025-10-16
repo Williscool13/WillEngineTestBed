@@ -2,9 +2,9 @@
 // Created by William on 2025-10-10.
 //
 
-#include "synchronization.h"
+#include "vk_synchronization.h"
 
-#include "vulkan_context.h"
+#include "vk_context.h"
 
 namespace Renderer
 {

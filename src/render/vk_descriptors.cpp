@@ -6,9 +6,7 @@
 
 #include <volk/volk.h>
 
-
-#include "utils.h"
-#include "vk_helpers.h"
+#include "render_utils.h"
 
 DescriptorLayoutBuilder::DescriptorLayoutBuilder(const uint32_t reservedSize)
 {
