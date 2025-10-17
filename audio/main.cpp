@@ -1,9 +1,14 @@
 #define SDL_MAIN_HANDLED
 
+#define DR_WAV_IMPLEMENTATION
+#include "dr_libs/dr_wav.h"
+
 #include "audio.h"
 #include "crash-handling/crash_context.h"
 #include "crash-handling/crash_handler.h"
 #include "crash-handling/logger.h"
+
+
 
 int main()
 {
