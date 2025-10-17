@@ -60,7 +60,9 @@ set(CMAKE_CXX_STANDARD 20) # Jolt sets cxx standard to 17
 add_library(engine-common INTERFACE
         src/utils/utils.cpp
         src/utils/utils.h
-        )
+        src/utils/file_utils.cpp
+        src/utils/file_utils.h
+)
 
 target_compile_definitions(engine-common INTERFACE
         BUILD_CONFIG_NAME="$<CONFIG>"
