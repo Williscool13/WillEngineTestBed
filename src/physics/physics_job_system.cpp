@@ -57,9 +57,9 @@ uint64_t PhysicsJobSystem::ResetTaskPool()
 
 void PhysicsJobSystem::QueueJob(Job* inJob)
 {
-    uint64_t idx = mTaskIndex.fetch_add(1) % Physics::MAX_PHYSICS_TASKS;
+    uint64_t idx = mTaskIndex.fetch_add(1) % MAX_PHYSICS_TASKS;
     while (!mTasks[idx].GetIsComplete()) {
-        idx = mTaskIndex.fetch_add(1) % Physics::MAX_PHYSICS_TASKS;
+        idx = mTaskIndex.fetch_add(1) % MAX_PHYSICS_TASKS;
     }
     mTasks[idx].Reset();
     inJob->AddRef();
@@ -72,9 +72,9 @@ void PhysicsJobSystem::QueueJob(Job* inJob)
 void PhysicsJobSystem::QueueJobs(Job** inJobs, JPH::uint inNumJobs)
 {
     JPH_ASSERT(inNumJobs > 0);
-    uint64_t idx = mTaskIndex.fetch_add(1) % Physics::MAX_PHYSICS_TASKS;
+    uint64_t idx = mTaskIndex.fetch_add(1) % MAX_PHYSICS_TASKS;
     while (!mTasks[idx].GetIsComplete()) {
-        idx = mTaskIndex.fetch_add(1) % Physics::MAX_PHYSICS_TASKS;
+        idx = mTaskIndex.fetch_add(1) % MAX_PHYSICS_TASKS;
     }
 
     // Batch jobs into single task

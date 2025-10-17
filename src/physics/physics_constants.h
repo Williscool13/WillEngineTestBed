@@ -9,8 +9,9 @@
 namespace Physics
 {
 inline static constexpr int32_t MAX_PHYSICS_JOBS = 2048;
-// Mega Stress Test (6703 bodies, no sleep) shows max used tasks is never greater than 48
-inline static constexpr int32_t MAX_PHYSICS_TASKS = 256;
+inline static constexpr uint64_t TASK_BUFFER = 64;
+// Mega Stress Test (6703 bodies, no sleep) shows max used tasks is never greater than 48. But just in case (technical possibility, we make tasks = jobs + buffer.
+inline static constexpr int32_t MAX_PHYSICS_TASKS = 2048 + TASK_BUFFER;
 } // Physics
 
 #endif //WILLENGINETESTBED_PHYSICS_CONSTANTS_H
