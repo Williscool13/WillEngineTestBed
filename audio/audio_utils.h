@@ -11,6 +11,13 @@
 namespace Audio
 {
 AudioFormat GetAudioExtension(const std::string& path);
+/**
+ * Not the cheapest
+ * @param volume [0, 1]
+ * @return
+ */
+float VolumeToGain(float volume);
+float VolumeToGainCheap(float volume);
 } // Audio
 
 #endif //WILLENGINETESTBED_AUDIO_UTILS_H

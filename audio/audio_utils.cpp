@@ -6,6 +6,8 @@
 
 #include <filesystem>
 
+#include "glm/glm.hpp"
+
 namespace Audio
 {
 AudioFormat GetAudioExtension(const std::string& path)
@@ -20,5 +22,19 @@ AudioFormat GetAudioExtension(const std::string& path)
     if (ext == ".ogg") return AudioFormat::OGG;
 
     return AudioFormat::Unknown;
+}
+
+float VolumeToGain(float volume)
+{
+    if (volume <= 0.0f) return 0.0f;
+
+    // Map 0-100% to -60dB to 0dB
+    const float dB = -60.0f + (volume * 60.0f);
+    return glm::pow(10.0f, dB / 20.0f);
+}
+
+float VolumeToGainCheap(float volume)
+{
+    return glm::pow(volume, 2);
 }
 } // Audio

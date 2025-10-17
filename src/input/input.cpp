@@ -7,15 +7,15 @@
 #include <ranges>
 #include <fmt/format.h>
 
-namespace Renderer
+namespace Input
 {
-void Input::init(SDL_Window* window, const uint32_t w, const uint32_t h)
+void Input::Init(SDL_Window* window, const uint32_t w, const uint32_t h)
 {
     this->window = window;
     this->windowExtents = glm::vec2(w, h);
 }
 
-void Input::processEvent(const SDL_Event& event)
+void Input::ProcessEvent(const SDL_Event& event)
 {
     switch (event.type) {
         case SDL_EVENT_KEY_DOWN:
@@ -54,11 +54,11 @@ void Input::processEvent(const SDL_Event& event)
     }
 }
 
-void Input::updateFocus(const Uint32 sdlWindowFlags)
+void Input::UpdateFocus(const Uint32 sdlWindowFlags)
 {
     bIsWindowInputFocus = (sdlWindowFlags & SDL_WINDOW_INPUT_FOCUS) != 0;
 
-    if (bIsWindowInputFocus && isKeyPressed(Key::NUMLOCKCLEAR)) {
+    if (bIsWindowInputFocus && IsKeyPressed(Key::NUMLOCKCLEAR)) {
         bIsCursorActive = !bIsCursorActive;
         if (!window) {
             fmt::print("Input: Attempted to update focus but window is not defined, perhaps init was not called?\n");
@@ -68,7 +68,7 @@ void Input::updateFocus(const Uint32 sdlWindowFlags)
     }
 }
 
-void Input::frameReset()
+void Input::FrameReset()
 {
     for (auto& val : keyStateData | std::views::values) {
         val.pressed = false;
@@ -97,42 +97,42 @@ void Input::UpdateInputState(InputStateData& inputButton, const bool isPressed)
 }
 
 
-bool Input::isKeyPressed(const Key key) const
+bool Input::IsKeyPressed(const Key key) const
 {
     return keyStateData.at(key).pressed;
 }
 
-bool Input::isKeyReleased(const Key key) const
+bool Input::IsKeyReleased(const Key key) const
 {
     return keyStateData.at(key).released;
 }
 
-bool Input::isKeyDown(const Key key) const
+bool Input::IsKeyDown(const Key key) const
 {
     return keyStateData.at(key).held;
 }
 
-bool Input::isMousePressed(const MouseButton mouseButton) const
+bool Input::IsMousePressed(const MouseButton mouseButton) const
 {
     return mouseStateData.at(mouseButton).pressed;
 }
 
-bool Input::isMouseReleased(const MouseButton mouseButton) const
+bool Input::IsMouseReleased(const MouseButton mouseButton) const
 {
     return mouseStateData.at(mouseButton).released;
 }
 
-bool Input::isMouseDown(const MouseButton mouseButton) const
+bool Input::IsMouseDown(const MouseButton mouseButton) const
 {
     return mouseStateData.at(mouseButton).held;
 }
 
-Input::InputStateData Input::getKeyData(const Key key) const
+Input::InputStateData Input::GetKeyData(const Key key) const
 {
     return keyStateData.at(key);
 }
 
-Input::InputStateData Input::getMouseData(const MouseButton mouseButton) const
+Input::InputStateData Input::GetMouseData(const MouseButton mouseButton) const
 {
     return mouseStateData.at(mouseButton);
 }

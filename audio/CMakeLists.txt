@@ -33,4 +33,5 @@ target_link_libraries(audio PRIVATE
         crash-handling
         SDL3::SDL3
         enkiTS
+        input-lib
 )

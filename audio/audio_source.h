@@ -29,7 +29,6 @@ struct AudioSource
     // Audio thread only (no sync)
     size_t playbackPosition{0};
     bool bIsPlaying{false};
-    float gain{1.0f};
 
     bool bIsFinished{false};
 };

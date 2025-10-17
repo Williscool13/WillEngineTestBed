@@ -10,7 +10,7 @@
 #include <glm/glm.hpp>
 
 
-namespace Renderer
+namespace Input
 {
 enum class Key : uint32_t
 {
@@ -137,7 +137,7 @@ enum class MouseButton : uint8_t
 class Input
 {
 public:
-    static Input& get()
+    static Input& Get()
     {
         static Input instance{};
         return instance;
@@ -201,40 +201,40 @@ private:
 public:
     Input() = default;
 
-    void init(SDL_Window* window, uint32_t w, uint32_t h);
+    void Init(SDL_Window* window, uint32_t w, uint32_t h);
 
-    void processEvent(const SDL_Event& event);
+    void ProcessEvent(const SDL_Event& event);
 
-    void updateFocus(Uint32 sdlWindowFlags);
+    void UpdateFocus(Uint32 sdlWindowFlags);
 
-    void frameReset();
+    void FrameReset();
 
-    bool isKeyPressed(Key key) const;
+    bool IsKeyPressed(Key key) const;
 
-    bool isKeyReleased(Key key) const;
+    bool IsKeyReleased(Key key) const;
 
-    bool isKeyDown(Key key) const;
+    bool IsKeyDown(Key key) const;
 
-    bool isMousePressed(MouseButton mouseButton) const;
+    bool IsMousePressed(MouseButton mouseButton) const;
 
-    bool isMouseReleased(MouseButton mouseButton) const;
+    bool IsMouseReleased(MouseButton mouseButton) const;
 
-    bool isMouseDown(MouseButton mouseButton) const;
+    bool IsMouseDown(MouseButton mouseButton) const;
 
-    InputStateData getKeyData(Key key) const;
+    InputStateData GetKeyData(Key key) const;
 
-    InputStateData getMouseData(MouseButton mouseButton) const;
+    InputStateData GetMouseData(MouseButton mouseButton) const;
 
-    void updateWindowExtent(const uint32_t w, const uint32_t h) { this->windowExtents = glm::vec2(static_cast<float>(w), static_cast<float>(h)); }
+    void UpdateWindowExtent(const uint32_t w, const uint32_t h) { this->windowExtents = glm::vec2(static_cast<float>(w), static_cast<float>(h)); }
 
-    glm::vec2 getMousePosition() const { return mousePosition; }
-    glm::vec2 getMousePositionAbsolute() const { return mousePositionAbsolute; }
-    float getMouseXDelta() const { return mouseXDelta; }
-    float getMouseYDelta() const { return mouseYDelta; }
-    float getMouseWheelDelta() const { return mouseWheelDelta; }
+    glm::vec2 GetMousePosition() const { return mousePosition; }
+    glm::vec2 GetMousePositionAbsolute() const { return mousePositionAbsolute; }
+    float GetMouseXDelta() const { return mouseXDelta; }
+    float GetMouseYDelta() const { return mouseYDelta; }
+    float GetMouseWheelDelta() const { return mouseWheelDelta; }
 
-    bool isCursorActive() const { return bIsCursorActive; }
-    bool isWindowInputFocus() const { return bIsWindowInputFocus; }
+    bool IsCursorActive() const { return bIsCursorActive; }
+    bool IsWindowInputFocus() const { return bIsWindowInputFocus; }
 
 private:
     /**

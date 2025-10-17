@@ -290,18 +290,18 @@ void Renderer::CreateResources()
 
 void Renderer::Run()
 {
-    Input& input = Input::get();
+    Input::Input& input = Input::Input::Get();
     SDL_Event e;
     bool exit = false;
     while (true) {
         while (SDL_PollEvent(&e) != 0) {
-            input.processEvent(e);
+            input.ProcessEvent(e);
             imgui->HandleInput(e);
             if (e.type == SDL_EVENT_QUIT) { exit = true; }
             if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_ESCAPE) { exit = true; }
         }
 
-        input.updateFocus(SDL_GetWindowFlags(window));
+        input.UpdateFocus(SDL_GetWindowFlags(window));
 
         if (exit) {
             bShouldExit = true;
@@ -310,14 +310,14 @@ void Renderer::Run()
 
         Render();
 
-        input.frameReset();
+        input.FrameReset();
         frameNumber++;
     }
 }
 
 void Renderer::Render()
 {
-    Input& input = Input::get();
+    Input::Input& input = Input::Input::Get();
 
     const uint32_t currentFrameInFlight = frameNumber % swapchain->imageCount;
     const FrameData& currentFrameData = frameSynchronization[currentFrameInFlight];
@@ -352,10 +352,10 @@ void Renderer::Render()
         ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
 
-        if (input.isKeyPressed(Key::G)) {
+        if (input.IsKeyPressed(Input::Key::G)) {
             LOG_INFO("G is pressed");
         }
-        if (input.isKeyReleased(Key::G)) {
+        if (input.IsKeyReleased(Input::Key::G)) {
             LOG_INFO("G is released");
         }
         if (ImGui::Begin("Main")) {

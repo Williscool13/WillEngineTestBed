@@ -4,9 +4,11 @@
 
 #include "audio.h"
 
+#include "audio_utils.h"
 #include "crash-handling/logger.h"
 
 #include "dr_libs/dr_wav.h"
+#include "input/input.h"
 
 namespace Audio
 {
@@ -31,6 +33,8 @@ void Audio::Init()
         800,
         600,
         window_flags);
+    Input::Input input = Input::Input::Get();
+    input.Init(window, 800, 600);
 
     SDL_AudioSpec spec{};
     spec.format = SDL_AUDIO_F32;
@@ -58,32 +62,38 @@ void Audio::Init()
 
 void Audio::Update()
 {
+    Input::Input input = Input::Input::Get();
     SDL_Event e;
     bool exit = false;
-    bool click = false;
     while (true) {
+        input.FrameReset();
+
         while (SDL_PollEvent(&e) != 0) {
             if (e.type == SDL_EVENT_QUIT) { exit = true; }
-            if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_ESCAPE) { exit = true; }
-            if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN && e.button.button == SDL_BUTTON_LMASK && e.button.down) { click = true; }
+            input.ProcessEvent(e);
         }
 
-        if (exit) {
+        if (exit || input.IsKeyPressed(Input::Key::ESCAPE)) {
             bShouldExit = true;
             break;
         }
 
-        if (click) {
-            audioSystem.PlaySound(gunshot, 1.0f, 1.0f, false);
-            LOG_INFO("Clicked");
-            click = false;
+        if (input.IsMousePressed(Input::MouseButton::LMB)) {
+            audioSystem.PlaySound(gunshot, VolumeToGain(volume), 1.0f, false);
+        }
+
+        if (input.IsKeyPressed(Input::Key::NUM_0)) {
+            volume = glm::min(1.0f, volume + 0.1f);
+        }
+        if (input.IsKeyPressed(Input::Key::NUM_9)) {
+            volume = glm::max(0.0f, volume - 0.1f);
         }
 
 
         audioSystem.ProcessGameCommands();
 
 
-        auto wait = std::chrono::milliseconds(100);
+        auto wait = std::chrono::milliseconds(10);
         std::this_thread::sleep_for(wait);
     }
 }
