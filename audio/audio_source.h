@@ -23,11 +23,12 @@ struct AudioSource
     AudioClip* clip;
     float baseVolume{1.0f};
     float basePitch{1.0f};
+    float baseSpeed{1.0f};
     bool looping{false};
     bool spatial{false};
 
     // Audio thread only (no sync)
-    size_t playbackPosition{0};
+    float playbackPosition{0}; // float because of pitch, which directly affects
     bool bIsPlaying{false};
 
     bool bIsFinished{false};

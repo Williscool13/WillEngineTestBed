@@ -50,10 +50,12 @@ public:
 
     AudioSource* GetSource(AudioSourceHandle sourceHandle);
 
-
-
     LockFreeQueueCpp11<GameToAudioCommand>& GetAudioCommands() { return gameToAudioCommands; }
 
+    void UpdateListener(glm::vec3 position, glm::vec3 velocity) {
+        listenerPosition.store(position);
+        listenerVelocity.store(velocity);
+    }
 
 private:
     uint32_t AllocateSource();
@@ -65,6 +67,8 @@ private:
     void DeallocateClip(AudioClipHandle clipHandle);
 
 private:
+    enki::TaskScheduler* scheduler{nullptr};
+
     std::array<AudioClip, AUDIO_CLIP_LIMIT> clips{};
     std::array<uint32_t, AUDIO_CLIP_LIMIT> clipGenerations{};
     std::queue<uint32_t> freeClipIndices{};
@@ -76,7 +80,8 @@ private:
 
     std::vector<AudioClipHandle> pendingUnloads{};
 
-    enki::TaskScheduler* scheduler{nullptr};
+    std::atomic<glm::vec3> listenerPosition{glm::vec3(0.0f)};
+    std::atomic<glm::vec3> listenerVelocity{glm::vec3(0.0f)};
 
 private: // Audio thread only.
     void ProcessAudioCommands();

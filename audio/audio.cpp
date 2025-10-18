@@ -79,14 +79,15 @@ void Audio::Update()
         }
 
         if (input.IsMousePressed(Input::MouseButton::LMB)) {
-            audioSystem.PlaySound(gunshot, VolumeToGain(volume), 1.0f, false);
+            audioSystem.PlaySound(gunshot, 1.0f, pitch, false);
+            // VolumeToGain(volume)
         }
 
         if (input.IsKeyPressed(Input::Key::NUM_0)) {
-            volume = glm::min(1.0f, volume + 0.1f);
+            pitch = glm::min(2.0f, pitch + 0.1f);
         }
         if (input.IsKeyPressed(Input::Key::NUM_9)) {
-            volume = glm::max(0.0f, volume - 0.1f);
+            pitch = glm::max(0.0f, pitch - 0.1f);
         }
 
 

@@ -7,6 +7,7 @@
 #include "audio_commands.h"
 #include "audio_utils.h"
 #include "glm/vec3.hpp"
+#include "utils/utils.h"
 
 namespace Audio
 {
@@ -70,12 +71,15 @@ void AudioSystem::ProcessGameCommands()
 
 void AudioSystem::Cleanup()
 {
-    // Wait for all async load tasks to complete
-    for (auto& clip : clips) {
-        if (clip.loadState.load() == AudioClip::LoadState::Loading) {
-            scheduler->WaitforTask(&clip.loadTask);
+    if (scheduler) {
+        // Wait for all async load tasks to complete
+        for (auto& clip : clips) {
+            if (clip.loadState.load() == AudioClip::LoadState::Loading) {
+                scheduler->WaitforTask(&clip.loadTask);
+            }
         }
     }
+
 
     // Free all clip data
     for (auto& clip : clips) {
@@ -92,6 +96,11 @@ void AudioSystem::Cleanup()
 
 AudioClipHandle AudioSystem::LoadClip(const std::string& path)
 {
+    if (!scheduler) {
+        LOG_ERROR("Attempted to load clip but schedule is null");
+        return {};
+    }
+
     auto it = loadedClips.find(path);
     if (it != loadedClips.end()) {
         AudioClip* clip = GetClip(it->second);
@@ -153,7 +162,7 @@ AudioSourceHandle AudioSystem::PlaySound(AudioClipHandle clipHandle, glm::vec3 p
     source.position.store(position);
     source.velocity.store(velocity);
     source.baseVolume = volume;
-    source.basePitch = pitch;
+    source.basePitch = glm::clamp( pitch, 0.1f, 10.0f);
     source.looping = bLooping;
     source.spatial = bSpatial;
 
@@ -329,26 +338,39 @@ void AudioSystem::MixActiveSources(SDL_AudioStream* stream, int bytesNeeded)
     std::vector mixBuffer(samplesNeeded, 0.0f);
 
     // For each source, add audio clip's sample contribution to the sample buffer
-    for (auto& sourceHandle : activeSources) {
-        AudioSource* source = GetSource(sourceHandle);
-        if (!source || !source->bIsPlaying) continue;
+    {
+        //Utils::ScopedTimer scopedTimer{"Sound Mixing"};
+        for (auto& sourceHandle : activeSources) {
+            AudioSource* source = GetSource(sourceHandle);
+            if (!source || !source->bIsPlaying) continue;
 
-        for (int i = 0; i < samplesNeeded; ++i) {
-            if (source->playbackPosition >= source->clip->sampleCount) {
-                if (source->looping) {
-                    source->playbackPosition = 0;
+            for (int i = 0; i < samplesNeeded; ++i) {
+                const uint64_t samplePos = std::floor(source->playbackPosition);
+
+                float fraction =  source->playbackPosition - samplePos;
+                uint64_t nextSamplePos = samplePos + 1;
+
+                float sample = source->clip->data[samplePos];
+                if (nextSamplePos < source->clip->sampleCount) {
+                    sample = glm::mix(sample, source->clip->data[nextSamplePos], fraction);
+                } else {
+                    // we're about to hit the end
+                    if (source->looping) {
+                        nextSamplePos %= source->clip->sampleCount;
+                        sample = glm::mix(sample, source->clip->data[nextSamplePos], fraction);
+                        source->playbackPosition = 0;
+                    } else {
+                        source->bIsFinished = true;
+                        source->bIsPlaying = false;
+                    }
                 }
-                else {
-                    source->bIsFinished = true;
-                    source->bIsPlaying = false;
-                    break;
-                }
+
+                mixBuffer[i] += sample * source->baseVolume;
+                source->playbackPosition += source->basePitch;
             }
-
-            mixBuffer[i] += source->clip->data[source->playbackPosition] * source->baseVolume;
-            source->playbackPosition++;
         }
     }
+
 
     SDL_PutAudioStreamData(stream, mixBuffer.data(), bytesNeeded);
 }

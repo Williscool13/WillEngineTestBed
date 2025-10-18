@@ -40,7 +40,7 @@ private:
     AudioSystem audioSystem{};
 
     AudioClipHandle gunshot{};
-    float volume{1.0f};
+    float pitch{1.0f};
 
     float* pDecodedInterleavedPCMFrames;
     size_t sampleCount;
