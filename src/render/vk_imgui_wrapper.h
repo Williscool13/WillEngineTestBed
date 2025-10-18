@@ -19,7 +19,7 @@ class ImguiWrapper
 public:
     ImguiWrapper() = default;
 
-    ImguiWrapper(VulkanContext* context, SDL_Window* window, int32_t swapchainImageCount);
+    ImguiWrapper(VulkanContext* context, SDL_Window* window, int32_t swapchainImageCount, VkFormat swapchainFormat);
 
     ~ImguiWrapper();
 

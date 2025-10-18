@@ -26,6 +26,7 @@ struct Swapchain
 
     VkSwapchainKHR handle{};
     VkFormat format{};
+    VkColorSpaceKHR colorSpace{};
     VkExtent2D extent{};
     uint32_t imageCount;
     std::vector<VkImage> swapchainImages{};

@@ -18,7 +18,7 @@
 
 namespace Renderer
 {
-ImguiWrapper::ImguiWrapper(VulkanContext* context, SDL_Window* window, int32_t swapchainImageCount)
+ImguiWrapper::ImguiWrapper(VulkanContext* context, SDL_Window* window, int32_t swapchainImageCount, VkFormat swapchainFormat)
     : context(context)
 {
     // DearImGui implementation, basically copied directly from the Vulkan/SDl3 from DearImGui samples.
@@ -83,7 +83,7 @@ ImguiWrapper::ImguiWrapper(VulkanContext* context, SDL_Window* window, int32_t s
     initInfo.UseDynamicRendering = true;
     initInfo.PipelineInfoMain.PipelineRenderingCreateInfo = {.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO};
     initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.colorAttachmentCount = 1;
-    initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.pColorAttachmentFormats = &SWAPCHAIN_IMAGE_FORMAT;
+    initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.pColorAttachmentFormats = &swapchainFormat;
     ImGui_ImplVulkan_Init(&initInfo);
 
 

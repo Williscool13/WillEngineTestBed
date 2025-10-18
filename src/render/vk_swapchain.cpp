@@ -10,6 +10,7 @@
 #include "crash-handling/crash_handler.h"
 #include "crash-handling/logger.h"
 #include "render_constants.h"
+#include "render_utils.h"
 
 namespace Renderer
 {
@@ -19,8 +20,32 @@ Swapchain::Swapchain(const VulkanContext* context)
     vkb::SwapchainBuilder swapchainBuilder{context->physicalDevice, context->device, context->surface};
 
     // todo: check vkGetPhysicalDeviceSurfaceFormatsKHR and generate HDR swapchain if needed
+    uint32_t formatCount;
+    VkSurfaceFormatKHR surfaceFormats[32]{};
+    VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(context->physicalDevice, context->surface, &formatCount, surfaceFormats));
+
+    VkFormat targetSwapchainFormat = VK_FORMAT_UNDEFINED;
+    VkColorSpaceKHR targetColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+    for (int32_t i = 0; i < formatCount; ++i) {
+        if (surfaceFormats[i].format == SWAPCHAIN_HDR_IMAGE_FORMAT) {
+            targetSwapchainFormat = SWAPCHAIN_HDR_IMAGE_FORMAT;
+            targetColorSpace = surfaceFormats[i].colorSpace;
+            break;
+        }
+        if (surfaceFormats[i].format == SWAPCHAIN_SDR_IMAGE_FORMAT) {
+            targetSwapchainFormat = SWAPCHAIN_SDR_IMAGE_FORMAT;
+            targetColorSpace = surfaceFormats[i].colorSpace;
+        }
+    }
+
+    if (targetSwapchainFormat == VK_FORMAT_UNDEFINED) {
+        LOG_ERROR("Failed to get valid swapchains for this surface. Crashing.");
+        CrashHandler::TriggerManualDump("Failed to find valid swpachain format");
+        exit(1);
+    }
+
     auto swapchainResult = swapchainBuilder
-            .set_desired_format(VkSurfaceFormatKHR{.format = SWAPCHAIN_IMAGE_FORMAT, .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR})
+            .set_desired_format(VkSurfaceFormatKHR{.format = targetSwapchainFormat, .colorSpace = targetColorSpace})
             .set_desired_present_mode(VK_PRESENT_MODE_IMMEDIATE_KHR)
             //.set_desired_present_mode(VK_PRESENT_MODE_FIFO_KHR)
             .set_desired_extent(800, 600)
@@ -49,6 +74,7 @@ Swapchain::Swapchain(const VulkanContext* context)
     handle = vkbSwapchain.swapchain;
     imageCount = vkbSwapchain.image_count;
     format = vkbSwapchain.image_format;
+    colorSpace = vkbSwapchain.color_space;
     extent = {vkbSwapchain.extent.width, vkbSwapchain.extent.height};
     swapchainImages = imagesResult.value();
     swapchainImageViews = viewsResult.value();

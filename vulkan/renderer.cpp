@@ -53,7 +53,7 @@ void Renderer::Initialize()
 
     vulkanContext = std::make_unique<VulkanContext>(window);
     swapchain = std::make_unique<Swapchain>(vulkanContext.get());
-    imgui = std::make_unique<ImguiWrapper>(vulkanContext.get(), window, swapchain->imageCount);
+    imgui = std::make_unique<ImguiWrapper>(vulkanContext.get(), window, swapchain->imageCount, swapchain->format);
 
     frameSynchronization.resize(swapchain->imageCount);
     renderFramesInFlight = swapchain->imageCount;
@@ -151,10 +151,10 @@ void Renderer::CreateResources()
         drawImageUsages |= VK_IMAGE_USAGE_STORAGE_BIT;
         drawImageUsages |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
         drawImageUsages |= VK_IMAGE_USAGE_SAMPLED_BIT;
-        VkImageCreateInfo drawImageCreateInfo = VkHelpers::ImageCreateInfo(VK_FORMAT_R8G8B8A8_UNORM, {800, 600, 1}, drawImageUsages);
+        VkImageCreateInfo drawImageCreateInfo = VkHelpers::ImageCreateInfo(DRAW_IMAGE_FORMAT, {800, 600, 1}, drawImageUsages);
         drawImage = VkResources::CreateAllocatedImage(vulkanContext.get(), drawImageCreateInfo);
 
-        VkImageViewCreateInfo drawImageViewCreateInfo = VkHelpers::ImageViewCreateInfo(drawImage.handle, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT);
+        VkImageViewCreateInfo drawImageViewCreateInfo = VkHelpers::ImageViewCreateInfo(drawImage.handle, DRAW_IMAGE_FORMAT, VK_IMAGE_ASPECT_COLOR_BIT);
         drawImageView = VkResources::CreateAllocatedImageView(vulkanContext.get(), drawImageViewCreateInfo);
     }
 
@@ -165,10 +165,10 @@ void Renderer::CreateResources()
         depthImageUsages |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
         depthImageUsages |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
         depthImageUsages |= VK_IMAGE_USAGE_SAMPLED_BIT;
-        VkImageCreateInfo depthImageCreateInfo = VkHelpers::ImageCreateInfo(VK_FORMAT_D32_SFLOAT, {800, 600, 1}, depthImageUsages);
+        VkImageCreateInfo depthImageCreateInfo = VkHelpers::ImageCreateInfo(DEPTH_IMAGE_FORMAT, {800, 600, 1}, depthImageUsages);
         depthImage = VkResources::CreateAllocatedImage(vulkanContext.get(), depthImageCreateInfo);
 
-        VkImageViewCreateInfo depthImageViewCreateInfo = VkHelpers::ImageViewCreateInfo(depthImage.handle, VK_FORMAT_D32_SFLOAT, VK_IMAGE_ASPECT_DEPTH_BIT);
+        VkImageViewCreateInfo depthImageViewCreateInfo = VkHelpers::ImageViewCreateInfo(depthImage.handle, DEPTH_IMAGE_FORMAT, VK_IMAGE_ASPECT_DEPTH_BIT);
         depthImageView = VkResources::CreateAllocatedImageView(vulkanContext.get(), depthImageViewCreateInfo);
     }
 
@@ -243,7 +243,7 @@ void Renderer::CreateResources()
         renderPipelineBuilder.setupRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_BACK_BIT, VK_FRONT_FACE_CLOCKWISE);
         renderPipelineBuilder.disableMultisampling();
         renderPipelineBuilder.enableDepthTest(true, VK_COMPARE_OP_GREATER_OR_EQUAL);
-        renderPipelineBuilder.setupRenderer({VK_FORMAT_R8G8B8A8_UNORM}, VK_FORMAT_D32_SFLOAT);
+        renderPipelineBuilder.setupRenderer({DRAW_IMAGE_FORMAT}, VK_FORMAT_D32_SFLOAT);
         renderPipelineBuilder.setupPipelineLayout(renderPipelineLayout);
         VkGraphicsPipelineCreateInfo pipelineCreateInfo = renderPipelineBuilder.generatePipelineCreateInfo();
         VK_CHECK(vkCreateGraphicsPipelines(vulkanContext->device, VK_NULL_HANDLE, 1, &pipelineCreateInfo, nullptr, &renderPipeline));
@@ -496,13 +496,13 @@ void Renderer::Render()
                 drawImage.handle,
                 VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT),
                 VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
+                VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
             );
             barriers[1] = VkHelpers::ImageMemoryBarrier(
                 currentSwapchainImage,
                 VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT),
                 VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_UNDEFINED,
-                VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
+                VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
             );
             VkDependencyInfo depInfo{.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
             depInfo.imageMemoryBarrierCount = 2;
@@ -512,24 +512,28 @@ void Renderer::Render()
 
         // Copy
         {
-            VkImageCopy2 copyRegion{};
-            copyRegion.sType = VK_STRUCTURE_TYPE_IMAGE_COPY_2;
-            copyRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-            copyRegion.srcSubresource.layerCount = 1;
-            copyRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-            copyRegion.dstSubresource.layerCount = 1;
-            copyRegion.extent = {800, 600, 1};
+            VkImageBlit2 blitRegion{};
+            blitRegion.sType = VK_STRUCTURE_TYPE_IMAGE_BLIT_2;
+            blitRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            blitRegion.srcSubresource.layerCount = 1;
+            blitRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            blitRegion.dstSubresource.layerCount = 1;
+            blitRegion.srcOffsets[0] = {0,0,0};
+            blitRegion.srcOffsets[1] = {800, 600, 1};
+            blitRegion.dstOffsets[0] = {0,0,0};
+            blitRegion.dstOffsets[1] = {800, 600, 1};
 
-            VkCopyImageInfo2 copyInfo{};
-            copyInfo.sType = VK_STRUCTURE_TYPE_COPY_IMAGE_INFO_2;
-            copyInfo.srcImage = drawImage.handle;
-            copyInfo.srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-            copyInfo.dstImage = currentSwapchainImage;
-            copyInfo.dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-            copyInfo.regionCount = 1;
-            copyInfo.pRegions = &copyRegion;
+            VkBlitImageInfo2 blitInfo{};
+            blitInfo.sType = VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2;
+            blitInfo.srcImage = drawImage.handle;
+            blitInfo.srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+            blitInfo.dstImage = currentSwapchainImage;
+            blitInfo.dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            blitInfo.regionCount = 1;
+            blitInfo.pRegions = &blitRegion;
+            blitInfo.filter = VK_FILTER_NEAREST;
 
-            vkCmdCopyImage2(cmd, &copyInfo);
+            vkCmdBlitImage2(cmd, &blitInfo);
         }
 
         // Transition 3 - Prepare for imgui draw
