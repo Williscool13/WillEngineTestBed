@@ -23,6 +23,8 @@ public:
 
     void Cleanup();
 
+    void TestDopplerEffect();
+
     /**
      * Runs on a background thread, use carefully.
      * @param userdata
@@ -40,6 +42,7 @@ private:
     AudioSystem audioSystem{};
 
     AudioClipHandle gunshot{};
+    AudioClipHandle whistle{};
     float pitch{1.0f};
 
     float* pDecodedInterleavedPCMFrames;

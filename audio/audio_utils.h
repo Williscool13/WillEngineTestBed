@@ -5,6 +5,7 @@
 #ifndef WILLENGINETESTBED_AUDIO_UTILS_H
 #define WILLENGINETESTBED_AUDIO_UTILS_H
 #include <string>
+#include <glm/glm.hpp>
 
 #include "audio_types.h"
 
@@ -18,6 +19,7 @@ AudioFormat GetAudioExtension(const std::string& path);
  */
 float VolumeToGain(float volume);
 float VolumeToGainCheap(float volume);
+float CalculateDopplerShift(const glm::vec3& sourcePos, const glm::vec3& sourceVel, const glm::vec3& listenerPos, const glm::vec3& listenerVel);
 } // Audio
 
 #endif //WILLENGINETESTBED_AUDIO_UTILS_H

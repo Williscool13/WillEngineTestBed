@@ -9,6 +9,8 @@
 
 namespace Audio
 {
+struct AudioSource;
+
 enum class AudioFormat
 {
     WAV,
@@ -33,6 +35,11 @@ struct AudioSourceHandle
     static AudioSourceHandle INVALID;
 
     bool IsValid() const { return index != INVALID_SOURCE_INDEX && generation != INVALID_SOURCE_INDEX; }
+
+    bool operator<(const AudioSourceHandle& other) const
+    {
+        return index < other.index;
+    }
 };
 }
 

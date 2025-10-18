@@ -37,4 +37,14 @@ float VolumeToGainCheap(float volume)
 {
     return glm::pow(volume, 2);
 }
+
+float CalculateDopplerShift(const glm::vec3& sourcePos, const glm::vec3& sourceVel, const glm::vec3& listenerPos, const glm::vec3& listenerVel)
+{
+    glm::vec3 toListener = glm::normalize(listenerPos - sourcePos);
+
+    float sourceSpeed = glm::dot(sourceVel, toListener);
+    float listenerSpeed = glm::dot(listenerVel, toListener);
+
+    return (SPEED_OF_SOUND + sourceSpeed) / (SPEED_OF_SOUND + listenerSpeed);
+}
 } // Audio

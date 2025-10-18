@@ -62,6 +62,8 @@ add_library(engine-common INTERFACE
         src/utils/utils.h
         src/utils/file_utils.cpp
         src/utils/file_utils.h
+        src/utils/world_constants.cpp
+        src/utils/world_constants.h
 )
 
 target_compile_definitions(engine-common INTERFACE

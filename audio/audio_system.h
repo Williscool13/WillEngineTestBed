@@ -18,6 +18,7 @@
 #include "audio_source.h"
 #include "audio_types.h"
 #include "crash-handling/logger.h"
+#include "utils/world_constants.h"
 
 
 namespace Audio
@@ -43,19 +44,24 @@ public:
 
     AudioSourceHandle PlaySound(AudioClipHandle clipHandle, float volume, float pitch, bool bLooping)
     {
-        return PlaySound(clipHandle, {}, {}, volume, pitch, false, bLooping);
+        return PlaySound(clipHandle, {}, {}, volume, pitch, false, false, bLooping);
     }
 
-    AudioSourceHandle PlaySound(AudioClipHandle clipHandle, glm::vec3 position, glm::vec3 velocity, float volume, float pitch, bool bSpatial, bool bLooping);
+    AudioSourceHandle PlaySound(AudioClipHandle clipHandle, glm::vec3 position, glm::vec3 velocity, float volume, float pitch, bool bSpatial, bool bDoppler, bool bLooping);
+
+    bool StopSound(AudioSourceHandle sourceHandle);
 
     AudioSource* GetSource(AudioSourceHandle sourceHandle);
 
     LockFreeQueueCpp11<GameToAudioCommand>& GetAudioCommands() { return gameToAudioCommands; }
 
-    void UpdateListener(glm::vec3 position, glm::vec3 velocity) {
+    void UpdateListener(glm::vec3 position, glm::vec3 velocity, glm::vec3 forward) {
         listenerPosition.store(position);
         listenerVelocity.store(velocity);
+        listenerForward.store(forward);
     }
+
+    bool IsAudioSourceValid(AudioSourceHandle sourceHandle) const;
 
 private:
     uint32_t AllocateSource();
@@ -82,6 +88,7 @@ private:
 
     std::atomic<glm::vec3> listenerPosition{glm::vec3(0.0f)};
     std::atomic<glm::vec3> listenerVelocity{glm::vec3(0.0f)};
+    std::atomic<glm::vec3> listenerForward{WorldConstants::WORLD_FORWARD};
 
 private: // Audio thread only.
     void ProcessAudioCommands();

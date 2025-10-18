@@ -26,10 +26,13 @@ struct AudioSource
     float baseSpeed{1.0f};
     bool looping{false};
     bool spatial{false};
+    bool doppler{false};
 
     // Audio thread only (no sync)
     float playbackPosition{0}; // float because of pitch, which directly affects
+    float dopplerPitch{1.0f};
     bool bIsPlaying{false};
+
 
     bool bIsFinished{false};
 };

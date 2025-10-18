@@ -11,7 +11,8 @@ namespace Audio
 {
 enum class GameToAudioCommandType
 {
-    Play
+    Play,
+    Stop
 };
 
 enum class AudioToGameCommandType

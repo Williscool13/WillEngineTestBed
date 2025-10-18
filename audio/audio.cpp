@@ -13,9 +13,7 @@
 namespace Audio
 {
 void SDLCALL Audio::AudioCallback(void* userdata, SDL_AudioStream* stream, int additional, int total)
-{
-
-}
+{}
 
 void Audio::Init()
 {
@@ -49,6 +47,7 @@ void Audio::Init()
     audioSystem.Initialize(&scheduler);
 
     gunshot = audioSystem.LoadClip("sounds/402013__eardeer__gunshot__high_4.wav");
+    whistle = audioSystem.LoadClip("sounds/464885__godoy__postmens-whistle_mod.wav");
 
 
     stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, AudioSystem::AudioCallback, &audioSystem);
@@ -62,6 +61,10 @@ void Audio::Init()
 
 void Audio::Update()
 {
+    glm::vec3 playerPos = glm::vec3(0.0f);
+    glm::vec3 playerForward = WorldConstants::WORLD_FORWARD;
+    glm::vec3 playerRight = glm::cross(playerForward, WorldConstants::WORLD_UP);
+
     Input::Input input = Input::Input::Get();
     SDL_Event e;
     bool exit = false;
@@ -78,17 +81,47 @@ void Audio::Update()
             break;
         }
 
-        if (input.IsMousePressed(Input::MouseButton::LMB)) {
-            audioSystem.PlaySound(gunshot, 1.0f, pitch, false);
-            // VolumeToGain(volume)
+        if (input.IsKeyPressed(Input::Key::NUM_1)) {
+            audioSystem.PlaySound(whistle, playerPos + playerForward * 2.0f, glm::vec3(0.0f), 1.0f, pitch, true, false, false);
+        }
+        if (input.IsKeyPressed(Input::Key::NUM_2)) {
+            audioSystem.PlaySound(gunshot, playerPos - playerForward * 2.0f, glm::vec3(0.0f), 1.0f, 1.0f, true, false, false);
+        }
+        if (input.IsKeyPressed(Input::Key::NUM_3)) {
+            audioSystem.PlaySound(gunshot, playerPos + playerRight * 2.0f, glm::vec3(0.0f), 1.0f, 1.0f, true, false, false);
+        }
+        if (input.IsKeyPressed(Input::Key::NUM_4)) {
+            audioSystem.PlaySound(gunshot, playerPos - playerRight * 2.0f, glm::vec3(0.0f), 1.0f, 1.0f, true, false, false);
+        }
+        if (input.IsKeyPressed(Input::Key::NUM_5)) {
+            audioSystem.PlaySound(gunshot, playerPos + (playerForward + playerRight) * 2.0f, glm::vec3(0.0f), 1.0f, 1.0f, true, false, false);
+        }
+        if (input.IsKeyPressed(Input::Key::NUM_6)) {
+            audioSystem.PlaySound(gunshot, playerPos + (playerForward - playerRight) * 2.0f, glm::vec3(0.0f), 1.0f, 1.0f, true, false, false);
+        }
+        if (input.IsKeyPressed(Input::Key::NUM_7)) {
+            audioSystem.PlaySound(gunshot, playerPos + (-playerForward + playerRight) * 2.0f, glm::vec3(0.0f), 1.0f, 1.0f, true, false, false);
+        }
+        if (input.IsKeyPressed(Input::Key::NUM_8)) {
+            audioSystem.PlaySound(gunshot, playerPos + (-playerForward - playerRight) * 2.0f, glm::vec3(0.0f), 1.0f, 1.0f, true, false, false);
+        }
+        if (input.IsKeyPressed(Input::Key::NUM_9)) {
+            audioSystem.PlaySound(gunshot, playerPos + playerForward * 95.0f, glm::vec3(0.0f), 1.0f, 1.0f, true, false, false);
         }
 
         if (input.IsKeyPressed(Input::Key::NUM_0)) {
-            pitch = glm::min(2.0f, pitch + 0.1f);
+            pitch = glm::min(2.0f, pitch + 0.05f);
         }
         if (input.IsKeyPressed(Input::Key::NUM_9)) {
-            pitch = glm::max(0.0f, pitch - 0.1f);
+            pitch = glm::max(0.0f, pitch - 0.05f);
         }
+
+
+        if (input.IsKeyPressed(Input::Key::P)) {
+            auto thread = std::jthread(&Audio::TestDopplerEffect, this);
+            thread.join();
+        }
+
 
 
         audioSystem.ProcessGameCommands();
@@ -102,7 +135,40 @@ void Audio::Update()
 void Audio::Cleanup()
 {
     audioSystem.UnloadClip(gunshot);
+    audioSystem.UnloadClip(whistle);
     audioSystem.Cleanup();
     scheduler.WaitforAllAndShutdown();
+}
+
+void Audio::TestDopplerEffect()
+{
+    glm::vec3 sourcePos = glm::vec3(1.0f, 0.0f, 15.0f);
+    glm::vec3 sourceVel = glm::vec3(0.0f, 0.0f, -5.0f);
+    glm::vec3 listenerPos = glm::vec3(0.0f, 0.0f, 0.0f);
+    glm::vec3 listenerVel = glm::vec3(0.0f, 0.0f, 0.0f);
+    AudioSourceHandle sourceHandle = audioSystem.PlaySound(whistle, sourcePos, sourceVel, 0.03f, 1.0f, true, false, true);
+
+    int32_t count{0};
+    while (true) {
+        listenerPos += listenerVel * (33.0f / 1000.0f);
+        audioSystem.UpdateListener(listenerPos, listenerVel, -WorldConstants::WORLD_FORWARD);
+
+        // Update source position/velocity
+        if (!audioSystem.IsAudioSourceValid(sourceHandle)) {
+            break;
+        }
+
+        AudioSource* source = audioSystem.GetSource(sourceHandle);
+        // Update source position based on its velocity
+        source->position.store(source->position.load() + source->velocity.load() * (33.0f / 1000.0f), std::memory_order_relaxed);
+
+        // Optional: Sleep or sync with frame rate
+        std::this_thread::sleep_for(std::chrono::milliseconds(33));
+        count++;
+        if (count >= 150) {
+            audioSystem.StopSound(sourceHandle);
+            break;
+        }
+    }
 }
 } // Audio

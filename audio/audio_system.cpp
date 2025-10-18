@@ -1,4 +1,3 @@
-//
 // Created by William on 2025-10-17.
 //
 
@@ -6,8 +5,9 @@
 
 #include "audio_commands.h"
 #include "audio_utils.h"
-#include "glm/vec3.hpp"
+#include "glm/glm.hpp"
 #include "utils/utils.h"
+#include "utils/world_constants.h"
 
 namespace Audio
 {
@@ -144,7 +144,7 @@ AudioClip* AudioSystem::GetClip(AudioClipHandle clipHandle)
     return &clip;
 }
 
-AudioSourceHandle AudioSystem::PlaySound(AudioClipHandle clipHandle, glm::vec3 position, glm::vec3 velocity, float volume, float pitch, bool bSpatial, bool bLooping)
+AudioSourceHandle AudioSystem::PlaySound(AudioClipHandle clipHandle, glm::vec3 position, glm::vec3 velocity, float volume, float pitch, bool bSpatial, bool bDoppler, bool bLooping)
 {
     AudioClip* clip = GetClip(clipHandle);
     if (!clip) { return AudioSourceHandle::INVALID; }
@@ -162,9 +162,11 @@ AudioSourceHandle AudioSystem::PlaySound(AudioClipHandle clipHandle, glm::vec3 p
     source.position.store(position);
     source.velocity.store(velocity);
     source.baseVolume = volume;
-    source.basePitch = glm::clamp( pitch, 0.1f, 10.0f);
+    source.basePitch = glm::clamp(pitch, 0.05f, 10.0f);
     source.looping = bLooping;
     source.spatial = bSpatial;
+    source.doppler = bDoppler;
+    source.dopplerPitch = 1.0f;//CalculateDopplerShift(position, velocity, listenerPosition, listenerVelocity);
 
     AudioSourceHandle sourceHandle = {index, generation};
     bool res = gameToAudioCommands.push({GameToAudioCommandType::Play, sourceHandle});
@@ -175,6 +177,16 @@ AudioSourceHandle AudioSystem::PlaySound(AudioClipHandle clipHandle, glm::vec3 p
     }
 
     return sourceHandle;
+}
+
+bool AudioSystem::StopSound(AudioSourceHandle sourceHandle)
+{
+    bool res = gameToAudioCommands.push({GameToAudioCommandType::Stop, sourceHandle});
+    if (!res) {
+        LOG_ERROR("[AudioSystem::StopSound] Audio to Game command addition failed.");
+        return {};
+    }
+    return res;
 }
 
 AudioSource* AudioSystem::GetSource(AudioSourceHandle sourceHandle)
@@ -212,6 +224,13 @@ void AudioSystem::UnloadClip(AudioClipHandle clipHandle)
     DeallocateClip(clipHandle);
 }
 
+bool AudioSystem::IsAudioSourceValid(AudioSourceHandle sourceHandle) const
+{
+    if (sourceHandle.index >= AUDIO_SOURCE_LIMIT) { return false; }
+    if (sourceGenerations[sourceHandle.index] != sourceHandle.generation) { return false; }
+    return true;
+}
+
 uint32_t AudioSystem::AllocateSource()
 {
     if (freeSourceIndices.empty()) {
@@ -239,6 +258,7 @@ void AudioSystem::DeallocateSource(AudioSourceHandle sourceHandle)
     source.clip = nullptr;
     source.playbackPosition = 0;
     source.bIsPlaying = false;
+    source.bIsFinished = false;
     source.position.store(glm::vec3(0.0f));
     source.velocity.store(glm::vec3(0.0f));
 
@@ -289,6 +309,7 @@ void AudioSystem::AudioCallback(void* userdata, SDL_AudioStream* stream, int add
 {
     auto* self = static_cast<AudioSystem*>(userdata);
     self->ProcessAudioCommands();
+    std::sort(self->activeSources.begin(), self->activeSources.end());
     self->MixActiveSources(stream, additional);
 }
 
@@ -327,6 +348,12 @@ void AudioSystem::ProcessAudioCommands()
                 activeSources.push_back(cmd.sourceHandle);
             }
         }
+        else if (cmd.type == GameToAudioCommandType::Stop) {
+            AudioSource* source = GetSource(cmd.sourceHandle);
+            if (source) {
+                source->bIsFinished = true;
+            }
+        }
     }
 }
 
@@ -340,33 +367,99 @@ void AudioSystem::MixActiveSources(SDL_AudioStream* stream, int bytesNeeded)
     // For each source, add audio clip's sample contribution to the sample buffer
     {
         //Utils::ScopedTimer scopedTimer{"Sound Mixing"};
+        float distanceAttenuation;
+        float panRight;
+        float panMuffle = 1.0f;
+
         for (auto& sourceHandle : activeSources) {
             AudioSource* source = GetSource(sourceHandle);
-            if (!source || !source->bIsPlaying) continue;
+            if (!source || !source->bIsPlaying || source->bIsFinished) { continue; }
+
+
+            if (source->spatial) {
+                glm::vec3 sourcePos = source->position.load(std::memory_order_relaxed);
+                glm::vec3 sourceVel = source->velocity.load(std::memory_order_relaxed);
+                glm::vec3 listenerPos = listenerPosition.load(std::memory_order_relaxed);
+                glm::vec3 listenerVel = listenerVelocity.load(std::memory_order_relaxed);
+
+
+                float distance = glm::distance(sourcePos, listenerPos);
+
+                // Distance Limit
+                {
+                    // Too far, but continue to play in case player gets closer later
+                    if (distance > MAX_SOUND_DISTANCE) {
+                        // need to add the loop/finish here too
+                        source->playbackPosition += source->basePitch * samplesNeeded;
+                        if (!source->looping && source->playbackPosition >= source->clip->sampleCount) {
+                            if (source->looping) {
+                                source->playbackPosition = 0;
+                            }
+                            else {
+                                source->bIsFinished = true;
+                                source->bIsPlaying = false;
+                            }
+                        }
+                        continue;
+                    }
+                }
+
+                distance = glm::clamp(distance, MIN_SOUND_DISTANCE, MAX_SOUND_DISTANCE);
+                distanceAttenuation = MIN_SOUND_DISTANCE / distance;
+
+                glm::vec3 listenerFwd = listenerForward.load(std::memory_order_relaxed);
+                glm::vec3 listenerRight = glm::cross(listenerFwd, WorldConstants::WORLD_UP);
+                glm::vec3 toSource = glm::normalize(sourcePos - listenerPos);
+                panRight = glm::dot(toSource, listenerRight);
+
+                // Sound is coming from behind.
+                // Not much we can do with stereo, will just muffle sound to make "behind" distinction.
+                if (glm::dot(toSource, listenerFwd) < 0.0f) {
+                    panMuffle = 0.75f;
+                }
+
+                if (source->doppler) {
+                    auto target = CalculateDopplerShift(sourcePos, sourceVel, listenerPos, listenerVel);
+                    source->dopplerPitch = glm::mix(source->dopplerPitch, target, 0.1f);
+                }
+            }
+            else {
+                distanceAttenuation = 1.0f;
+                panRight = 0.0f;
+                panMuffle = 1.0f;
+            }
 
             for (int i = 0; i < samplesNeeded; ++i) {
                 const uint64_t samplePos = std::floor(source->playbackPosition);
 
-                float fraction =  source->playbackPosition - samplePos;
+                float fraction = source->playbackPosition - samplePos;
                 uint64_t nextSamplePos = samplePos + 1;
 
                 float sample = source->clip->data[samplePos];
                 if (nextSamplePos < source->clip->sampleCount) {
                     sample = glm::mix(sample, source->clip->data[nextSamplePos], fraction);
-                } else {
-                    // we're about to hit the end
+                }
+                else {
+                    // About to hit the end.
                     if (source->looping) {
                         nextSamplePos %= source->clip->sampleCount;
                         sample = glm::mix(sample, source->clip->data[nextSamplePos], fraction);
                         source->playbackPosition = 0;
-                    } else {
-                        source->bIsFinished = true;
-                        source->bIsPlaying = false;
                     }
                 }
 
-                mixBuffer[i] += sample * source->baseVolume;
-                source->playbackPosition += source->basePitch;
+                // stereo is LRLRLR
+                // 0 is left,  so - panRight
+                // 1 is right, so + panRight
+                float pan = (samplePos & 1) == 0 ? 1.0f - panRight : 1.0f + panRight;
+                mixBuffer[i] += sample * source->baseVolume * distanceAttenuation * pan * panMuffle;
+                source->playbackPosition += source->basePitch * source->dopplerPitch;
+
+                if (!source->looping && source->playbackPosition >= source->clip->sampleCount) {
+                    source->bIsFinished = true;
+                    source->bIsPlaying = false;
+                    break;
+                }
             }
         }
     }
