@@ -24,6 +24,7 @@
 #include "render/descriptor_buffer/descriptor_buffer_uniform.h"
 
 #include "input/input.h"
+#include "render/render_targets.h"
 
 namespace Renderer
 {
@@ -40,7 +41,7 @@ void Renderer::Initialize()
         exit(1);
     }
 
-    renderContext = std::make_unique<RenderContext>(DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT, DEFAULT_RENDER_SCALE);
+    renderContext = std::make_unique<RenderContext>(DEFAULT_SWAPCHAIN_WIDTH, DEFAULT_SWAPCHAIN_HEIGHT, DEFAULT_RENDER_SCALE);
     std::array<uint32_t, 2> renderExtent = renderContext->GetRenderExtent();
 
     constexpr auto window_flags = SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE;
@@ -57,6 +58,7 @@ void Renderer::Initialize()
     vulkanContext = std::make_unique<VulkanContext>(window);
     swapchain = std::make_unique<Swapchain>(vulkanContext.get(), renderExtent[0], renderExtent[1]);
     imgui = std::make_unique<ImguiWrapper>(vulkanContext.get(), window, swapchain->imageCount, swapchain->format);
+    renderTargets = std::make_unique<RenderTargets>(vulkanContext.get(), DEFAULT_RENDER_TARGET_WIDTH, DEFAULT_RENDER_TARGET_HEIGHT);
     Input::Input::Get().Init(window, swapchain->extent.width, swapchain->extent.height);
 
     frameSynchronization.resize(swapchain->imageCount);
@@ -80,13 +82,12 @@ void Renderer::Initialize()
         VK_CHECK(vkCreateSemaphore(vulkanContext->device, &semaphoreCreateInfo, nullptr, &frame.renderSemaphore));
     }
 
+
     CreateResources();
 }
 
 void Renderer::CreateResources()
 {
-    std::array<uint32_t, 2> renderExtent = renderContext->GetRenderExtent();
-
     DescriptorLayoutBuilder layoutBuilder{2};
     //
     {
@@ -98,8 +99,8 @@ void Renderer::CreateResources()
             VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT
         );
         VK_CHECK(vkCreateDescriptorSetLayout(vulkanContext->device, &layoutCreateInfo, nullptr, &renderTargetSetLayout));
-        renderTargets = std::make_unique<DescriptorBufferStorageImage>(vulkanContext.get(), renderTargetSetLayout, 1);
-        renderTargets->AllocateDescriptorSet();
+        renderTargetDescriptors = std::make_unique<DescriptorBufferStorageImage>(vulkanContext.get(), renderTargetSetLayout, 1);
+        renderTargetDescriptors->AllocateDescriptorSet();
     }
     //
     {
@@ -149,41 +150,13 @@ void Renderer::CreateResources()
         }
     }
 
-    //
-    {
-        VkImageUsageFlags drawImageUsages{};
-        drawImageUsages |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-        drawImageUsages |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-        drawImageUsages |= VK_IMAGE_USAGE_STORAGE_BIT;
-        drawImageUsages |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-        drawImageUsages |= VK_IMAGE_USAGE_SAMPLED_BIT;
-        VkImageCreateInfo drawImageCreateInfo = VkHelpers::ImageCreateInfo(DRAW_IMAGE_FORMAT, {renderExtent[0], renderExtent[1], 1}, drawImageUsages);
-        drawImage = VkResources::CreateAllocatedImage(vulkanContext.get(), drawImageCreateInfo);
-
-        VkImageViewCreateInfo drawImageViewCreateInfo = VkHelpers::ImageViewCreateInfo(drawImage.handle, DRAW_IMAGE_FORMAT, VK_IMAGE_ASPECT_COLOR_BIT);
-        drawImageView = VkResources::CreateAllocatedImageView(vulkanContext.get(), drawImageViewCreateInfo);
-    }
-
-    //
-    {
-        VkImageUsageFlags depthImageUsages{};
-        depthImageUsages |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-        depthImageUsages |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-        depthImageUsages |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-        depthImageUsages |= VK_IMAGE_USAGE_SAMPLED_BIT;
-        VkImageCreateInfo depthImageCreateInfo = VkHelpers::ImageCreateInfo(DEPTH_IMAGE_FORMAT, {renderExtent[0], renderExtent[1], 1}, depthImageUsages);
-        depthImage = VkResources::CreateAllocatedImage(vulkanContext.get(), depthImageCreateInfo);
-
-        VkImageViewCreateInfo depthImageViewCreateInfo = VkHelpers::ImageViewCreateInfo(depthImage.handle, DEPTH_IMAGE_FORMAT, VK_IMAGE_ASPECT_DEPTH_BIT);
-        depthImageView = VkResources::CreateAllocatedImageView(vulkanContext.get(), depthImageViewCreateInfo);
-    }
 
     VkDescriptorImageInfo drawDescriptorInfo;
-    drawDescriptorInfo.imageView = drawImageView.handle;
+    drawDescriptorInfo.imageView = renderTargets->drawImageView.handle;
     drawDescriptorInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 
     // only 1 set (invariant), binding 1 is the drawImage binding, not an array so 0
-    renderTargets->UpdateDescriptor(drawDescriptorInfo, 0, 0, 0);
+    renderTargetDescriptors->UpdateDescriptor(drawDescriptorInfo, 0, 0, 0);
 
     // Compute Pipeline
     {
@@ -323,6 +296,20 @@ void Renderer::Run()
             bSwapchainOutdated = false;
         }
 
+        if (renderContext->HasPendingRenderExtentChanges()) {
+            vkDeviceWaitIdle(vulkanContext->device);
+            renderContext->ApplyRenderExtentResize();
+
+            std::array<uint32_t, 2> newExtents = renderContext->GetRenderExtent();
+            renderTargets->Recreate(newExtents[0], newExtents[1]);
+
+            // Upload to descriptor buffer
+            VkDescriptorImageInfo drawDescriptorInfo;
+            drawDescriptorInfo.imageView = renderTargets->drawImageView.handle;
+            drawDescriptorInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+            renderTargetDescriptors->UpdateDescriptor(drawDescriptorInfo, 0, 0, 0);
+        }
+
 
         if (exit) {
             bShouldExit = true;
@@ -334,6 +321,12 @@ void Renderer::Run()
         }
         if (input.IsKeyDown(Input::Key::NUM_9)) {
             renderContext->UpdateRenderScale(1.0f);
+        }
+        if (input.IsKeyDown(Input::Key::NUM_6)) {
+            renderContext->RequestRenderExtentResize(120, 90);
+        }
+        if (input.IsKeyDown(Input::Key::NUM_7)) {
+            renderContext->RequestRenderExtentResize(1920, 1080);
         }
 
         Render();
@@ -448,7 +441,7 @@ void Renderer::Render()
         {
             auto subresource = VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT);
             auto barrier = VkHelpers::ImageMemoryBarrier(
-                drawImage.handle,
+                renderTargets->drawImage.handle,
                 subresource,
                 VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_UNDEFINED,
                 VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_GENERAL
@@ -463,7 +456,7 @@ void Renderer::Render()
             // Push Constants
             vkCmdPushConstants(cmd, computePipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(uint32_t) * 2, scaledRenderExtent.data());
             VkDescriptorBufferBindingInfoEXT descriptorBufferBindingInfo[1]{};
-            descriptorBufferBindingInfo[0] = renderTargets->GetBindingInfo();
+            descriptorBufferBindingInfo[0] = renderTargetDescriptors->GetBindingInfo();
             vkCmdBindDescriptorBuffersEXT(cmd, 1, descriptorBufferBindingInfo);
 
             uint32_t bufferIndexImage = 0;
@@ -478,7 +471,7 @@ void Renderer::Render()
         {
             auto subresource = VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT);
             auto barrier = VkHelpers::ImageMemoryBarrier(
-                drawImage.handle,
+                renderTargets->drawImage.handle,
                 subresource,
                 VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_GENERAL,
                 VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
@@ -489,9 +482,9 @@ void Renderer::Render()
 
         // Draw render
         {
-            const VkRenderingAttachmentInfo colorAttachment = VkHelpers::RenderingAttachmentInfo(drawImageView.handle, nullptr, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+            const VkRenderingAttachmentInfo colorAttachment = VkHelpers::RenderingAttachmentInfo(renderTargets->drawImageView.handle, nullptr, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
             constexpr VkClearValue depthClear = {.depthStencil = {0.0f, 0u}};
-            const VkRenderingAttachmentInfo depthAttachment = VkHelpers::RenderingAttachmentInfo(depthImageView.handle, &depthClear, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+            const VkRenderingAttachmentInfo depthAttachment = VkHelpers::RenderingAttachmentInfo(renderTargets->depthImageView.handle, &depthClear, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
             const VkRenderingInfo renderInfo = VkHelpers::RenderingInfo({scaledRenderExtent[0], scaledRenderExtent[1]}, &colorAttachment, &depthAttachment);
 
 
@@ -524,7 +517,7 @@ void Renderer::Render()
         {
             VkImageMemoryBarrier2 barriers[2];
             barriers[0] = VkHelpers::ImageMemoryBarrier(
-                drawImage.handle,
+                renderTargets->drawImage.handle,
                 VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT),
                 VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                 VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
@@ -558,7 +551,7 @@ void Renderer::Render()
 
             VkBlitImageInfo2 blitInfo{};
             blitInfo.sType = VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2;
-            blitInfo.srcImage = drawImage.handle;
+            blitInfo.srcImage = renderTargets->drawImage.handle;
             blitInfo.srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
             blitInfo.dstImage = currentSwapchainImage;
             blitInfo.dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
@@ -661,11 +654,6 @@ void Renderer::Cleanup()
     vkDestroyPipeline(vulkanContext->device, computePipeline, nullptr);
     vkDestroyPipelineLayout(vulkanContext->device, renderPipelineLayout, nullptr);
     vkDestroyPipeline(vulkanContext->device, renderPipeline, nullptr);
-
-    drawImage.Cleanup(vulkanContext.get());
-    drawImageView.Cleanup(vulkanContext.get());
-    depthImage.Cleanup(vulkanContext.get());
-    depthImageView.Cleanup(vulkanContext.get());
 
     for (FrameData& frameData : frameSynchronization) {
         frameData.Cleanup(vulkanContext.get());

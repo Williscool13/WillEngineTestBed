@@ -21,10 +21,6 @@ PushConstants pc;
 [numthreads(16, 16, 1)]
 void computeMain(uint3 threadId : SV_DispatchThreadID)
 {
-    if (threadId.x > pc.renderSize.x || threadId.y > pc.renderSize.y) {
-        return;
-    }
-
     uint mipLevel;
     float width;
     float height;

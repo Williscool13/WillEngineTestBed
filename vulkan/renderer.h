@@ -22,6 +22,7 @@ struct DescriptorBufferUniform;
 class ImguiWrapper;
 struct VulkanContext;
 struct Swapchain;
+struct RenderTargets;
 
 class Renderer
 {
@@ -45,6 +46,7 @@ private:
     std::unique_ptr<VulkanContext> vulkanContext{};
     std::unique_ptr<Swapchain> swapchain{};
     std::unique_ptr<ImguiWrapper> imgui{};
+    std::unique_ptr<RenderTargets> renderTargets{};
 
     uint64_t frameNumber{0};
     std::vector<FrameData> frameSynchronization;
@@ -52,20 +54,17 @@ private:
 
     // Probably want separate descriptor buffers/layouts for:
     //  - Scene Data
-    VkDescriptorSetLayout renderTargetSetLayout;
-    std::unique_ptr<DescriptorBufferStorageImage> renderTargets;
+    VkDescriptorSetLayout renderTargetSetLayout{};
+    std::unique_ptr<DescriptorBufferStorageImage> renderTargetDescriptors{};
 
-    VkDescriptorSetLayout bindlessUniformSetLayout;
-    std::unique_ptr<DescriptorBufferUniform> bindlessUniforms;
-    VkDescriptorSetLayout bindlessCombinedImageSamplerSetLayout;
-    std::unique_ptr<DescriptorBufferCombinedImageSampler> bindlessCombinedImageSamplers;
-    VkDescriptorSetLayout bindlessStorageImageSetLayout;
-    std::unique_ptr<DescriptorBufferStorageImage> bindlessStorageImages;
+    VkDescriptorSetLayout bindlessUniformSetLayout{};
+    std::unique_ptr<DescriptorBufferUniform> bindlessUniforms{};
+    VkDescriptorSetLayout bindlessCombinedImageSamplerSetLayout{};
+    std::unique_ptr<DescriptorBufferCombinedImageSampler> bindlessCombinedImageSamplers{};
+    VkDescriptorSetLayout bindlessStorageImageSetLayout{};
+    std::unique_ptr<DescriptorBufferStorageImage> bindlessStorageImages{};
 
-    AllocatedImage drawImage;
-    AllocatedImageView drawImageView;
-    AllocatedImage depthImage;
-    AllocatedImageView depthImageView;
+
 
     VkPipelineLayout computePipelineLayout;
     VkPipeline computePipeline;

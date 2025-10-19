@@ -37,9 +37,7 @@ struct RenderContext
      */
     void ApplyRenderExtentResize()
     {
-        if (!bHasPendingRenderExtentChanges ) {
-
-        }
+        if (!bHasPendingRenderExtentChanges) { return; }
         renderExtents[0] = pendingRenderWidth;
         renderExtents[1] = pendingRenderHeight;
 

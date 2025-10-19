@@ -110,8 +110,8 @@ void Swapchain::Dump()
 {
     LOG_INFO("=== Swapchain Info ===");
     LOG_INFO("Image Count: {}", imageCount);
-    LOG_INFO("Format: {}", static_cast<uint32_t>(format));
-    LOG_INFO("Color Space: {}", static_cast<uint32_t>(colorSpace));
+    LOG_INFO("Format: {}", string_VkFormat(format));
+    LOG_INFO("Color Space: {}", string_VkColorSpaceKHR(colorSpace));
     LOG_INFO("Extent: {}x{}", extent.width, extent.height);
     LOG_INFO("Images: {}", swapchainImages.size());
     LOG_INFO("Image Views: {}", swapchainImageViews.size());

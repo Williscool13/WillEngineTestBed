@@ -28,7 +28,7 @@ struct Swapchain
 
     void Dump();
 
-    bool IsHDR() { return format == SWAPCHAIN_HDR_IMAGE_FORMAT && colorSpace == SWAPCHAIN_HDR_COLOR_SPACE; }
+    [[nodiscard]] bool IsHDR() const { return format == SWAPCHAIN_HDR_IMAGE_FORMAT && colorSpace == SWAPCHAIN_HDR_COLOR_SPACE; }
 
     VkSwapchainKHR handle{};
     VkFormat format{};

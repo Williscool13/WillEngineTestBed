@@ -35,6 +35,8 @@ add_library(render-lib STATIC
         descriptor_buffer/descripor_buffer_bindless_resources.h
         render_context.cpp
         render_context.h
+        render_targets.cpp
+        render_targets.h
 )
 
 target_link_libraries(render-lib PUBLIC

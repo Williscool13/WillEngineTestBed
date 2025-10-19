@@ -23,9 +23,12 @@ inline static constexpr int32_t BINDLESS_UNIFORM_BUFFER_COUNT = 1000;
 inline static constexpr int32_t BINDLESS_COMBINED_IMAGE_SAMPLER_COUNT = 1000;
 inline static constexpr int32_t BINDLESS_STORAGE_IMAGE_COUNT = 1000;
 
-inline static constexpr uint32_t DEFAULT_WINDOW_WIDTH = 1700;
-inline static constexpr uint32_t DEFAULT_WINDOW_HEIGHT = 900;
-inline static constexpr float DEFAULT_RENDER_SCALE = 0.5f;
+inline static constexpr uint32_t DEFAULT_SWAPCHAIN_WIDTH = 1700;
+inline static constexpr uint32_t DEFAULT_SWAPCHAIN_HEIGHT = 900;
+inline static constexpr uint32_t DEFAULT_RENDER_TARGET_WIDTH = 1700;
+inline static constexpr uint32_t DEFAULT_RENDER_TARGET_HEIGHT = 900;
+inline static constexpr float DEFAULT_RENDER_SCALE = 1.0f;
+
 
 }
 
