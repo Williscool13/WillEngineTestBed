@@ -21,6 +21,7 @@ add_subdirectory(extern/vk-bootstrap)
 add_subdirectory(src/crash-handling)
 add_subdirectory(src/physics)
 add_subdirectory(src/render)
+add_subdirectory(src/audio)
 add_subdirectory(src/input)
 
 # Imgui

@@ -8,7 +8,7 @@
 #include <thread>
 #include <SDL3/SDL.h>
 
-#include "audio_system.h"
+#include "../src/audio/audio_system.h"
 
 namespace Audio
 {
