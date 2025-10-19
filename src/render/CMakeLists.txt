@@ -33,6 +33,8 @@ add_library(render-lib STATIC
         descriptor_buffer/descriptor_buffer_storage_image.h
         descriptor_buffer/descripor_buffer_bindless_resources.cpp
         descriptor_buffer/descripor_buffer_bindless_resources.h
+        render_context.cpp
+        render_context.h
 )
 
 target_link_libraries(render-lib PUBLIC

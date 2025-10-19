@@ -9,11 +9,22 @@ float3 ray_color(float3 rayDirection)
 }
 
 
+struct PushConstants
+{
+    int2 renderSize;
+};
+
+[[vk::push_constant]]
+PushConstants pc;
 
 [shader("compute")]
 [numthreads(16, 16, 1)]
 void computeMain(uint3 threadId : SV_DispatchThreadID)
 {
+    if (threadId.x > pc.renderSize.x || threadId.y > pc.renderSize.y) {
+        return;
+    }
+
     uint mipLevel;
     float width;
     float height;

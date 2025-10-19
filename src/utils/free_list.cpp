@@ -3,5 +3,3 @@
 //
 
 #include "free_list.h"
-
-static Handle

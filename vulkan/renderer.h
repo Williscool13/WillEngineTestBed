@@ -9,6 +9,7 @@
 #include <vector>
 #include <SDL3/SDL.h>
 
+#include "render/render_context.h"
 #include "render/vk_synchronization.h"
 #include "render/vk_resources.h"
 
@@ -74,7 +75,10 @@ private:
 
 
     bool bShouldExit{false};
-    bool bWindowChanged{false};
+
+    // Render Information
+    bool bSwapchainOutdated{false};
+    std::unique_ptr<RenderContext> renderContext{};
 
 };
 }

@@ -14,12 +14,24 @@
 
 namespace Renderer
 {
-Swapchain::Swapchain(const VulkanContext* context)
-    : context(context)
+Swapchain::Swapchain(const VulkanContext* context, uint32_t width, uint32_t height): context(context)
+{
+    Create(width, height);
+    Dump();
+}
+
+Swapchain::~Swapchain()
+{
+    vkDestroySwapchainKHR(context->device, handle, nullptr);
+    for (VkImageView swapchainImageView : swapchainImageViews) {
+        vkDestroyImageView(context->device, swapchainImageView, nullptr);
+    }
+}
+
+void Swapchain::Create(uint32_t width, uint32_t height)
 {
     vkb::SwapchainBuilder swapchainBuilder{context->physicalDevice, context->device, context->surface};
 
-    // todo: check vkGetPhysicalDeviceSurfaceFormatsKHR and generate HDR swapchain if needed
     uint32_t formatCount;
     VkSurfaceFormatKHR surfaceFormats[32]{};
     VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(context->physicalDevice, context->surface, &formatCount, surfaceFormats));
@@ -48,7 +60,7 @@ Swapchain::Swapchain(const VulkanContext* context)
             .set_desired_format(VkSurfaceFormatKHR{.format = targetSwapchainFormat, .colorSpace = targetColorSpace})
             .set_desired_present_mode(VK_PRESENT_MODE_IMMEDIATE_KHR)
             //.set_desired_present_mode(VK_PRESENT_MODE_FIFO_KHR)
-            .set_desired_extent(800, 600)
+            .set_desired_extent(width, height)
             .add_image_usage_flags(VK_IMAGE_USAGE_TRANSFER_DST_BIT)
             .set_desired_min_image_count(vkb::SwapchainBuilder::TRIPLE_BUFFERING)
             //.set_desired_min_image_count(vkb::SwapchainBuilder::DOUBLE_BUFFERING)
@@ -80,12 +92,15 @@ Swapchain::Swapchain(const VulkanContext* context)
     swapchainImageViews = viewsResult.value();
 }
 
-Swapchain::~Swapchain()
+void Swapchain::Recreate(uint32_t width, uint32_t height)
 {
     vkDestroySwapchainKHR(context->device, handle, nullptr);
-    for (VkImageView swapchainImageView : swapchainImageViews) {
-        vkDestroyImageView(context->device, swapchainImageView, nullptr);
+    for (const auto swapchainImage : swapchainImageViews) {
+        vkDestroyImageView(context->device, swapchainImage, nullptr);
     }
+
+    Create(width, height);
+    Dump();
 }
 
 void Swapchain::Dump()
@@ -93,6 +108,7 @@ void Swapchain::Dump()
     LOG_INFO("=== Swapchain Info ===");
     LOG_INFO("Image Count: {}", imageCount);
     LOG_INFO("Format: {}", static_cast<uint32_t>(format));
+    LOG_INFO("Color Space: {}", static_cast<uint32_t>(colorSpace));
     LOG_INFO("Extent: {}x{}", extent.width, extent.height);
     LOG_INFO("Images: {}", swapchainImages.size());
     LOG_INFO("Image Views: {}", swapchainImageViews.size());

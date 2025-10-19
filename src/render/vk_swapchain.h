@@ -17,9 +17,13 @@ struct Swapchain
 {
     Swapchain() = delete;
 
-    explicit Swapchain(const VulkanContext* context);
+    explicit Swapchain(const VulkanContext* context, uint32_t width, uint32_t height);
 
     ~Swapchain();
+
+    void Create(uint32_t width, uint32_t height);
+
+    void Recreate(uint32_t width, uint32_t height);
 
     void Dump();
 
@@ -28,7 +32,7 @@ struct Swapchain
     VkFormat format{};
     VkColorSpaceKHR colorSpace{};
     VkExtent2D extent{};
-    uint32_t imageCount;
+    uint32_t imageCount{};
     std::vector<VkImage> swapchainImages{};
     std::vector<VkImageView> swapchainImageViews{};
 

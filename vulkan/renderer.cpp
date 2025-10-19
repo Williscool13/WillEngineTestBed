@@ -40,20 +40,24 @@ void Renderer::Initialize()
         exit(1);
     }
 
-    constexpr auto window_flags = SDL_WINDOW_VULKAN; // | SDL_WINDOW_RESIZABLE;
+    renderContext = std::make_unique<RenderContext>(DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT, DEFAULT_RENDER_SCALE);
+    std::array<uint32_t, 2> renderExtent = renderContext->GetRenderExtent();
+
+    constexpr auto window_flags = SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE;
 
     window = SDL_CreateWindow(
         "Vulkan Test Bed",
-        800,
-        600,
+        renderExtent[0],
+        renderExtent[1],
         window_flags);
 
     SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
     SDL_ShowWindow(window);
 
     vulkanContext = std::make_unique<VulkanContext>(window);
-    swapchain = std::make_unique<Swapchain>(vulkanContext.get());
+    swapchain = std::make_unique<Swapchain>(vulkanContext.get(), renderExtent[0], renderExtent[1]);
     imgui = std::make_unique<ImguiWrapper>(vulkanContext.get(), window, swapchain->imageCount, swapchain->format);
+    Input::Input::Get().Init(window, swapchain->extent.width, swapchain->extent.height);
 
     frameSynchronization.resize(swapchain->imageCount);
     renderFramesInFlight = swapchain->imageCount;
@@ -81,6 +85,8 @@ void Renderer::Initialize()
 
 void Renderer::CreateResources()
 {
+    std::array<uint32_t, 2> renderExtent = renderContext->GetRenderExtent();
+
     DescriptorLayoutBuilder layoutBuilder{2};
     //
     {
@@ -151,7 +157,7 @@ void Renderer::CreateResources()
         drawImageUsages |= VK_IMAGE_USAGE_STORAGE_BIT;
         drawImageUsages |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
         drawImageUsages |= VK_IMAGE_USAGE_SAMPLED_BIT;
-        VkImageCreateInfo drawImageCreateInfo = VkHelpers::ImageCreateInfo(DRAW_IMAGE_FORMAT, {800, 600, 1}, drawImageUsages);
+        VkImageCreateInfo drawImageCreateInfo = VkHelpers::ImageCreateInfo(DRAW_IMAGE_FORMAT, {renderExtent[0], renderExtent[1], 1}, drawImageUsages);
         drawImage = VkResources::CreateAllocatedImage(vulkanContext.get(), drawImageCreateInfo);
 
         VkImageViewCreateInfo drawImageViewCreateInfo = VkHelpers::ImageViewCreateInfo(drawImage.handle, DRAW_IMAGE_FORMAT, VK_IMAGE_ASPECT_COLOR_BIT);
@@ -165,7 +171,7 @@ void Renderer::CreateResources()
         depthImageUsages |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
         depthImageUsages |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
         depthImageUsages |= VK_IMAGE_USAGE_SAMPLED_BIT;
-        VkImageCreateInfo depthImageCreateInfo = VkHelpers::ImageCreateInfo(DEPTH_IMAGE_FORMAT, {800, 600, 1}, depthImageUsages);
+        VkImageCreateInfo depthImageCreateInfo = VkHelpers::ImageCreateInfo(DEPTH_IMAGE_FORMAT, {renderExtent[0], renderExtent[1], 1}, depthImageUsages);
         depthImage = VkResources::CreateAllocatedImage(vulkanContext.get(), depthImageCreateInfo);
 
         VkImageViewCreateInfo depthImageViewCreateInfo = VkHelpers::ImageViewCreateInfo(depthImage.handle, DEPTH_IMAGE_FORMAT, VK_IMAGE_ASPECT_DEPTH_BIT);
@@ -186,13 +192,13 @@ void Renderer::CreateResources()
         computePipelineLayoutCreateInfo.pNext = nullptr;
         computePipelineLayoutCreateInfo.pSetLayouts = &bindlessStorageImageSetLayout;
         computePipelineLayoutCreateInfo.setLayoutCount = 1;
-        //  Push Constants
-        /*VkPushConstantRange pushConstant{};
+
+        VkPushConstantRange pushConstant{};
         pushConstant.offset = 0;
-        pushConstant.size = sizeof(ComputePushConstants);
-        pushConstant.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;*/
-        computePipelineLayoutCreateInfo.pPushConstantRanges = nullptr;
-        computePipelineLayoutCreateInfo.pushConstantRangeCount = 0;
+        pushConstant.size = sizeof(int32_t) * 2;
+        pushConstant.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+        computePipelineLayoutCreateInfo.pPushConstantRanges = &pushConstant;
+        computePipelineLayoutCreateInfo.pushConstantRangeCount = 1;
 
         VK_CHECK(vkCreatePipelineLayout(vulkanContext->device, &computePipelineLayoutCreateInfo, nullptr, &computePipelineLayout));
 
@@ -300,13 +306,34 @@ void Renderer::Run()
             imgui->HandleInput(e);
             if (e.type == SDL_EVENT_QUIT) { exit = true; }
             if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_ESCAPE) { exit = true; }
+            if (e.type == SDL_EVENT_WINDOW_RESIZED || e.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED) {
+                bSwapchainOutdated = true;
+            }
+        }
+        input.UpdateFocus(SDL_GetWindowFlags(window));
+
+        if (bSwapchainOutdated) {
+            vkDeviceWaitIdle(vulkanContext->device);
+
+            int32_t w, h;
+            SDL_GetWindowSize(window, &w, &h);
+
+            swapchain->Recreate(w, h);
+            Input::Input::Get().UpdateWindowExtent(swapchain->extent.width, swapchain->extent.height);
+            bSwapchainOutdated = false;
         }
 
-        input.UpdateFocus(SDL_GetWindowFlags(window));
 
         if (exit) {
             bShouldExit = true;
             break;
+        }
+
+        if (input.IsKeyDown(Input::Key::NUM_0)) {
+            renderContext->UpdateRenderScale(0.1f);
+        }
+        if (input.IsKeyDown(Input::Key::NUM_9)) {
+            renderContext->UpdateRenderScale(1.0f);
         }
 
         Render();
@@ -318,6 +345,7 @@ void Renderer::Run()
 
 void Renderer::Render()
 {
+    std::array<uint32_t, 2> scaledRenderExtent = renderContext->GetScaledRenderExtent();
     Input::Input& input = Input::Input::Get();
 
     const uint32_t currentFrameInFlight = frameNumber % swapchain->imageCount;
@@ -332,7 +360,7 @@ void Renderer::Render()
     // (Non-Blocking) Acquire swapchain image index. Signal semaphore when the actual image is ready for use.
     VkResult e = vkAcquireNextImageKHR(vulkanContext->device, swapchain->handle, 1000000000, currentFrameData.swapchainSemaphore, nullptr, &swapchainImageIndex);
     if (e == VK_ERROR_OUT_OF_DATE_KHR || e == VK_SUBOPTIMAL_KHR) {
-        bWindowChanged = true;
+        bSwapchainOutdated = true;
         LOG_WARN("Swapchain out of date or suboptimal (Acquire)");
         return;
     }
@@ -433,7 +461,7 @@ void Renderer::Render()
         {
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline);
             // Push Constants
-            //vkCmdPushConstants(cmd, _backgroundEffectPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(ComputePushConstants), &selected._data);
+            vkCmdPushConstants(cmd, computePipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(uint32_t) * 2, scaledRenderExtent.data());
             VkDescriptorBufferBindingInfoEXT descriptorBufferBindingInfo[1]{};
             descriptorBufferBindingInfo[0] = renderTargets->GetBindingInfo();
             vkCmdBindDescriptorBuffersEXT(cmd, 1, descriptorBufferBindingInfo);
@@ -441,7 +469,9 @@ void Renderer::Render()
             uint32_t bufferIndexImage = 0;
             VkDeviceSize bufferOffset = 0;
             vkCmdSetDescriptorBufferOffsetsEXT(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, computePipelineLayout, 0, 1, &bufferIndexImage, &bufferOffset);
-            vkCmdDispatch(cmd, std::ceil(800 / 16.0), std::ceil(600 / 16.0), 1);
+            uint32_t groupsX = (scaledRenderExtent[0] + 15) / 16;
+            uint32_t groupsY = (scaledRenderExtent[1] + 15) / 16;
+            vkCmdDispatch(cmd, groupsX, groupsY, 1);
         }
 
         // Transition 2 - Prepare for render draw
@@ -462,7 +492,7 @@ void Renderer::Render()
             const VkRenderingAttachmentInfo colorAttachment = VkHelpers::RenderingAttachmentInfo(drawImageView.handle, nullptr, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
             constexpr VkClearValue depthClear = {.depthStencil = {0.0f, 0u}};
             const VkRenderingAttachmentInfo depthAttachment = VkHelpers::RenderingAttachmentInfo(depthImageView.handle, &depthClear, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
-            const VkRenderingInfo renderInfo = VkHelpers::RenderingInfo({800, 600}, &colorAttachment, &depthAttachment);
+            const VkRenderingInfo renderInfo = VkHelpers::RenderingInfo({scaledRenderExtent[0], scaledRenderExtent[1]}, &colorAttachment, &depthAttachment);
 
 
             vkCmdBeginRendering(cmd, &renderInfo);
@@ -473,8 +503,8 @@ void Renderer::Render()
             VkViewport viewport = {};
             viewport.x = 0;
             viewport.y = 0;
-            viewport.width = 800;
-            viewport.height = 600;
+            viewport.width = scaledRenderExtent[0];
+            viewport.height = scaledRenderExtent[1];
             viewport.minDepth = 0.f;
             viewport.maxDepth = 1.f;
             vkCmdSetViewport(cmd, 0, 1, &viewport);
@@ -482,8 +512,8 @@ void Renderer::Render()
             VkRect2D scissor = {};
             scissor.offset.x = 0;
             scissor.offset.y = 0;
-            scissor.extent.width = 800;
-            scissor.extent.height = 600;
+            scissor.extent.width = scaledRenderExtent[0];
+            scissor.extent.height = scaledRenderExtent[1];
             vkCmdSetScissor(cmd, 0, 1, &scissor);
 
             vkCmdDraw(cmd, 6, 1, 0, 0);
@@ -513,16 +543,18 @@ void Renderer::Render()
 
         // Copy
         {
+            VkOffset3D renderOffset = {static_cast<int32_t>(scaledRenderExtent[0]), static_cast<int32_t>(scaledRenderExtent[1]), 1};
+            VkOffset3D swapchainOffset = {static_cast<int32_t>(swapchain->extent.width), static_cast<int32_t>(swapchain->extent.height), 1};
             VkImageBlit2 blitRegion{};
             blitRegion.sType = VK_STRUCTURE_TYPE_IMAGE_BLIT_2;
             blitRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
             blitRegion.srcSubresource.layerCount = 1;
             blitRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
             blitRegion.dstSubresource.layerCount = 1;
-            blitRegion.srcOffsets[0] = {0,0,0};
-            blitRegion.srcOffsets[1] = {800, 600, 1};
-            blitRegion.dstOffsets[0] = {0,0,0};
-            blitRegion.dstOffsets[1] = {800, 600, 1};
+            blitRegion.srcOffsets[0] = {0, 0, 0};
+            blitRegion.srcOffsets[1] = renderOffset;
+            blitRegion.dstOffsets[0] = {0, 0, 0};
+            blitRegion.dstOffsets[1] = swapchainOffset;
 
             VkBlitImageInfo2 blitInfo{};
             blitInfo.sType = VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2;
@@ -532,7 +564,7 @@ void Renderer::Render()
             blitInfo.dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
             blitInfo.regionCount = 1;
             blitInfo.pRegions = &blitRegion;
-            blitInfo.filter = VK_FILTER_NEAREST;
+            blitInfo.filter = VK_FILTER_LINEAR;
 
             vkCmdBlitImage2(cmd, &blitInfo);
         }
@@ -611,7 +643,7 @@ void Renderer::Render()
     const VkResult presentResult = vkQueuePresentKHR(vulkanContext->graphicsQueue, &presentInfo);
 
     if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR) {
-        bWindowChanged = true;
+        bSwapchainOutdated = true;
         fmt::print("Swapchain out of date or suboptimal (Present)\n");
     }
 }

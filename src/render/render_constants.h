@@ -19,6 +19,11 @@ inline static VkFormat DEPTH_IMAGE_FORMAT = VK_FORMAT_D32_SFLOAT;
 inline static int32_t BINDLESS_UNIFORM_BUFFER_COUNT = 1000;
 inline static int32_t BINDLESS_COMBINED_IMAGE_SAMPLER_COUNT = 1000;
 inline static int32_t BINDLESS_STORAGE_IMAGE_COUNT = 1000;
+
+inline static uint32_t DEFAULT_WINDOW_WIDTH = 1700;
+inline static uint32_t DEFAULT_WINDOW_HEIGHT = 900;
+inline static float DEFAULT_RENDER_SCALE = 0.5f;
+
 }
 
 

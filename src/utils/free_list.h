@@ -17,7 +17,7 @@ struct Handle
     uint32_t index: 24;
     uint32_t generation: 8;
 
-    [[nodiscard]] bool IsValid() const { return generation != 0; }
+    [[nodiscard]] bool IsValid() const { return generation != INVALID_HANDLE_GENERATION; }
     bool operator==(Handle other) const { return index == other.index && generation == other.generation; }
 };
 
@@ -57,7 +57,7 @@ public:
     T* Get(Handle<T> handle)
     {
         if (handle.index >= MaxSize) { return nullptr; }
-        if (!generations[handle.index] != handle.generation) {
+        if (generations[handle.index] != handle.generation) {
             return nullptr;
         }
         return &slots[handle.index];
@@ -73,6 +73,16 @@ public:
         }
 
         return false;
+    }
+
+    void Clear()
+    {
+        freeIndices.clear();
+        for (uint32_t i = 0; i < MaxSize; ++i) {
+            freeIndices.push_back(MaxSize - 1 - i);
+            ++generations[i]; // invalidate all existing handles
+        }
+        count = 0;
     }
 };
 
