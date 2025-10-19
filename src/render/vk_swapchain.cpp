@@ -39,14 +39,17 @@ void Swapchain::Create(uint32_t width, uint32_t height)
     VkFormat targetSwapchainFormat = VK_FORMAT_UNDEFINED;
     VkColorSpaceKHR targetColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
     for (int32_t i = 0; i < formatCount; ++i) {
-        if (surfaceFormats[i].format == SWAPCHAIN_HDR_IMAGE_FORMAT) {
-            targetSwapchainFormat = SWAPCHAIN_HDR_IMAGE_FORMAT;
-            targetColorSpace = surfaceFormats[i].colorSpace;
-            break;
+        if (ENABLE_HDR) {
+            if (surfaceFormats[i].format == SWAPCHAIN_HDR_IMAGE_FORMAT && surfaceFormats[i].colorSpace == SWAPCHAIN_HDR_COLOR_SPACE) {
+                targetSwapchainFormat = SWAPCHAIN_HDR_IMAGE_FORMAT;
+                targetColorSpace = SWAPCHAIN_HDR_COLOR_SPACE;
+                break;
+            }
         }
-        if (surfaceFormats[i].format == SWAPCHAIN_SDR_IMAGE_FORMAT) {
+
+        if (surfaceFormats[i].format == SWAPCHAIN_SDR_IMAGE_FORMAT && surfaceFormats[i].colorSpace == SWAPCHAIN_SDR_COLOR_SPACE) {
             targetSwapchainFormat = SWAPCHAIN_SDR_IMAGE_FORMAT;
-            targetColorSpace = surfaceFormats[i].colorSpace;
+            targetColorSpace = SWAPCHAIN_SDR_COLOR_SPACE;
         }
     }
 

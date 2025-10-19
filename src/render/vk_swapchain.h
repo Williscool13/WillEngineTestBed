@@ -7,6 +7,7 @@
 #include <vector>
 #include <volk/volk.h>
 
+#include "render_constants.h"
 #include "VkBootstrap.h"
 
 namespace Renderer
@@ -27,6 +28,7 @@ struct Swapchain
 
     void Dump();
 
+    bool IsHDR() { return format == SWAPCHAIN_HDR_IMAGE_FORMAT && colorSpace == SWAPCHAIN_HDR_COLOR_SPACE; }
 
     VkSwapchainKHR handle{};
     VkFormat format{};
