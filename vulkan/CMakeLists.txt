@@ -18,3 +18,10 @@ target_link_libraries(renderer PRIVATE
         render-lib
         input-lib
 )
+
+
+compile_shaders(renderer
+        ${CMAKE_SOURCE_DIR}/shaders/compute.slang compute computeMain
+        ${CMAKE_SOURCE_DIR}/shaders/render.slang vertex vertexMain
+        ${CMAKE_SOURCE_DIR}/shaders/render.slang fragment fragmentMain
+)

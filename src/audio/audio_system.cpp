@@ -408,7 +408,7 @@ void AudioSystem::MixActiveSources(SDL_AudioStream* stream, int bytesNeeded)
                 distanceAttenuation = MIN_SOUND_DISTANCE / distance;
 
                 glm::vec3 listenerFwd = listenerForward.load(std::memory_order_relaxed);
-                glm::vec3 listenerRight = glm::cross(listenerFwd, WorldConstants::WORLD_UP);
+                glm::vec3 listenerRight = glm::cross(listenerFwd, WORLD_UP);
                 glm::vec3 toSource = glm::normalize(sourcePos - listenerPos);
                 panRight = glm::dot(toSource, listenerRight);
 

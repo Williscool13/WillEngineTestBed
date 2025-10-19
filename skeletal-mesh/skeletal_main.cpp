@@ -1,37 +1,29 @@
 //
-// Created by William on 2025-10-09.
+// Created by William on 2025-10-18.
 //
 
-#include "renderer.h"
+#include "skeletal_main.h"
 
-#include "VkBootstrap.h"
 #include "backends/imgui_impl_sdl3.h"
 #include "backends/imgui_impl_vulkan.h"
-
 #include "crash-handling/crash_handler.h"
 #include "crash-handling/logger.h"
-
-#include "render/vk_context.h"
-#include "render/vk_swapchain.h"
-#include "render/vk_imgui_wrapper.h"
-#include "render/vk_descriptors.h"
-#include "render/vk_pipelines.h"
-#include "render/vk_helpers.h"
-#include "render/render_utils.h"
-#include "render/render_constants.h"
-#include "render/descriptor_buffer/descriptor_buffer_combined_image_sampler.h"
-#include "render/descriptor_buffer/descriptor_buffer_storage_image.h"
-#include "render/descriptor_buffer/descriptor_buffer_uniform.h"
-
 #include "input/input.h"
+#include "render/render_constants.h"
+#include "render/render_utils.h"
+#include "render/vk_descriptors.h"
+#include "render/vk_helpers.h"
+#include "render/vk_imgui_wrapper.h"
+#include "render/vk_pipelines.h"
+#include "render/vk_swapchain.h"
 
 namespace Renderer
 {
-Renderer::Renderer() = default;
+SkeletalMain::SkeletalMain() = default;
 
-Renderer::~Renderer() = default;
+SkeletalMain::~SkeletalMain() = default;
 
-void Renderer::Initialize()
+void SkeletalMain::Initialize()
 {
     bool sdlInitSuccess = SDL_Init(SDL_INIT_VIDEO);
     if (!sdlInitSuccess) {
@@ -79,7 +71,7 @@ void Renderer::Initialize()
     CreateResources();
 }
 
-void Renderer::CreateResources()
+void SkeletalMain::CreateResources()
 {
     DescriptorLayoutBuilder layoutBuilder{2};
     //
@@ -95,38 +87,38 @@ void Renderer::CreateResources()
         renderTargets = std::make_unique<DescriptorBufferStorageImage>(vulkanContext.get(), renderTargetSetLayout, 1);
         renderTargets->AllocateDescriptorSet();
     }
+    // //
+    // {
+    //     layoutBuilder.Clear();
+    //     layoutBuilder.AddBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, BINDLESS_UNIFORM_BUFFER_COUNT);
+    //     VkDescriptorSetLayoutCreateInfo layoutCreateInfo = layoutBuilder.Build(
+    //         static_cast<VkShaderStageFlagBits>(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT),
+    //         VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT
+    //     );
+    //     VK_CHECK(vkCreateDescriptorSetLayout(vulkanContext->device, &layoutCreateInfo, nullptr, &bindlessUniformSetLayout));
+    //     bindlessUniforms = std::make_unique<DescriptorBufferUniform>(vulkanContext.get(), bindlessUniformSetLayout, renderFramesInFlight);
     //
-    {
-        layoutBuilder.Clear();
-        layoutBuilder.AddBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, BINDLESS_UNIFORM_BUFFER_COUNT);
-        VkDescriptorSetLayoutCreateInfo layoutCreateInfo = layoutBuilder.Build(
-            static_cast<VkShaderStageFlagBits>(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT),
-            VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT
-        );
-        VK_CHECK(vkCreateDescriptorSetLayout(vulkanContext->device, &layoutCreateInfo, nullptr, &bindlessUniformSetLayout));
-        bindlessUniforms = std::make_unique<DescriptorBufferUniform>(vulkanContext.get(), bindlessUniformSetLayout, renderFramesInFlight);
-
-        for (int32_t i = 0; i < renderFramesInFlight; ++i) {
-            bindlessUniforms->AllocateDescriptorSet();
-        }
-    }
-
+    //     for (int32_t i = 0; i < renderFramesInFlight; ++i) {
+    //         bindlessUniforms->AllocateDescriptorSet();
+    //     }
+    // }
     //
-    {
-        layoutBuilder.Clear();
-        layoutBuilder.AddBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, BINDLESS_COMBINED_IMAGE_SAMPLER_COUNT);
-        VkDescriptorSetLayoutCreateInfo layoutCreateInfo = layoutBuilder.Build(
-            static_cast<VkShaderStageFlagBits>(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT),
-            VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT
-        );
-        VK_CHECK(vkCreateDescriptorSetLayout(vulkanContext->device, &layoutCreateInfo, nullptr, &bindlessCombinedImageSamplerSetLayout));
-        bindlessCombinedImageSamplers = std::make_unique<DescriptorBufferCombinedImageSampler>(vulkanContext.get(), bindlessCombinedImageSamplerSetLayout, renderFramesInFlight);
-
-        for (int32_t i = 0; i < renderFramesInFlight; ++i) {
-            bindlessCombinedImageSamplers->AllocateDescriptorSet();
-        }
-    }
-
+    // //
+    // {
+    //     layoutBuilder.Clear();
+    //     layoutBuilder.AddBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, BINDLESS_COMBINED_IMAGE_SAMPLER_COUNT);
+    //     VkDescriptorSetLayoutCreateInfo layoutCreateInfo = layoutBuilder.Build(
+    //         static_cast<VkShaderStageFlagBits>(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT),
+    //         VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT
+    //     );
+    //     VK_CHECK(vkCreateDescriptorSetLayout(vulkanContext->device, &layoutCreateInfo, nullptr, &bindlessCombinedImageSamplerSetLayout));
+    //     bindlessCombinedImageSamplers = std::make_unique<DescriptorBufferCombinedImageSampler>(vulkanContext.get(), bindlessCombinedImageSamplerSetLayout, renderFramesInFlight);
+    //
+    //     for (int32_t i = 0; i < renderFramesInFlight; ++i) {
+    //         bindlessCombinedImageSamplers->AllocateDescriptorSet();
+    //     }
+    // }
+    //
     //
     {
         layoutBuilder.Clear();
@@ -198,7 +190,8 @@ void Renderer::CreateResources()
 
         VkShaderModule computeShader;
         if (!VkHelpers::LoadShaderModule("shaders\\compute_compute.spv", vulkanContext->device, &computeShader)) {
-            throw std::runtime_error("Error when building the compute shader (compute_compute.spv)");
+            LOG_ERROR("Error when building the compute shader (compute_compute.spv)");
+            exit(1);
         }
 
         VkPipelineShaderStageCreateInfo pipelineShaderStageCreateInfo = VkHelpers::PipelineShaderStageCreateInfo(computeShader, VK_SHADER_STAGE_COMPUTE_BIT);
@@ -236,7 +229,6 @@ void Renderer::CreateResources()
         if (!VkHelpers::LoadShaderModule("shaders\\render_fragment.spv", vulkanContext->device, &fragShader)) {
             throw std::runtime_error("Error when building the compute shader (render_fragment.spv)");
         }
-
 
         RenderPipelineBuilder renderPipelineBuilder;
         renderPipelineBuilder.setShaders(vertShader, fragShader);
@@ -289,15 +281,15 @@ void Renderer::CreateResources()
     vkDestroyFence(vulkanContext->device, immediateFence, nullptr);
 }
 
-void Renderer::Run()
+void SkeletalMain::Run()
 {
-    Input::Input& input = Input::Input::Get();
+    Input::Input& input = Input::Input::Input::Get();
     SDL_Event e;
     bool exit = false;
     while (true) {
         while (SDL_PollEvent(&e) != 0) {
             input.ProcessEvent(e);
-            imgui->HandleInput(e);
+            ImguiWrapper::HandleInput(e);
             if (e.type == SDL_EVENT_QUIT) { exit = true; }
             if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_ESCAPE) { exit = true; }
         }
@@ -316,7 +308,7 @@ void Renderer::Run()
     }
 }
 
-void Renderer::Render()
+void SkeletalMain::Render()
 {
     Input::Input& input = Input::Input::Get();
 
@@ -519,9 +511,9 @@ void Renderer::Render()
             blitRegion.srcSubresource.layerCount = 1;
             blitRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
             blitRegion.dstSubresource.layerCount = 1;
-            blitRegion.srcOffsets[0] = {0,0,0};
+            blitRegion.srcOffsets[0] = {0, 0, 0};
             blitRegion.srcOffsets[1] = {800, 600, 1};
-            blitRegion.dstOffsets[0] = {0,0,0};
+            blitRegion.dstOffsets[0] = {0, 0, 0};
             blitRegion.dstOffsets[1] = {800, 600, 1};
 
             VkBlitImageInfo2 blitInfo{};
@@ -616,13 +608,13 @@ void Renderer::Render()
     }
 }
 
-void Renderer::Cleanup()
+void SkeletalMain::Cleanup()
 {
     vkDeviceWaitIdle(vulkanContext->device);
 
     vkDestroyDescriptorSetLayout(vulkanContext->device, renderTargetSetLayout, nullptr);
-    vkDestroyDescriptorSetLayout(vulkanContext->device, bindlessUniformSetLayout, nullptr);
-    vkDestroyDescriptorSetLayout(vulkanContext->device, bindlessCombinedImageSamplerSetLayout, nullptr);
+    // vkDestroyDescriptorSetLayout(vulkanContext->device, bindlessUniformSetLayout, nullptr);
+    // vkDestroyDescriptorSetLayout(vulkanContext->device, bindlessCombinedImageSamplerSetLayout, nullptr);
     vkDestroyDescriptorSetLayout(vulkanContext->device, bindlessStorageImageSetLayout, nullptr);
 
     vkDestroyPipelineLayout(vulkanContext->device, computePipelineLayout, nullptr);
@@ -641,4 +633,4 @@ void Renderer::Cleanup()
 
     SDL_DestroyWindow(window);
 }
-}
+} // Renderer

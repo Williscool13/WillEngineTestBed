@@ -88,7 +88,7 @@ private:
 
     std::atomic<glm::vec3> listenerPosition{glm::vec3(0.0f)};
     std::atomic<glm::vec3> listenerVelocity{glm::vec3(0.0f)};
-    std::atomic<glm::vec3> listenerForward{WorldConstants::WORLD_FORWARD};
+    std::atomic<glm::vec3> listenerForward{WORLD_FORWARD};
 
 private: // Audio thread only.
     void ProcessAudioCommands();

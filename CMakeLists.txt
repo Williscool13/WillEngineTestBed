@@ -65,6 +65,10 @@ add_library(engine-common INTERFACE
         src/utils/file_utils.h
         src/utils/world_constants.cpp
         src/utils/world_constants.h
+        src/utils/free_list.cpp
+        src/utils/free_list.h
+        src/utils/constants.cpp
+        src/utils/constants.h
 )
 
 target_compile_definitions(engine-common INTERFACE
@@ -88,3 +92,4 @@ add_subdirectory(entity-component-system)
 add_subdirectory(vulkan)
 add_subdirectory(physics)
 add_subdirectory(audio)
+add_subdirectory(skeletal-mesh)

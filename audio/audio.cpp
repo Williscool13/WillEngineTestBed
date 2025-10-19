@@ -62,8 +62,8 @@ void Audio::Init()
 void Audio::Update()
 {
     glm::vec3 playerPos = glm::vec3(0.0f);
-    glm::vec3 playerForward = WorldConstants::WORLD_FORWARD;
-    glm::vec3 playerRight = glm::cross(playerForward, WorldConstants::WORLD_UP);
+    glm::vec3 playerForward = WORLD_FORWARD;
+    glm::vec3 playerRight = glm::cross(playerForward, WORLD_UP);
 
     Input::Input input = Input::Input::Get();
     SDL_Event e;
@@ -151,7 +151,7 @@ void Audio::TestDopplerEffect()
     int32_t count{0};
     while (true) {
         listenerPos += listenerVel * (33.0f / 1000.0f);
-        audioSystem.UpdateListener(listenerPos, listenerVel, -WorldConstants::WORLD_FORWARD);
+        audioSystem.UpdateListener(listenerPos, listenerVel, -WORLD_FORWARD);
 
         // Update source position/velocity
         if (!audioSystem.IsAudioSourceValid(sourceHandle)) {
