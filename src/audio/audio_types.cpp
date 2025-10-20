@@ -7,5 +7,4 @@
 
 namespace Audio
 {
-AudioSourceHandle AudioSourceHandle::INVALID = {INVALID_SOURCE_INDEX, INVALID_SOURCE_INDEX};
 }

@@ -1,48 +1,25 @@
 //
-// Created by William on 2025-10-19.
+// Created by William on 2025-10-20.
 //
 
-#ifndef WILLENGINETESTBED_FREE_LIST_H
-#define WILLENGINETESTBED_FREE_LIST_H
+#ifndef WILLENGINETESTBED_HANDLE_ALLOCATOR_H
+#define WILLENGINETESTBED_HANDLE_ALLOCATOR_H
+
 #include <array>
 #include <vector>
 
+#include "free_list.h"
 
-inline static uint32_t INVALID_HANDLE_INDEX = 0;
-inline static uint32_t INVALID_HANDLE_GENERATION = 0;
-
-template<typename T>
-struct Handle
-{
-    uint32_t index: 24;
-    uint32_t generation: 8;
-
-    [[nodiscard]] bool IsValid() const { return generation != INVALID_HANDLE_GENERATION; }
-    bool operator==(Handle other) const { return index == other.index && generation == other.generation; }
-
-    bool operator<(Handle other) const
-    {
-        if (index != other.index) return index < other.index;
-        return generation < other.generation;
-    }
-};
-
-/**
- * Free list data structure that owns the array of T
- * @tparam T
- * @tparam MaxSize maximum allocations of T
- */
 template<typename T, size_t MaxSize>
-class FreeList
+class HandleAllocator
 {
-    std::array<T, MaxSize> slots;
     std::array<uint32_t, MaxSize> generations;
 
     std::vector<uint32_t> freeIndices;
     uint32_t count = 0;
 
 public:
-    FreeList()
+    HandleAllocator()
     {
         freeIndices.reserve(MaxSize);
         for (uint32_t i = 0; i < MaxSize; ++i) {
@@ -51,24 +28,19 @@ public:
         }
     }
 
-    Handle<T> Add()
+    Handle<T> Add(T item)
     {
         if (freeIndices.empty()) {
             return Handle<T>(INVALID_HANDLE_INDEX, INVALID_HANDLE_GENERATION);
         }
         uint32_t index = freeIndices.back();
         freeIndices.pop_back();
+
         ++count;
 
         return {index, generations[index]};
     }
 
-    T* Get(Handle<T> handle)
-    {
-        if (handle.index >= MaxSize) { return nullptr; }
-        if (generations[handle.index] != handle.generation) { return nullptr; }
-        return &slots[handle.index];
-    }
 
     bool Remove(Handle<T> handle)
     {
@@ -92,8 +64,12 @@ public:
         count = 0;
     }
 
-    std::array<T, MaxSize>& GetAllItems() { return slots; }
+    bool IsValid(Handle<T> handle)
+    {
+        if (handle.index >= MaxSize) { return false; }
+        if (generations[handle.index] != handle.generation) { return false; }
+        return true;
+    }
 };
 
-
-#endif //WILLENGINETESTBED_FREE_LIST_H
+#endif //WILLENGINETESTBED_HANDLE_ALLOCATOR_H

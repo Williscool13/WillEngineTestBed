@@ -82,7 +82,7 @@ void Audio::Update()
         }
 
         if (input.IsKeyPressed(Input::Key::NUM_1)) {
-            audioSystem.PlaySound(whistle, playerPos + playerForward * 2.0f, glm::vec3(0.0f), 1.0f, pitch, true, false, false);
+            audioSystem.PlaySound(gunshot, playerPos + playerForward * 2.0f, glm::vec3(0.0f), 1.0f, pitch, true, false, false);
         }
         if (input.IsKeyPressed(Input::Key::NUM_2)) {
             audioSystem.PlaySound(gunshot, playerPos - playerForward * 2.0f, glm::vec3(0.0f), 1.0f, 1.0f, true, false, false);
@@ -154,21 +154,23 @@ void Audio::TestDopplerEffect()
         audioSystem.UpdateListener(listenerPos, listenerVel, -WORLD_FORWARD);
 
         // Update source position/velocity
-        if (!audioSystem.IsAudioSourceValid(sourceHandle)) {
+        if (AudioSource* source = audioSystem.GetSource(sourceHandle)) {
+            // Update source position based on its velocity
+            source->position.store(source->position.load() + source->velocity.load() * (33.0f / 1000.0f), std::memory_order_relaxed);
+
+            // Optional: Sleep or sync with frame rate
+            std::this_thread::sleep_for(std::chrono::milliseconds(33));
+            count++;
+            if (count >= 150) {
+                audioSystem.StopSound(sourceHandle);
+                break;
+            }
+        } else {
             break;
         }
 
-        AudioSource* source = audioSystem.GetSource(sourceHandle);
-        // Update source position based on its velocity
-        source->position.store(source->position.load() + source->velocity.load() * (33.0f / 1000.0f), std::memory_order_relaxed);
 
-        // Optional: Sleep or sync with frame rate
-        std::this_thread::sleep_for(std::chrono::milliseconds(33));
-        count++;
-        if (count >= 150) {
-            audioSystem.StopSound(sourceHandle);
-            break;
-        }
+
     }
 }
 } // Audio

@@ -4,8 +4,6 @@
 
 #ifndef WILLENGINETESTBED_AUDIO_SYSTEM_H
 #define WILLENGINETESTBED_AUDIO_SYSTEM_H
-#include <array>
-#include <queue>
 #include <string>
 
 #include <enkiTS/src/TaskScheduler.h>
@@ -18,6 +16,7 @@
 #include "audio_source.h"
 #include "audio_types.h"
 #include "crash-handling/logger.h"
+#include "utils/free_list.h"
 #include "utils/world_constants.h"
 
 
@@ -40,8 +39,6 @@ public:
 
     void UnloadClip(AudioClipHandle clipHandle);
 
-    AudioClip* GetClip(AudioClipHandle clipHandle);
-
     AudioSourceHandle PlaySound(AudioClipHandle clipHandle, float volume, float pitch, bool bLooping)
     {
         return PlaySound(clipHandle, {}, {}, volume, pitch, false, false, bLooping);
@@ -61,28 +58,17 @@ public:
         listenerForward.store(forward);
     }
 
-    bool IsAudioSourceValid(AudioSourceHandle sourceHandle) const;
-
 private:
-    uint32_t AllocateSource();
-
     void DeallocateSource(AudioSourceHandle sourceHandle);
-
-    uint32_t AllocateClip();
 
     void DeallocateClip(AudioClipHandle clipHandle);
 
 private:
     enki::TaskScheduler* scheduler{nullptr};
 
-    std::array<AudioClip, AUDIO_CLIP_LIMIT> clips{};
-    std::array<uint32_t, AUDIO_CLIP_LIMIT> clipGenerations{};
-    std::queue<uint32_t> freeClipIndices{};
+    FreeList<AudioClip, AUDIO_CLIP_LIMIT> clipFreeList{};
     std::unordered_map<std::string, AudioClipHandle> loadedClips{};
-
-    std::array<AudioSource, AUDIO_SOURCE_LIMIT> audioSources{};
-    std::array<uint32_t, AUDIO_CLIP_LIMIT> sourceGenerations{};
-    std::queue<uint32_t> freeSourceIndices{};
+    FreeList<AudioSource, AUDIO_CLIP_LIMIT> sourceFreeList{};
 
     std::vector<AudioClipHandle> pendingUnloads{};
 

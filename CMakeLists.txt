@@ -69,6 +69,8 @@ add_library(engine-common INTERFACE
         src/utils/free_list.h
         src/utils/constants.cpp
         src/utils/constants.h
+        src/utils/handle_allocator.cpp
+        src/utils/handle_allocator.h
 )
 
 target_compile_definitions(engine-common INTERFACE

@@ -13,15 +13,6 @@ namespace Audio
 {
 AudioSystem::AudioSystem()
 {
-    for (uint32_t i = 0; i < AUDIO_CLIP_LIMIT; ++i) {
-        freeClipIndices.push(i);
-        clipGenerations[i] = 0;
-    }
-    for (uint32_t i = 0; i < AUDIO_SOURCE_LIMIT; ++i) {
-        freeSourceIndices.push(i);
-        sourceGenerations[i] = 0;
-    }
-
     pendingUnloads.reserve(32);
 }
 
@@ -32,7 +23,7 @@ void AudioSystem::Initialize(enki::TaskScheduler* scheduler_)
 
 void AudioSystem::ProcessGameCommands()
 {
-    AudioToGameCommand cmd;
+    AudioToGameCommand cmd{};
     while (audioToGameCommands.pop(cmd)) {
         if (cmd.type == AudioToGameCommandType::Finish) {
             DeallocateSource(cmd.sourceHandle);
@@ -40,7 +31,7 @@ void AudioSystem::ProcessGameCommands()
     }
 
     for (auto it = pendingUnloads.begin(); it != pendingUnloads.end();) {
-        AudioClip* clip = GetClip(*it);
+        AudioClip* clip = clipFreeList.Get(*it);
         if (!clip) {
             LOG_WARN("Audio clipped that was unload delayed found to already be invalid");
             it = pendingUnloads.erase(it);
@@ -73,23 +64,20 @@ void AudioSystem::Cleanup()
 {
     if (scheduler) {
         // Wait for all async load tasks to complete
+        std::array<AudioClip, 256>& clips = clipFreeList.GetAllItems();
         for (auto& clip : clips) {
             if (clip.loadState.load() == AudioClip::LoadState::Loading) {
                 scheduler->WaitforTask(&clip.loadTask);
             }
+
+            if (clip.data) {
+                free(clip.data);
+                clip.data = nullptr;
+            }
         }
     }
 
-
-    // Free all clip data
-    for (auto& clip : clips) {
-        if (clip.data) {
-            free(clip.data);
-            clip.data = nullptr;
-        }
-    }
-
-    loadedClips.clear();
+    clipFreeList.Clear();
     activeSources.clear();
     pendingUnloads.clear();
 }
@@ -103,80 +91,63 @@ AudioClipHandle AudioSystem::LoadClip(const std::string& path)
 
     auto it = loadedClips.find(path);
     if (it != loadedClips.end()) {
-        AudioClip* clip = GetClip(it->second);
+        AudioClip* clip = clipFreeList.Get(it->second);
         if (clip) { clip->handleRefCount++; }
         return it->second;
     }
 
-    const uint32_t index = AllocateClip();
-    if (index == INVALID_CLIP_INDEX) {
-        return {};
+    Handle<AudioClip> newHandle = clipFreeList.Add();
+    if (!newHandle.IsValid()) {
+        LOG_ERROR("Attempted to load audio clip but there is not enough space.");
+        return newHandle;
     }
-    const uint32_t generation = clipGenerations[index];
 
-    AudioClip& clip = clips[index];
-    clip.path = path;
-    clip.loadState.store(AudioClip::LoadState::Loading);
-    clip.loadTask.clip = &clip;
-    clip.loadTask.path = path;
-    clip.loadTask.format = GetAudioExtension(path);
-    clip.handleRefCount = 1;
-    scheduler->AddTaskSetToPipe(&clip.loadTask);
+    AudioClip* clip = clipFreeList.Get(newHandle);
+    clip->path = path;
+    clip->loadState.store(AudioClip::LoadState::Loading);
+    clip->loadTask.clip = clip;
+    clip->loadTask.path = path;
+    clip->loadTask.format = GetAudioExtension(path);
+    clip->handleRefCount = 1;
+    scheduler->AddTaskSetToPipe(&clip->loadTask);
 
-    loadedClips[path] = {index, generation};
+    loadedClips[path] = newHandle;
     return loadedClips[path];
 }
 
 
-AudioClip* AudioSystem::GetClip(AudioClipHandle clipHandle)
-{
-    if (!clipHandle.IsValid()) return nullptr;
-
-    if (clipGenerations[clipHandle.index] != clipHandle.generation) {
-        return nullptr;
-    }
-
-    AudioClip& clip = clips[clipHandle.index];
-    if (clip.loadState.load() != AudioClip::LoadState::Loaded) {
-        return nullptr;
-    }
-
-    return &clip;
-}
-
 AudioSourceHandle AudioSystem::PlaySound(AudioClipHandle clipHandle, glm::vec3 position, glm::vec3 velocity, float volume, float pitch, bool bSpatial, bool bDoppler, bool bLooping)
 {
-    AudioClip* clip = GetClip(clipHandle);
-    if (!clip) { return AudioSourceHandle::INVALID; }
+    AudioClip* clip = clipFreeList.Get(clipHandle);
+    if (!clip) { return {}; }
 
     clip->sourceRefCount++;
 
-    uint32_t index = AllocateSource();
-    if (index == INVALID_CLIP_INDEX) {
-        return {};
+    AudioSourceHandle newSourceHandle = sourceFreeList.Add();
+    if (!newSourceHandle.IsValid()) {
+        LOG_ERROR("Attempted to load audio clip but there is not enough space.");
+        return newSourceHandle;
     }
-    const uint32_t generation = sourceGenerations[index];
-    // todo properties from the component that calls
-    AudioSource& source = audioSources[index];
-    source.clip = clip;
-    source.position.store(position);
-    source.velocity.store(velocity);
-    source.baseVolume = volume;
-    source.basePitch = glm::clamp(pitch, 0.05f, 10.0f);
-    source.looping = bLooping;
-    source.spatial = bSpatial;
-    source.doppler = bDoppler;
-    source.dopplerPitch = 1.0f;//CalculateDopplerShift(position, velocity, listenerPosition, listenerVelocity);
 
-    AudioSourceHandle sourceHandle = {index, generation};
-    bool res = gameToAudioCommands.push({GameToAudioCommandType::Play, sourceHandle});
+    AudioSource* source = sourceFreeList.Get(newSourceHandle);
+    source->clip = clip;
+    source->position.store(position);
+    source->velocity.store(velocity);
+    source->baseVolume = volume;
+    source->basePitch = glm::clamp(pitch, 0.05f, 10.0f);
+    source->looping = bLooping;
+    source->spatial = bSpatial;
+    source->doppler = bDoppler;
+    source->dopplerPitch = 1.0f; //CalculateDopplerShift(position, velocity, listenerPosition, listenerVelocity);
+
+    bool res = gameToAudioCommands.push({GameToAudioCommandType::Play, newSourceHandle});
     if (!res) {
         LOG_ERROR("[AudioSystem::PlaySound] Audio to Game command addition failed. Command terminated.");
-        DeallocateSource(sourceHandle);
+        DeallocateSource(newSourceHandle);
         return {};
     }
 
-    return sourceHandle;
+    return newSourceHandle;
 }
 
 bool AudioSystem::StopSound(AudioSourceHandle sourceHandle)
@@ -191,18 +162,12 @@ bool AudioSystem::StopSound(AudioSourceHandle sourceHandle)
 
 AudioSource* AudioSystem::GetSource(AudioSourceHandle sourceHandle)
 {
-    if (!sourceHandle.IsValid()) return nullptr;
-
-    if (sourceGenerations[sourceHandle.index] != sourceHandle.generation) {
-        return nullptr;
-    }
-
-    return &audioSources[sourceHandle.index];
+    return sourceFreeList.Get(sourceHandle);
 }
 
 void AudioSystem::UnloadClip(AudioClipHandle clipHandle)
 {
-    AudioClip* clip = GetClip(clipHandle);
+    AudioClip* clip = clipFreeList.Get(clipHandle);
     if (!clip) return;
 
     clip->handleRefCount--;
@@ -224,85 +189,55 @@ void AudioSystem::UnloadClip(AudioClipHandle clipHandle)
     DeallocateClip(clipHandle);
 }
 
-bool AudioSystem::IsAudioSourceValid(AudioSourceHandle sourceHandle) const
-{
-    if (sourceHandle.index >= AUDIO_SOURCE_LIMIT) { return false; }
-    if (sourceGenerations[sourceHandle.index] != sourceHandle.generation) { return false; }
-    return true;
-}
-
-uint32_t AudioSystem::AllocateSource()
-{
-    if (freeSourceIndices.empty()) {
-        LOG_ERROR("Audio source limit reached!");
-        return INVALID_SOURCE_INDEX;
-    }
-
-    uint32_t index = freeSourceIndices.front();
-    freeSourceIndices.pop();
-    return index;
-}
-
 void AudioSystem::DeallocateSource(AudioSourceHandle sourceHandle)
 {
-    if (sourceHandle.index >= AUDIO_SOURCE_LIMIT) { return; }
-    if (sourceGenerations[sourceHandle.index] != sourceHandle.generation) { return; }
-
-    sourceGenerations[sourceHandle.index]++;
-
-    AudioSource& source = audioSources[sourceHandle.index];
-    if (source.clip) {
-        source.clip->sourceRefCount--;
+    AudioSource* source = sourceFreeList.Get(sourceHandle);
+    if (!source) {
+        LOG_ERROR("Attempted to deallocate source, but failed to find it in the free list");
+        return;
     }
 
-    source.clip = nullptr;
-    source.playbackPosition = 0;
-    source.bIsPlaying = false;
-    source.bIsFinished = false;
-    source.position.store(glm::vec3(0.0f));
-    source.velocity.store(glm::vec3(0.0f));
-
-    freeSourceIndices.push(sourceHandle.index);
-}
-
-uint32_t AudioSystem::AllocateClip()
-{
-    if (freeClipIndices.empty()) {
-        LOG_ERROR("Audio clip limit reached!");
-        return INVALID_CLIP_INDEX;
+    if (source->clip) {
+        source->clip->sourceRefCount--;
     }
 
-    uint32_t index = freeClipIndices.front();
-    freeClipIndices.pop();
-    return index;
+    source->clip = nullptr;
+    source->playbackPosition = 0;
+    source->bIsPlaying = false;
+    source->bIsFinished = false;
+    source->position.store(glm::vec3(0.0f));
+    source->velocity.store(glm::vec3(0.0f));
+
+    sourceFreeList.Remove(sourceHandle);
 }
 
 void AudioSystem::DeallocateClip(AudioClipHandle clipHandle)
 {
-    if (clipHandle.index >= AUDIO_CLIP_LIMIT) { return; }
-    if (clipGenerations[clipHandle.index] != clipHandle.generation) { return; }
+    AudioClip* clip = clipFreeList.Get(clipHandle);
 
-    clipGenerations[clipHandle.index]++;
-
-    AudioClip& clip = clips[clipHandle.index];
-    if (clip.data) {
-        free(clip.data);
-        clip.data = nullptr;
+    if (!clip) {
+        LOG_ERROR("Attempted to deallocate clip, but failed to find it in the free list");
+        return;
     }
 
-    clip.path.clear();
-    clip.sampleCount = 0;
-    clip.loadTask.clip = nullptr;
-    clip.loadTask.path.clear();
-    clip.loadTask.format = AudioFormat::Unknown;
+    assert(clip->handleRefCount == 0);
+    assert(clip->sourceRefCount == 0);
 
-    assert(clip.handleRefCount == 0);
-    assert(clip.sourceRefCount == 0);
+    if (clip->data) {
+        free(clip->data);
+        clip->data = nullptr;
+    }
 
+    clip->path.clear();
+    clip->sampleCount = 0;
+    clip->loadTask.clip = nullptr;
+    clip->loadTask.path.clear();
+    clip->loadTask.format = AudioFormat::Unknown;
+    clip->loadState = AudioClip::LoadState::Unloaded;
 
-    clip.loadState.store(AudioClip::LoadState::Unloaded);
-    loadedClips.erase(clip.path);
-    freeClipIndices.push(clipHandle.index);
+    loadedClips.erase(clip->path);
+
+    clipFreeList.Remove(clipHandle);
 }
 
 void AudioSystem::AudioCallback(void* userdata, SDL_AudioStream* stream, int additional, int total)
@@ -339,18 +274,16 @@ void AudioSystem::ProcessAudioCommands()
     }
 
     // Add all play commands to active sources.
-    GameToAudioCommand cmd;
+    GameToAudioCommand cmd{};
     while (gameToAudioCommands.pop(cmd)) {
         if (cmd.type == GameToAudioCommandType::Play) {
-            AudioSource* source = GetSource(cmd.sourceHandle);
-            if (source) {
+            if (AudioSource* source = GetSource(cmd.sourceHandle)) {
                 source->bIsPlaying = true;
                 activeSources.push_back(cmd.sourceHandle);
             }
         }
         else if (cmd.type == GameToAudioCommandType::Stop) {
-            AudioSource* source = GetSource(cmd.sourceHandle);
-            if (source) {
+            if (AudioSource* source = GetSource(cmd.sourceHandle)) {
                 source->bIsFinished = true;
             }
         }
@@ -366,7 +299,7 @@ void AudioSystem::MixActiveSources(SDL_AudioStream* stream, int bytesNeeded)
 
     // For each source, add audio clip's sample contribution to the sample buffer
     {
-        //Utils::ScopedTimer scopedTimer{"Sound Mixing"};
+        Utils::ScopedTimer scopedTimer{"Sound Mixing"};
         float distanceAttenuation;
         float panRight;
         float panMuffle = 1.0f;
