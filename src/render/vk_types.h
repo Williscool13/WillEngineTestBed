@@ -9,6 +9,13 @@
 
 namespace Renderer
 {
+enum class MaterialType
+{
+    OPAQUE_ = 0,
+    TRANSPARENT_ = 1,
+    MASK_ = 2,
+};
+
 struct VertexPosition
 {
     glm::vec3 position{0.0f};
@@ -16,7 +23,8 @@ struct VertexPosition
 
 struct VertexProperty
 {
-    glm::vec3 normal{1.0f, 0.0f, 0.0f};
+    glm::vec3 normal{0.0f, 1.0f, 0.0f};
+    glm::vec4 tangent = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f);
     glm::vec4 color{1.0f};
     glm::vec2 uv{0, 0};
 };
