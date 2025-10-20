@@ -147,7 +147,7 @@ void SkeletalMain::CreateResources()
         drawImage = VkResources::CreateAllocatedImage(vulkanContext.get(), drawImageCreateInfo);
 
         VkImageViewCreateInfo drawImageViewCreateInfo = VkHelpers::ImageViewCreateInfo(drawImage.handle, DRAW_IMAGE_FORMAT, VK_IMAGE_ASPECT_COLOR_BIT);
-        drawImageView = VkResources::CreateAllocatedImageView(vulkanContext.get(), drawImageViewCreateInfo);
+        drawImageView = VkResources::CreateImageView(vulkanContext.get(), drawImageViewCreateInfo);
     }
 
     //
@@ -161,7 +161,7 @@ void SkeletalMain::CreateResources()
         depthImage = VkResources::CreateAllocatedImage(vulkanContext.get(), depthImageCreateInfo);
 
         VkImageViewCreateInfo depthImageViewCreateInfo = VkHelpers::ImageViewCreateInfo(depthImage.handle, DEPTH_IMAGE_FORMAT, VK_IMAGE_ASPECT_DEPTH_BIT);
-        depthImageView = VkResources::CreateAllocatedImageView(vulkanContext.get(), depthImageViewCreateInfo);
+        depthImageView = VkResources::CreateImageView(vulkanContext.get(), depthImageViewCreateInfo);
     }
 
     VkDescriptorImageInfo drawDescriptorInfo;

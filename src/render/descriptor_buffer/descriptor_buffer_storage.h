@@ -18,7 +18,15 @@ struct DescriptorBufferStorage
 
     explicit DescriptorBufferStorage(VulkanContext* context, VkDescriptorSetLayout setLayout, int32_t maxSetCount = 3);
 
-    ~DescriptorBufferStorage();
+    ~DescriptorBufferStorage() = default;
+
+    DescriptorBufferStorage(const DescriptorBufferStorage&) = delete;
+
+    DescriptorBufferStorage& operator=(const DescriptorBufferStorage&) = delete;
+
+    DescriptorBufferStorage(DescriptorBufferStorage&& other) noexcept;
+
+    DescriptorBufferStorage& operator=(DescriptorBufferStorage&& other) noexcept;
 
     void ReleaseDescriptorSet(int32_t descriptorSetIndex);
 

@@ -13,13 +13,25 @@ struct VulkanContext;
 
 struct FrameData
 {
-    VkCommandPool commandPool;
-    VkCommandBuffer commandBuffer;
-    VkFence renderFence;
-    VkSemaphore swapchainSemaphore;
-    VkSemaphore renderSemaphore;
+    VulkanContext* context{};
 
-    void Cleanup(const VulkanContext* context) const;
+    VkCommandPool commandPool{};
+    VkCommandBuffer commandBuffer{};
+    VkFence renderFence{};
+    VkSemaphore swapchainSemaphore{};
+    VkSemaphore renderSemaphore{};
+
+    FrameData() = default;
+    FrameData(VulkanContext* context);
+    ~FrameData();
+
+    FrameData(const FrameData&) = delete;
+    FrameData& operator=(const FrameData&) = delete;
+
+    FrameData(FrameData&& other) noexcept;
+    FrameData& operator=(FrameData&& other) noexcept;
+
+    void Initialize();
 };
 } // Renderer
 

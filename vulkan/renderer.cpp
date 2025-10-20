@@ -19,12 +19,13 @@
 #include "render/vk_helpers.h"
 #include "render/render_utils.h"
 #include "render/render_constants.h"
+#include "render/render_targets.h"
 #include "render/descriptor_buffer/descriptor_buffer_combined_image_sampler.h"
 #include "render/descriptor_buffer/descriptor_buffer_storage_image.h"
 #include "render/descriptor_buffer/descriptor_buffer_uniform.h"
 
 #include "input/input.h"
-#include "render/render_targets.h"
+#include "utils/utils.h"
 
 namespace Renderer
 {
@@ -34,6 +35,7 @@ Renderer::~Renderer() = default;
 
 void Renderer::Initialize()
 {
+    Utils::ScopedTimer timer{"Renderer Initialization"};
     bool sdlInitSuccess = SDL_Init(SDL_INIT_VIDEO);
     if (!sdlInitSuccess) {
         LOG_ERROR("SDL_Init failed: {}", SDL_GetError());
@@ -61,27 +63,13 @@ void Renderer::Initialize()
     renderTargets = std::make_unique<RenderTargets>(vulkanContext.get(), DEFAULT_RENDER_TARGET_WIDTH, DEFAULT_RENDER_TARGET_HEIGHT);
     Input::Input::Get().Init(window, swapchain->extent.width, swapchain->extent.height);
 
-    frameSynchronization.resize(swapchain->imageCount);
     renderFramesInFlight = swapchain->imageCount;
 
-    VkCommandPoolCreateInfo commandPoolCreateInfo = VkHelpers::CommandPoolCreateInfo();
-    VkCommandBufferAllocateInfo commandBufferAllocateInfo = VkHelpers::CommandBufferAllocateInfo(1);
-
-    for (auto& frame : frameSynchronization) {
-        VK_CHECK(vkCreateCommandPool(vulkanContext->device, &commandPoolCreateInfo, nullptr, &frame.commandPool));
-        commandBufferAllocateInfo.commandPool = frame.commandPool;
-        VK_CHECK(vkAllocateCommandBuffers(vulkanContext->device, &commandBufferAllocateInfo, &frame.commandBuffer));
+    frameSynchronization.reserve(renderFramesInFlight);
+    for (int32_t i = 0; i < renderFramesInFlight; ++i) {
+        frameSynchronization.emplace_back(vulkanContext.get());
+        frameSynchronization[i].Initialize();
     }
-
-    // Sync Structures
-    const VkFenceCreateInfo fenceCreateInfo = VkHelpers::FenceCreateInfo();
-    const VkSemaphoreCreateInfo semaphoreCreateInfo = VkHelpers::SemaphoreCreateInfo();
-    for (auto& frame : frameSynchronization) {
-        VK_CHECK(vkCreateFence(vulkanContext->device, &fenceCreateInfo, nullptr, &frame.renderFence));
-        VK_CHECK(vkCreateSemaphore(vulkanContext->device, &semaphoreCreateInfo, nullptr, &frame.swapchainSemaphore));
-        VK_CHECK(vkCreateSemaphore(vulkanContext->device, &semaphoreCreateInfo, nullptr, &frame.renderSemaphore));
-    }
-
 
     CreateResources();
 }
@@ -98,9 +86,9 @@ void Renderer::CreateResources()
             static_cast<VkShaderStageFlagBits>(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT),
             VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT
         );
-        VK_CHECK(vkCreateDescriptorSetLayout(vulkanContext->device, &layoutCreateInfo, nullptr, &renderTargetSetLayout));
-        renderTargetDescriptors = std::make_unique<DescriptorBufferStorageImage>(vulkanContext.get(), renderTargetSetLayout, 1);
-        renderTargetDescriptors->AllocateDescriptorSet();
+        renderTargetSetLayout = VkResources::CreateDescriptorSetLayout(vulkanContext.get(), layoutCreateInfo);
+        renderTargetDescriptors = DescriptorBufferStorageImage(vulkanContext.get(), renderTargetSetLayout.handle, 1);
+        renderTargetDescriptors.AllocateDescriptorSet();
     }
     //
     {
@@ -110,11 +98,11 @@ void Renderer::CreateResources()
             static_cast<VkShaderStageFlagBits>(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT),
             VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT
         );
-        VK_CHECK(vkCreateDescriptorSetLayout(vulkanContext->device, &layoutCreateInfo, nullptr, &bindlessUniformSetLayout));
-        bindlessUniforms = std::make_unique<DescriptorBufferUniform>(vulkanContext.get(), bindlessUniformSetLayout, renderFramesInFlight);
+        bindlessUniformSetLayout = VkResources::CreateDescriptorSetLayout(vulkanContext.get(), layoutCreateInfo);
+        bindlessUniforms = DescriptorBufferUniform(vulkanContext.get(), bindlessUniformSetLayout.handle, renderFramesInFlight);
 
         for (int32_t i = 0; i < renderFramesInFlight; ++i) {
-            bindlessUniforms->AllocateDescriptorSet();
+            bindlessUniforms.AllocateDescriptorSet();
         }
     }
 
@@ -126,11 +114,11 @@ void Renderer::CreateResources()
             static_cast<VkShaderStageFlagBits>(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT),
             VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT
         );
-        VK_CHECK(vkCreateDescriptorSetLayout(vulkanContext->device, &layoutCreateInfo, nullptr, &bindlessCombinedImageSamplerSetLayout));
-        bindlessCombinedImageSamplers = std::make_unique<DescriptorBufferCombinedImageSampler>(vulkanContext.get(), bindlessCombinedImageSamplerSetLayout, renderFramesInFlight);
+        bindlessCombinedImageSamplerSetLayout = VkResources::CreateDescriptorSetLayout(vulkanContext.get(), layoutCreateInfo);
+        bindlessCombinedImageSamplers = DescriptorBufferCombinedImageSampler(vulkanContext.get(), bindlessCombinedImageSamplerSetLayout.handle, renderFramesInFlight);
 
         for (int32_t i = 0; i < renderFramesInFlight; ++i) {
-            bindlessCombinedImageSamplers->AllocateDescriptorSet();
+            bindlessCombinedImageSamplers.AllocateDescriptorSet();
         }
     }
 
@@ -142,11 +130,11 @@ void Renderer::CreateResources()
             static_cast<VkShaderStageFlagBits>(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT),
             VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT
         );
-        VK_CHECK(vkCreateDescriptorSetLayout(vulkanContext->device, &layoutCreateInfo, nullptr, &bindlessStorageImageSetLayout));
-        bindlessStorageImages = std::make_unique<DescriptorBufferStorageImage>(vulkanContext.get(), bindlessStorageImageSetLayout, renderFramesInFlight);
+        bindlessStorageImageSetLayout = VkResources::CreateDescriptorSetLayout(vulkanContext.get(), layoutCreateInfo);
+        bindlessStorageImages = DescriptorBufferStorageImage(vulkanContext.get(), bindlessStorageImageSetLayout.handle, renderFramesInFlight);
         // Allocate all, we know they are all for FIF
         for (int32_t i = 0; i < renderFramesInFlight; ++i) {
-            bindlessStorageImages->AllocateDescriptorSet();
+            bindlessStorageImages.AllocateDescriptorSet();
         }
     }
 
@@ -156,14 +144,14 @@ void Renderer::CreateResources()
     drawDescriptorInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 
     // only 1 set (invariant), binding 1 is the drawImage binding, not an array so 0
-    renderTargetDescriptors->UpdateDescriptor(drawDescriptorInfo, 0, 0, 0);
+    renderTargetDescriptors.UpdateDescriptor(drawDescriptorInfo, 0, 0, 0);
 
     // Compute Pipeline
     {
         VkPipelineLayoutCreateInfo computePipelineLayoutCreateInfo{};
         computePipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
         computePipelineLayoutCreateInfo.pNext = nullptr;
-        computePipelineLayoutCreateInfo.pSetLayouts = &bindlessStorageImageSetLayout;
+        computePipelineLayoutCreateInfo.pSetLayouts = &bindlessStorageImageSetLayout.handle;
         computePipelineLayoutCreateInfo.setLayoutCount = 1;
 
         VkPushConstantRange pushConstant{};
@@ -173,7 +161,7 @@ void Renderer::CreateResources()
         computePipelineLayoutCreateInfo.pPushConstantRanges = &pushConstant;
         computePipelineLayoutCreateInfo.pushConstantRangeCount = 1;
 
-        VK_CHECK(vkCreatePipelineLayout(vulkanContext->device, &computePipelineLayoutCreateInfo, nullptr, &computePipelineLayout));
+        computePipelineLayout = VkResources::CreatePipelineLayout(vulkanContext.get(), computePipelineLayoutCreateInfo);
 
         VkShaderModule computeShader;
         if (!VkHelpers::LoadShaderModule("shaders\\compute_compute.spv", vulkanContext->device, &computeShader)) {
@@ -181,8 +169,8 @@ void Renderer::CreateResources()
         }
 
         VkPipelineShaderStageCreateInfo pipelineShaderStageCreateInfo = VkHelpers::PipelineShaderStageCreateInfo(computeShader, VK_SHADER_STAGE_COMPUTE_BIT);
-        VkComputePipelineCreateInfo computePipelineCreateInfo = VkHelpers::ComputePipelineCreateInfo(computePipelineLayout, pipelineShaderStageCreateInfo);
-        VK_CHECK(vkCreateComputePipelines(vulkanContext->device, VK_NULL_HANDLE, 1, &computePipelineCreateInfo, nullptr, &computePipeline));
+        VkComputePipelineCreateInfo computePipelineCreateInfo = VkHelpers::ComputePipelineCreateInfo(computePipelineLayout.handle, pipelineShaderStageCreateInfo);
+        computePipeline = VkResources::CreateComputePipeline(vulkanContext.get(), computePipelineCreateInfo);
 
         // Cleanup
         vkDestroyShaderModule(vulkanContext->device, computeShader, nullptr);
@@ -205,7 +193,7 @@ void Renderer::CreateResources()
         // layoutInfo.pPushConstantRanges = &renderPushConstantRange;
         // layoutInfo.pushConstantRangeCount = 1;
 
-        VK_CHECK(vkCreatePipelineLayout(vulkanContext->device, &renderPipelineLayoutCreateInfo, nullptr, &renderPipelineLayout));
+        renderPipelineLayout = VkResources::CreatePipelineLayout(vulkanContext.get(), renderPipelineLayoutCreateInfo);
 
         VkShaderModule vertShader;
         VkShaderModule fragShader;
@@ -224,9 +212,9 @@ void Renderer::CreateResources()
         renderPipelineBuilder.disableMultisampling();
         renderPipelineBuilder.enableDepthTest(true, VK_COMPARE_OP_GREATER_OR_EQUAL);
         renderPipelineBuilder.setupRenderer({DRAW_IMAGE_FORMAT}, VK_FORMAT_D32_SFLOAT);
-        renderPipelineBuilder.setupPipelineLayout(renderPipelineLayout);
+        renderPipelineBuilder.setupPipelineLayout(renderPipelineLayout.handle);
         VkGraphicsPipelineCreateInfo pipelineCreateInfo = renderPipelineBuilder.generatePipelineCreateInfo();
-        VK_CHECK(vkCreateGraphicsPipelines(vulkanContext->device, VK_NULL_HANDLE, 1, &pipelineCreateInfo, nullptr, &renderPipeline));
+        renderPipeline = VkResources::CreateGraphicsPipeline(vulkanContext.get(), pipelineCreateInfo);
 
         vkDestroyShaderModule(vulkanContext->device, vertShader, nullptr);
         vkDestroyShaderModule(vulkanContext->device, fragShader, nullptr);
@@ -307,7 +295,7 @@ void Renderer::Run()
             VkDescriptorImageInfo drawDescriptorInfo;
             drawDescriptorInfo.imageView = renderTargets->drawImageView.handle;
             drawDescriptorInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-            renderTargetDescriptors->UpdateDescriptor(drawDescriptorInfo, 0, 0, 0);
+            renderTargetDescriptors.UpdateDescriptor(drawDescriptorInfo, 0, 0, 0);
         }
 
 
@@ -452,16 +440,16 @@ void Renderer::Render()
 
         // Draw compute
         {
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline);
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline.handle);
             // Push Constants
-            vkCmdPushConstants(cmd, computePipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(uint32_t) * 2, scaledRenderExtent.data());
+            vkCmdPushConstants(cmd, computePipelineLayout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(uint32_t) * 2, scaledRenderExtent.data());
             VkDescriptorBufferBindingInfoEXT descriptorBufferBindingInfo[1]{};
-            descriptorBufferBindingInfo[0] = renderTargetDescriptors->GetBindingInfo();
+            descriptorBufferBindingInfo[0] = renderTargetDescriptors.GetBindingInfo();
             vkCmdBindDescriptorBuffersEXT(cmd, 1, descriptorBufferBindingInfo);
 
             uint32_t bufferIndexImage = 0;
             VkDeviceSize bufferOffset = 0;
-            vkCmdSetDescriptorBufferOffsetsEXT(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, computePipelineLayout, 0, 1, &bufferIndexImage, &bufferOffset);
+            vkCmdSetDescriptorBufferOffsetsEXT(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, computePipelineLayout.handle, 0, 1, &bufferIndexImage, &bufferOffset);
             uint32_t groupsX = (scaledRenderExtent[0] + 15) / 16;
             uint32_t groupsY = (scaledRenderExtent[1] + 15) / 16;
             vkCmdDispatch(cmd, groupsX, groupsY, 1);
@@ -489,7 +477,7 @@ void Renderer::Render()
 
 
             vkCmdBeginRendering(cmd, &renderInfo);
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, renderPipeline);
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, renderPipeline.handle);
 
             // Dynamic States
             //  Viewport
@@ -644,20 +632,6 @@ void Renderer::Render()
 void Renderer::Cleanup()
 {
     vkDeviceWaitIdle(vulkanContext->device);
-
-    vkDestroyDescriptorSetLayout(vulkanContext->device, renderTargetSetLayout, nullptr);
-    vkDestroyDescriptorSetLayout(vulkanContext->device, bindlessUniformSetLayout, nullptr);
-    vkDestroyDescriptorSetLayout(vulkanContext->device, bindlessCombinedImageSamplerSetLayout, nullptr);
-    vkDestroyDescriptorSetLayout(vulkanContext->device, bindlessStorageImageSetLayout, nullptr);
-
-    vkDestroyPipelineLayout(vulkanContext->device, computePipelineLayout, nullptr);
-    vkDestroyPipeline(vulkanContext->device, computePipeline, nullptr);
-    vkDestroyPipelineLayout(vulkanContext->device, renderPipelineLayout, nullptr);
-    vkDestroyPipeline(vulkanContext->device, renderPipeline, nullptr);
-
-    for (FrameData& frameData : frameSynchronization) {
-        frameData.Cleanup(vulkanContext.get());
-    }
 
     SDL_DestroyWindow(window);
 }

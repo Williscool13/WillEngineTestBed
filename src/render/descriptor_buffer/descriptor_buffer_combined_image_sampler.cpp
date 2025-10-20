@@ -34,14 +34,33 @@ DescriptorBufferCombinedImageSampler::DescriptorBufferCombinedImageSampler(Vulka
     VmaAllocationCreateInfo vmaAllocInfo = {};
     vmaAllocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
     vmaAllocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
-    VK_CHECK(vmaCreateBuffer(context->allocator, &bufferInfo, &vmaAllocInfo, &buffer.handle, &buffer.allocation, &buffer.allocationInfo));
-    buffer.size = bufferInfo.size;
-    buffer.address = VkHelpers::GetDeviceAddress(context->device, buffer.handle);
+    buffer = VkResources::CreateAllocatedBuffer(context, bufferInfo, vmaAllocInfo);
 }
 
-DescriptorBufferCombinedImageSampler::~DescriptorBufferCombinedImageSampler()
+DescriptorBufferCombinedImageSampler::DescriptorBufferCombinedImageSampler(DescriptorBufferCombinedImageSampler&& other) noexcept
 {
-    buffer.Cleanup(context);
+    buffer = std::move(other.buffer);
+    freeIndices = std::move(other.freeIndices);
+
+    context = other.context;
+    descriptorSetLayout = other.descriptorSetLayout;
+    maxDescriptorSets = other.maxDescriptorSets;
+    descriptorSetSize = other.descriptorSetSize;
+}
+
+DescriptorBufferCombinedImageSampler& DescriptorBufferCombinedImageSampler::operator=(DescriptorBufferCombinedImageSampler&& other) noexcept
+{
+    if (this != &other) {
+        buffer = std::move(other.buffer);
+        freeIndices = std::move(other.freeIndices);
+
+        context = other.context;
+        descriptorSetLayout = other.descriptorSetLayout;
+        maxDescriptorSets = other.maxDescriptorSets;
+        descriptorSetSize = other.descriptorSetSize;
+    }
+
+    return *this;
 }
 
 void DescriptorBufferCombinedImageSampler::ReleaseDescriptorSet(int32_t descriptorSetIndex)

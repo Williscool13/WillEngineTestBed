@@ -15,10 +15,20 @@ add_library(render-lib STATIC
         vk_resources.h
         vk_helpers.cpp
         vk_helpers.h
+        vk_types.cpp
+        vk_types.h
         render_utils.cpp
         render_utils.h
         render_constants.cpp
         render_constants.h
+        render_context.cpp
+        render_context.h
+        render_targets.cpp
+        render_targets.h
+        model_loader.cpp
+        model_loader.h
+        model/model_data.cpp
+        model/model_data.h
         descriptor_buffer/descriptor_buffer_uniform.cpp
         descriptor_buffer/descriptor_buffer_uniform.h
         descriptor_buffer/descriptor_buffer_storage.cpp
@@ -33,10 +43,6 @@ add_library(render-lib STATIC
         descriptor_buffer/descriptor_buffer_storage_image.h
         descriptor_buffer/descripor_buffer_bindless_resources.cpp
         descriptor_buffer/descripor_buffer_bindless_resources.h
-        render_context.cpp
-        render_context.h
-        render_targets.cpp
-        render_targets.h
 )
 
 target_link_libraries(render-lib PUBLIC
@@ -47,6 +53,7 @@ target_link_libraries(render-lib PUBLIC
         VulkanMemoryAllocator
         vk-bootstrap::vk-bootstrap
         SDL3::SDL3
+        fastgltf
 )
 
 find_program(SLANGC slangc REQUIRED)

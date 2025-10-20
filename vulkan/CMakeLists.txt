@@ -2,8 +2,6 @@ add_executable(renderer
         main.cpp
         renderer.cpp
         renderer.h
-
-
 )
 
 add_custom_command(TARGET renderer POST_BUILD

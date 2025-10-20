@@ -12,14 +12,14 @@
 #include "render/render_context.h"
 #include "render/vk_synchronization.h"
 #include "render/vk_resources.h"
+#include "render/descriptor_buffer/descriptor_buffer_combined_image_sampler.h"
+#include "render/descriptor_buffer/descriptor_buffer_storage_image.h"
+#include "render/descriptor_buffer/descriptor_buffer_uniform.h"
 
 
 namespace Renderer
 {
-struct DescriptorBufferStorageImage;
-struct DescriptorBufferCombinedImageSampler;
-struct DescriptorBufferUniform;
-class ImguiWrapper;
+struct ImguiWrapper;
 struct VulkanContext;
 struct Swapchain;
 struct RenderTargets;
@@ -54,23 +54,21 @@ private:
 
     // Probably want separate descriptor buffers/layouts for:
     //  - Scene Data
-    VkDescriptorSetLayout renderTargetSetLayout{};
-    std::unique_ptr<DescriptorBufferStorageImage> renderTargetDescriptors{};
+    DescriptorSetLayout renderTargetSetLayout{};
+    DescriptorBufferStorageImage renderTargetDescriptors{};
 
-    VkDescriptorSetLayout bindlessUniformSetLayout{};
-    std::unique_ptr<DescriptorBufferUniform> bindlessUniforms{};
-    VkDescriptorSetLayout bindlessCombinedImageSamplerSetLayout{};
-    std::unique_ptr<DescriptorBufferCombinedImageSampler> bindlessCombinedImageSamplers{};
-    VkDescriptorSetLayout bindlessStorageImageSetLayout{};
-    std::unique_ptr<DescriptorBufferStorageImage> bindlessStorageImages{};
+    DescriptorSetLayout bindlessUniformSetLayout{};
+    DescriptorBufferUniform bindlessUniforms{};
+    DescriptorSetLayout bindlessCombinedImageSamplerSetLayout{};
+    DescriptorBufferCombinedImageSampler bindlessCombinedImageSamplers{};
+    DescriptorSetLayout bindlessStorageImageSetLayout{};
+    DescriptorBufferStorageImage bindlessStorageImages{};
 
+    PipelineLayout computePipelineLayout;
+    Pipeline computePipeline;
 
-
-    VkPipelineLayout computePipelineLayout;
-    VkPipeline computePipeline;
-
-    VkPipelineLayout renderPipelineLayout;
-    VkPipeline renderPipeline;
+    PipelineLayout renderPipelineLayout;
+    Pipeline renderPipeline;
 
 
     bool bShouldExit{false};

@@ -20,7 +20,15 @@ struct DescriptorBufferSampler
 
     explicit DescriptorBufferSampler(VulkanContext* context, VkDescriptorSetLayout setLayout, int32_t maxSetCount = 3);
 
-    ~DescriptorBufferSampler();
+    ~DescriptorBufferSampler() = default;
+
+    DescriptorBufferSampler(const DescriptorBufferSampler&) = delete;
+
+    DescriptorBufferSampler& operator=(const DescriptorBufferSampler&) = delete;
+
+    DescriptorBufferSampler(DescriptorBufferSampler&& other) noexcept;
+
+    DescriptorBufferSampler& operator=(DescriptorBufferSampler&& other) noexcept;
 
     void ReleaseDescriptorSet(int32_t descriptorSetIndex);
 

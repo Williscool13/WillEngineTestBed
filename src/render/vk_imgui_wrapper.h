@@ -14,7 +14,7 @@ namespace Renderer
 {
 struct VulkanContext;
 
-class ImguiWrapper
+struct ImguiWrapper
 {
 public:
     ImguiWrapper() = default;

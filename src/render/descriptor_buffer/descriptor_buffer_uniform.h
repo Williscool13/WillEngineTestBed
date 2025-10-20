@@ -17,7 +17,15 @@ struct DescriptorBufferUniform
 
     explicit DescriptorBufferUniform(VulkanContext* context, VkDescriptorSetLayout setLayout, int32_t maxSetCount = 3);
 
-    ~DescriptorBufferUniform();
+    ~DescriptorBufferUniform() = default;
+
+    DescriptorBufferUniform(const DescriptorBufferUniform&) = delete;
+
+    DescriptorBufferUniform& operator=(const DescriptorBufferUniform&) = delete;
+
+    DescriptorBufferUniform(DescriptorBufferUniform&& other) noexcept;
+
+    DescriptorBufferUniform& operator=(DescriptorBufferUniform&& other) noexcept;
 
     void ReleaseDescriptorSet(int32_t descriptorSetIndex);
 

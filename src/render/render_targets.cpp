@@ -17,11 +17,8 @@ RenderTargets::RenderTargets(VulkanContext* context, uint32_t width, uint32_t he
 
 RenderTargets::~RenderTargets()
 {
-    drawImage.Cleanup(context);
-    drawImageView.Cleanup(context);
-    depthImage.Cleanup(context);
-    depthImageView.Cleanup(context);
 }
+
 void RenderTargets::Create(uint32_t width, uint32_t height)
 {
     //
@@ -36,7 +33,7 @@ void RenderTargets::Create(uint32_t width, uint32_t height)
         drawImage = VkResources::CreateAllocatedImage(context, drawImageCreateInfo);
 
         VkImageViewCreateInfo drawImageViewCreateInfo = VkHelpers::ImageViewCreateInfo(drawImage.handle, DRAW_IMAGE_FORMAT, VK_IMAGE_ASPECT_COLOR_BIT);
-        drawImageView = VkResources::CreateAllocatedImageView(context, drawImageViewCreateInfo);
+        drawImageView = VkResources::CreateImageView(context, drawImageViewCreateInfo);
     }
 
     //
@@ -50,16 +47,11 @@ void RenderTargets::Create(uint32_t width, uint32_t height)
         depthImage = VkResources::CreateAllocatedImage(context, depthImageCreateInfo);
 
         VkImageViewCreateInfo depthImageViewCreateInfo = VkHelpers::ImageViewCreateInfo(depthImage.handle, DEPTH_IMAGE_FORMAT, VK_IMAGE_ASPECT_DEPTH_BIT);
-        depthImageView = VkResources::CreateAllocatedImageView(context, depthImageViewCreateInfo);
+        depthImageView = VkResources::CreateImageView(context, depthImageViewCreateInfo);
     }
 }
 void RenderTargets::Recreate(uint32_t width, uint32_t height)
 {
-    drawImage.Cleanup(context);
-    drawImageView.Cleanup(context);
-    depthImage.Cleanup(context);
-    depthImageView.Cleanup(context);
-
     Create(width, height);
 }
 } // Renderer

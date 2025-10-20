@@ -56,8 +56,8 @@ struct RenderContext
     [[nodiscard]] bool HasPendingRenderExtentChanges() const { return bHasPendingRenderExtentChanges; }
 
 
-    std::array<uint32_t, 2> GetRenderExtent(){ return renderExtents; }
-    std::array<uint32_t, 2> GetScaledRenderExtent(){ return scaledRenderExtents; }
+    std::array<uint32_t, 2> GetRenderExtent() const { return renderExtents; }
+    std::array<uint32_t, 2> GetScaledRenderExtent() const { return scaledRenderExtents; }
 private:
     float renderScale{1.0f};
 

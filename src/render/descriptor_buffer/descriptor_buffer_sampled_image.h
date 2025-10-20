@@ -20,7 +20,16 @@ struct DescriptorBufferSampledImage
 
     explicit DescriptorBufferSampledImage(VulkanContext* context, VkDescriptorSetLayout setLayout, int32_t maxSetCount = 3);
 
-    ~DescriptorBufferSampledImage();
+    ~DescriptorBufferSampledImage() = default;
+
+    DescriptorBufferSampledImage(const DescriptorBufferSampledImage&) = delete;
+
+    DescriptorBufferSampledImage& operator=(const DescriptorBufferSampledImage&) = delete;
+
+    DescriptorBufferSampledImage(DescriptorBufferSampledImage&& other) noexcept;
+
+    DescriptorBufferSampledImage& operator=(DescriptorBufferSampledImage&& other) noexcept;
+
 
     void ReleaseDescriptorSet(int32_t descriptorSetIndex);
 

@@ -16,6 +16,7 @@ set(VOLK_STATIC_DEFINES VK_USE_PLATFORM_WIN32_KHR)
 add_subdirectory(extern/volk)
 add_subdirectory(extern/vma)
 add_subdirectory(extern/vk-bootstrap)
+add_subdirectory(extern/fastgltf)
 
 # My Libs
 add_subdirectory(src/crash-handling)
@@ -71,6 +72,8 @@ add_library(engine-common INTERFACE
         src/utils/constants.h
         src/utils/handle_allocator.cpp
         src/utils/handle_allocator.h
+        model-loading/model_loading.cpp
+        model-loading/model_loading.h
 )
 
 target_compile_definitions(engine-common INTERFACE
@@ -95,3 +98,4 @@ add_subdirectory(vulkan)
 add_subdirectory(physics)
 add_subdirectory(audio)
 add_subdirectory(skeletal-mesh)
+add_subdirectory(model-loading)

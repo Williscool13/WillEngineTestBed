@@ -60,9 +60,9 @@ private:
     std::unique_ptr<DescriptorBufferStorageImage> bindlessStorageImages;
 
     AllocatedImage drawImage;
-    AllocatedImageView drawImageView;
+    ImageView drawImageView;
     AllocatedImage depthImage;
-    AllocatedImageView depthImageView;
+    ImageView depthImageView;
 
     VkPipelineLayout computePipelineLayout;
     VkPipeline computePipeline;

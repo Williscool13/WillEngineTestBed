@@ -28,7 +28,7 @@ public:
         }
     }
 
-    Handle<T> Add(T item)
+    Handle<T> Add()
     {
         if (freeIndices.empty()) {
             return Handle<T>(INVALID_HANDLE_INDEX, INVALID_HANDLE_GENERATION);

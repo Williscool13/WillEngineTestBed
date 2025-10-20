@@ -10,6 +10,7 @@
 
 #include "../vk_resources.h"
 
+
 namespace Renderer
 {
 struct VulkanContext;
@@ -20,8 +21,16 @@ struct DescriptorBufferStorageImage
 
     explicit DescriptorBufferStorageImage(VulkanContext* context, VkDescriptorSetLayout setLayout, int32_t maxSetCount = 3);
 
-    ~DescriptorBufferStorageImage();
+    ~DescriptorBufferStorageImage() = default;
 
+    DescriptorBufferStorageImage(const DescriptorBufferStorageImage&) = delete;
+
+    DescriptorBufferStorageImage& operator=(const DescriptorBufferStorageImage&) = delete;
+
+    DescriptorBufferStorageImage(DescriptorBufferStorageImage&& other) noexcept;
+
+    DescriptorBufferStorageImage& operator=(DescriptorBufferStorageImage&& other) noexcept;
+public:
     void ReleaseDescriptorSet(int32_t descriptorSetIndex);
 
     void ReleaseAllDescriptorSets();
@@ -60,16 +69,10 @@ private:
     AllocatedBuffer buffer{};
     VkDescriptorSetLayout descriptorSetLayout{};
 
-    /**
-     * The size of 1 descriptor set
-     */
     int32_t maxDescriptorSets{};
-
     VkDeviceSize descriptorSetSize{};
-
     std::vector<int32_t> freeIndices;
 };
-
 } // Renderer
 
 #endif //WILLENGINETESTBED_DESCRIPTOR_BUFFER_STORAGE_IMAGE_H

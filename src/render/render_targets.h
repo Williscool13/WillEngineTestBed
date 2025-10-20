@@ -20,9 +20,9 @@ struct RenderTargets
     void Recreate(uint32_t width, uint32_t height);
 
     AllocatedImage drawImage{};
-    AllocatedImageView drawImageView{};
+    ImageView drawImageView{};
     AllocatedImage depthImage{};
-    AllocatedImageView depthImageView{};
+    ImageView depthImageView{};
 
 private:
     VulkanContext* context{};
