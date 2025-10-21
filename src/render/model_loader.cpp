@@ -47,201 +47,201 @@ ModelData ModelLoader::LoadGltf(const std::filesystem::path& path)
 {
     ModelData model{};
 
-    //
-    {
-        Utils::ScopedTimer timer{fmt::format("Loading {}", path.filename().string())};
+    fastgltf::Parser parser{fastgltf::Extensions::KHR_texture_basisu | fastgltf::Extensions::KHR_mesh_quantization | fastgltf::Extensions::KHR_texture_transform};
+    constexpr auto gltfOptions = fastgltf::Options::DontRequireValidAssetMember
+                                 | fastgltf::Options::AllowDouble
+                                 | fastgltf::Options::LoadExternalBuffers
+                                 | fastgltf::Options::LoadExternalImages;
 
-        fastgltf::Parser parser{fastgltf::Extensions::KHR_texture_basisu | fastgltf::Extensions::KHR_mesh_quantization | fastgltf::Extensions::KHR_texture_transform};
-        constexpr auto gltfOptions = fastgltf::Options::DontRequireValidAssetMember
-                                     | fastgltf::Options::AllowDouble
-                                     | fastgltf::Options::LoadExternalBuffers
-                                     | fastgltf::Options::LoadExternalImages;
+    auto gltfFile = fastgltf::MappedGltfFile::FromPath(path);
+    if (!static_cast<bool>(gltfFile)) {
+        LOG_ERROR("Failed to open glTF file ({}): {}\n", path.filename().string(), getErrorMessage(gltfFile.error()));
+        return model;
+    }
 
-        auto gltfFile = fastgltf::MappedGltfFile::FromPath(path);
-        if (!static_cast<bool>(gltfFile)) {
-            LOG_ERROR("Failed to open glTF file ({}): {}\n", path.filename().string(), getErrorMessage(gltfFile.error()));
-            return model;
-        }
+    auto load = parser.loadGltf(gltfFile.get(), path.parent_path(), gltfOptions);
+    if (!load) {
+        LOG_ERROR("Failed to load glTF: {}\n", to_underlying(load.error()));
+        return model;
+    }
 
-        auto load = parser.loadGltf(gltfFile.get(), path.parent_path(), gltfOptions);
-        if (!load) {
-            LOG_ERROR("Failed to load glTF: {}\n", to_underlying(load.error()));
-            return model;
-        }
+    fastgltf::Asset gltf = std::move(load.get());
 
-        fastgltf::Asset gltf = std::move(load.get());
+    model.samplers.reserve(gltf.samplers.size());
+    for (const fastgltf::Sampler& gltfSampler : gltf.samplers) {
+        VkSamplerCreateInfo samplerInfo = {.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO, .pNext = nullptr};
+        samplerInfo.maxLod = VK_LOD_CLAMP_NONE;
+        samplerInfo.minLod = 0;
 
-        model.samplers.reserve(gltf.samplers.size());
-        for (const fastgltf::Sampler& gltfSampler : gltf.samplers) {
-            VkSamplerCreateInfo samplerInfo = {.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO, .pNext = nullptr};
-            samplerInfo.maxLod = VK_LOD_CLAMP_NONE;
-            samplerInfo.minLod = 0;
-
-            samplerInfo.magFilter = ExtractFilter(gltfSampler.magFilter.value_or(fastgltf::Filter::Nearest));
-            samplerInfo.minFilter = ExtractFilter(gltfSampler.minFilter.value_or(fastgltf::Filter::Nearest));
+        samplerInfo.magFilter = ExtractFilter(gltfSampler.magFilter.value_or(fastgltf::Filter::Nearest));
+        samplerInfo.minFilter = ExtractFilter(gltfSampler.minFilter.value_or(fastgltf::Filter::Nearest));
 
 
-            samplerInfo.mipmapMode = ExtractMipmapMode(gltfSampler.minFilter.value_or(fastgltf::Filter::Linear));
+        samplerInfo.mipmapMode = ExtractMipmapMode(gltfSampler.minFilter.value_or(fastgltf::Filter::Linear));
 
-            model.samplers.push_back(VkResources::CreateSampler(context, samplerInfo));
-        }
+        model.samplers.push_back(VkResources::CreateSampler(context, samplerInfo));
+    }
 
-        model.images.reserve(gltf.images.size());
-        for (const fastgltf::Image& gltfImage : gltf.images) {
-            model.images.push_back(LoadGltfImage(gltf, gltfImage, path.parent_path()));
-        }
+    model.images.reserve(gltf.images.size());
+    for (const fastgltf::Image& gltfImage : gltf.images) {
+        // todo: job system to parallelize stb decoding.
+        // todo: batch the image upload on the GPU, so we only have to call the fence once.
+        model.images.push_back(LoadGltfImage(gltf, gltfImage, path.parent_path()));
+    }
 
-        // for (auto image : model.images) {
-        //     imageViews
-        // }
+    model.imageViews.reserve(gltf.images.size());
+    for (const AllocatedImage& image : model.images) {
+        VkImageViewCreateInfo imageViewCreateInfo = VkHelpers::ImageViewCreateInfo(image.handle, image.format, VK_IMAGE_ASPECT_COLOR_BIT);
+        model.imageViews.push_back(VkResources::CreateImageView(context, imageViewCreateInfo));
+    }
 
-        model.materials.reserve(gltf.materials.size());
+    model.materials.reserve(gltf.materials.size());
 
-        for (const fastgltf::Material& gltfMaterial : gltf.materials) {
-            MaterialProperties material = ExtractMaterial(gltf, gltfMaterial);
-            model.materials.push_back(material);
-        }
+    for (const fastgltf::Material& gltfMaterial : gltf.materials) {
+        MaterialProperties material = ExtractMaterial(gltf, gltfMaterial);
+        model.materials.push_back(material);
+    }
 
-        std::vector<VertexPosition> primitiveVertexPositions{};
-        std::vector<VertexProperty> primitiveVertexProperties{};
-        std::vector<uint32_t> primitiveIndices{};
+    std::vector<VertexPosition> primitiveVertexPositions{};
+    std::vector<VertexProperty> primitiveVertexProperties{};
+    std::vector<uint32_t> primitiveIndices{};
 
-        model.meshes.reserve(gltf.meshes.size());
-        for (fastgltf::Mesh& mesh : gltf.meshes) {
-            MeshInformation meshData{};
-            meshData.name = mesh.name;
-            meshData.primitiveIndices.reserve(mesh.primitives.size());
-            model.primitives.reserve(model.primitives.size() + mesh.primitives.size());
+    model.meshes.reserve(gltf.meshes.size());
+    for (fastgltf::Mesh& mesh : gltf.meshes) {
+        MeshInformation meshData{};
+        meshData.name = mesh.name;
+        meshData.primitiveIndices.reserve(mesh.primitives.size());
+        model.primitives.reserve(model.primitives.size() + mesh.primitives.size());
 
-            for (fastgltf::Primitive& p : mesh.primitives) {
-                Primitive primitiveData{};
+        for (fastgltf::Primitive& p : mesh.primitives) {
+            Primitive primitiveData{};
 
-                if (p.materialIndex.has_value()) {
-                    primitiveData.materialIndex = p.materialIndex.value();
-                    primitiveData.bHasTransparent = (static_cast<MaterialType>(model.materials[primitiveData.materialIndex].alphaProperties.y) == MaterialType::TRANSPARENT_);
-                }
-
-                // INDICES
-                const fastgltf::Accessor& indexAccessor = gltf.accessors[p.indicesAccessor.value()];
-                primitiveIndices.clear();
-                primitiveIndices.reserve(indexAccessor.count);
-
-                fastgltf::iterateAccessor<std::uint32_t>(gltf, indexAccessor, [&](const std::uint32_t idx) {
-                    primitiveIndices.push_back(idx);
-                });
-
-                // POSITION (REQUIRED)
-                const fastgltf::Attribute* positionIt = p.findAttribute("POSITION");
-                const fastgltf::Accessor& posAccessor = gltf.accessors[positionIt->accessorIndex];
-                primitiveVertexPositions.clear();
-                primitiveVertexPositions.resize(posAccessor.count);
-                primitiveVertexProperties.clear();
-                primitiveVertexProperties.resize(posAccessor.count);
-
-                fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec3>(gltf, posAccessor, [&](fastgltf::math::fvec3 v, const size_t index) {
-                    VertexPosition newVertexPos{};
-                    newVertexPos.position = {v.x(), v.y(), v.z()};
-                    primitiveVertexPositions[index] = newVertexPos;
-
-                    const VertexProperty newVertexProp{};
-                    primitiveVertexProperties[index] = newVertexProp;
-                });
-
-
-                // NORMALS
-                const fastgltf::Attribute* normals = p.findAttribute("NORMAL");
-                if (normals != p.attributes.end()) {
-                    fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec3>(gltf, gltf.accessors[normals->accessorIndex], [&](fastgltf::math::fvec3 n, const size_t index) {
-                        primitiveVertexProperties[index].normal = {n.x(), n.y(), n.z()};
-                    });
-                }
-
-                // TANGENTS
-                const fastgltf::Attribute* tangents = p.findAttribute("TANGENT");
-                if (tangents != p.attributes.end()) {
-                    fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec4>(gltf, gltf.accessors[tangents->accessorIndex], [&](fastgltf::math::fvec4 n, const size_t index) {
-                        primitiveVertexProperties[index].tangent = {n.x(), n.y(), n.z(), n.w()};
-                    });
-                }
-
-                // UV
-                const fastgltf::Attribute* uvs = p.findAttribute("TEXCOORD_0");
-                if (uvs != p.attributes.end()) {
-                    const fastgltf::Accessor& uvAccessor = gltf.accessors[uvs->accessorIndex];
-
-                    switch (uvAccessor.componentType) {
-                        case fastgltf::ComponentType::Byte:
-                            fastgltf::iterateAccessorWithIndex<fastgltf::math::s8vec2>(gltf, uvAccessor, [&](fastgltf::math::s8vec2 uv, const size_t index) {
-                                // f = max(c / 127.0, -1.0)
-                                float u = std::max(static_cast<float>(uv.x()) / 127.0f, -1.0f);
-                                float v = std::max(static_cast<float>(uv.y()) / 127.0f, -1.0f);
-                                primitiveVertexProperties[index].uv = {u, v};
-                            });
-                            break;
-                        case fastgltf::ComponentType::UnsignedByte:
-                            fastgltf::iterateAccessorWithIndex<fastgltf::math::u8vec2>(gltf, uvAccessor, [&](fastgltf::math::u8vec2 uv, const size_t index) {
-                                // f = c / 255.0
-                                float u = static_cast<float>(uv.x()) / 255.0f;
-                                float v = static_cast<float>(uv.y()) / 255.0f;
-                                primitiveVertexProperties[index].uv = {u, v};
-                            });
-                            break;
-                        case fastgltf::ComponentType::Short:
-                            fastgltf::iterateAccessorWithIndex<fastgltf::math::s16vec2>(gltf, uvAccessor, [&](fastgltf::math::s16vec2 uv, const size_t index) {
-                                // f = max(c / 32767.0, -1.0)
-                                float u = std::max(
-                                    static_cast<float>(uv.x()) / 32767.0f, -1.0f);
-                                float v = std::max(
-                                    static_cast<float>(uv.y()) / 32767.0f, -1.0f);
-                                primitiveVertexProperties[index].uv = {u, v};
-                            });
-                            break;
-                        case fastgltf::ComponentType::UnsignedShort:
-                            fastgltf::iterateAccessorWithIndex<fastgltf::math::u16vec2>(gltf, uvAccessor, [&](fastgltf::math::u16vec2 uv, const size_t index) {
-                                // f = c / 65535.0
-                                float u = static_cast<float>(uv.x()) / 65535.0f;
-                                float v = static_cast<float>(uv.y()) / 65535.0f;
-                                primitiveVertexProperties[index].uv = {u, v};
-                            });
-                            break;
-                        case fastgltf::ComponentType::Float:
-                            fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec2>(gltf, uvAccessor, [&](fastgltf::math::fvec2 uv, const size_t index) {
-                                primitiveVertexProperties[index].uv = {uv.x(), uv.y()};
-                            });
-                            break;
-                        default:
-                            fmt::print("Unsupported UV component type: {}\n", static_cast<int>(uvAccessor.componentType));
-                            break;
-                    }
-                }
-
-                // VERTEX COLOR
-                const fastgltf::Attribute* colors = p.findAttribute("COLOR_0");
-                if (colors != p.attributes.end()) {
-                    fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec4>(gltf, gltf.accessors[colors->accessorIndex],
-                                                                              [&](fastgltf::math::fvec4 color, const size_t index) {
-                                                                                  primitiveVertexProperties[index].color = {
-                                                                                      color.x(), color.y(), color.z(), color.w()
-                                                                                  };
-                                                                              });
-                }
-
-                primitiveData.firstIndex = static_cast<uint32_t>(model.indices.size());
-                primitiveData.vertexOffset = static_cast<int32_t>(model.vertexPositions.size());
-                primitiveData.indexCount = static_cast<uint32_t>(primitiveIndices.size());
-                primitiveData.boundingSphere = GenerateBoundingSphere(primitiveVertexPositions);
-
-                model.vertexPositions.insert(model.vertexPositions.end(), primitiveVertexPositions.begin(), primitiveVertexPositions.end());
-                model.vertexProperties.insert(model.vertexProperties.end(), primitiveVertexProperties.begin(), primitiveVertexProperties.end());
-                model.indices.insert(model.indices.end(), primitiveIndices.begin(), primitiveIndices.end());
-
-                meshData.primitiveIndices.push_back(model.primitives.size());
-                model.primitives.push_back(primitiveData);
+            if (p.materialIndex.has_value()) {
+                primitiveData.materialIndex = p.materialIndex.value();
+                primitiveData.bHasTransparent = (static_cast<MaterialType>(model.materials[primitiveData.materialIndex].alphaProperties.y) == MaterialType::TRANSPARENT_);
             }
 
-            model.meshes.push_back(meshData);
+            // INDICES
+            const fastgltf::Accessor& indexAccessor = gltf.accessors[p.indicesAccessor.value()];
+            primitiveIndices.clear();
+            primitiveIndices.reserve(indexAccessor.count);
+
+            fastgltf::iterateAccessor<std::uint32_t>(gltf, indexAccessor, [&](const std::uint32_t idx) {
+                primitiveIndices.push_back(idx);
+            });
+
+            // POSITION (REQUIRED)
+            const fastgltf::Attribute* positionIt = p.findAttribute("POSITION");
+            const fastgltf::Accessor& posAccessor = gltf.accessors[positionIt->accessorIndex];
+            primitiveVertexPositions.clear();
+            primitiveVertexPositions.resize(posAccessor.count);
+            primitiveVertexProperties.clear();
+            primitiveVertexProperties.resize(posAccessor.count);
+
+            fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec3>(gltf, posAccessor, [&](fastgltf::math::fvec3 v, const size_t index) {
+                VertexPosition newVertexPos{};
+                newVertexPos.position = {v.x(), v.y(), v.z()};
+                primitiveVertexPositions[index] = newVertexPos;
+
+                const VertexProperty newVertexProp{};
+                primitiveVertexProperties[index] = newVertexProp;
+            });
+
+
+            // NORMALS
+            const fastgltf::Attribute* normals = p.findAttribute("NORMAL");
+            if (normals != p.attributes.end()) {
+                fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec3>(gltf, gltf.accessors[normals->accessorIndex], [&](fastgltf::math::fvec3 n, const size_t index) {
+                    primitiveVertexProperties[index].normal = {n.x(), n.y(), n.z()};
+                });
+            }
+
+            // TANGENTS
+            const fastgltf::Attribute* tangents = p.findAttribute("TANGENT");
+            if (tangents != p.attributes.end()) {
+                fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec4>(gltf, gltf.accessors[tangents->accessorIndex], [&](fastgltf::math::fvec4 n, const size_t index) {
+                    primitiveVertexProperties[index].tangent = {n.x(), n.y(), n.z(), n.w()};
+                });
+            }
+
+            // UV
+            const fastgltf::Attribute* uvs = p.findAttribute("TEXCOORD_0");
+            if (uvs != p.attributes.end()) {
+                const fastgltf::Accessor& uvAccessor = gltf.accessors[uvs->accessorIndex];
+
+                switch (uvAccessor.componentType) {
+                    case fastgltf::ComponentType::Byte:
+                        fastgltf::iterateAccessorWithIndex<fastgltf::math::s8vec2>(gltf, uvAccessor, [&](fastgltf::math::s8vec2 uv, const size_t index) {
+                            // f = max(c / 127.0, -1.0)
+                            float u = std::max(static_cast<float>(uv.x()) / 127.0f, -1.0f);
+                            float v = std::max(static_cast<float>(uv.y()) / 127.0f, -1.0f);
+                            primitiveVertexProperties[index].uv = {u, v};
+                        });
+                        break;
+                    case fastgltf::ComponentType::UnsignedByte:
+                        fastgltf::iterateAccessorWithIndex<fastgltf::math::u8vec2>(gltf, uvAccessor, [&](fastgltf::math::u8vec2 uv, const size_t index) {
+                            // f = c / 255.0
+                            float u = static_cast<float>(uv.x()) / 255.0f;
+                            float v = static_cast<float>(uv.y()) / 255.0f;
+                            primitiveVertexProperties[index].uv = {u, v};
+                        });
+                        break;
+                    case fastgltf::ComponentType::Short:
+                        fastgltf::iterateAccessorWithIndex<fastgltf::math::s16vec2>(gltf, uvAccessor, [&](fastgltf::math::s16vec2 uv, const size_t index) {
+                            // f = max(c / 32767.0, -1.0)
+                            float u = std::max(
+                                static_cast<float>(uv.x()) / 32767.0f, -1.0f);
+                            float v = std::max(
+                                static_cast<float>(uv.y()) / 32767.0f, -1.0f);
+                            primitiveVertexProperties[index].uv = {u, v};
+                        });
+                        break;
+                    case fastgltf::ComponentType::UnsignedShort:
+                        fastgltf::iterateAccessorWithIndex<fastgltf::math::u16vec2>(gltf, uvAccessor, [&](fastgltf::math::u16vec2 uv, const size_t index) {
+                            // f = c / 65535.0
+                            float u = static_cast<float>(uv.x()) / 65535.0f;
+                            float v = static_cast<float>(uv.y()) / 65535.0f;
+                            primitiveVertexProperties[index].uv = {u, v};
+                        });
+                        break;
+                    case fastgltf::ComponentType::Float:
+                        fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec2>(gltf, uvAccessor, [&](fastgltf::math::fvec2 uv, const size_t index) {
+                            primitiveVertexProperties[index].uv = {uv.x(), uv.y()};
+                        });
+                        break;
+                    default:
+                        fmt::print("Unsupported UV component type: {}\n", static_cast<int>(uvAccessor.componentType));
+                        break;
+                }
+            }
+
+            // VERTEX COLOR
+            const fastgltf::Attribute* colors = p.findAttribute("COLOR_0");
+            if (colors != p.attributes.end()) {
+                fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec4>(gltf, gltf.accessors[colors->accessorIndex],
+                                                                          [&](fastgltf::math::fvec4 color, const size_t index) {
+                                                                              primitiveVertexProperties[index].color = {
+                                                                                  color.x(), color.y(), color.z(), color.w()
+                                                                              };
+                                                                          });
+            }
+
+            primitiveData.firstIndex = static_cast<uint32_t>(model.indices.size());
+            primitiveData.vertexOffset = static_cast<int32_t>(model.vertexPositions.size());
+            primitiveData.indexCount = static_cast<uint32_t>(primitiveIndices.size());
+            primitiveData.boundingSphere = GenerateBoundingSphere(primitiveVertexPositions);
+
+            model.vertexPositions.insert(model.vertexPositions.end(), primitiveVertexPositions.begin(), primitiveVertexPositions.end());
+            model.vertexProperties.insert(model.vertexProperties.end(), primitiveVertexProperties.begin(), primitiveVertexProperties.end());
+            model.indices.insert(model.indices.end(), primitiveIndices.begin(), primitiveIndices.end());
+
+            meshData.primitiveIndices.push_back(model.primitives.size());
+            model.primitives.push_back(primitiveData);
         }
+
+        model.meshes.push_back(meshData);
     }
+
 
     return model;
 }

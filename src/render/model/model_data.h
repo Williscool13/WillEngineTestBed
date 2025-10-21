@@ -14,7 +14,6 @@
 
 namespace Renderer
 {
-
 struct MeshInformation
 {
     std::string name;
@@ -39,11 +38,12 @@ struct Primitive
 struct Instance
 {
     uint32_t primitiveIndex{INT32_MAX};
-    uint32_t meshIndex{INT32_MAX};
-    bool bIsAllocated{false};
+    uint32_t modelIndex{INT32_MAX};
+    uint32_t bIsAllocated{false};
+    uint32_t padding;
 };
 
-struct Mesh
+struct Model
 {
     glm::mat4 modelMatrix{1.0f};
     glm::mat4 prevModelMatrix{1.0f};
@@ -57,13 +57,14 @@ struct ModelData
     std::vector<ImageView> imageViews{};
 
     // Split for passes that only require position (shadow pass, depth prepass)
-    std::vector<MaterialProperties> materials{};
     std::vector<VertexPosition> vertexPositions{};
     std::vector<VertexProperty> vertexProperties{};
     std::vector<uint32_t> indices{};
 
-    std::vector<MeshInformation> meshes{};
+    std::vector<MaterialProperties> materials{};
     std::vector<Primitive> primitives{};
+
+    std::vector<MeshInformation> meshes{};
 };
 } // Renderer
 

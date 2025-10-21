@@ -225,7 +225,7 @@ void Renderer::CreateResources()
     VkCommandBuffer immediateCommandBuffer;
     VkFence immediateFence;
 
-    const VkCommandPoolCreateInfo commandPoolCreateInfo = VkHelpers::CommandPoolCreateInfo();
+    const VkCommandPoolCreateInfo commandPoolCreateInfo = VkHelpers::CommandPoolCreateInfo(vulkanContext->graphicsQueueFamily);
     VK_CHECK(vkCreateCommandPool(vulkanContext->device, &commandPoolCreateInfo, nullptr, &immediateCommandPool));
     VkCommandBufferAllocateInfo commandBufferAllocateInfo = VkHelpers::CommandBufferAllocateInfo(1, immediateCommandPool);
     VK_CHECK(vkAllocateCommandBuffers(vulkanContext->device, &commandBufferAllocateInfo, &immediateCommandBuffer));

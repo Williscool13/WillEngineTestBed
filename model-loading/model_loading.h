@@ -11,9 +11,12 @@
 #include "render/render_context.h"
 #include "render/vk_synchronization.h"
 #include "render/vk_resources.h"
+#include "render/descriptor_buffer/descriptor_buffer_storage_image.h"
+#include "render/model/model_data.h"
 
 namespace Renderer
 {
+class ModelLoader;
 struct DescriptorBufferStorageImage;
 struct DescriptorBufferCombinedImageSampler;
 struct DescriptorBufferUniform;
@@ -30,6 +33,8 @@ public:
 
     ~ModelLoading();
 
+    void CreateResources();
+
     void Initialize();
 
     void Run();
@@ -44,6 +49,7 @@ private:
     std::unique_ptr<Swapchain> swapchain{};
     std::unique_ptr<ImguiWrapper> imgui{};
     std::unique_ptr<RenderTargets> renderTargets{};
+    std::unique_ptr<ModelLoader> modelLoader{};
 
     uint64_t frameNumber{0};
     std::vector<FrameData> frameSynchronization;
@@ -51,8 +57,8 @@ private:
 
     // Probably want separate descriptor buffers/layouts for:
     //  - Scene Data
-    // VkDescriptorSetLayout renderTargetSetLayout{};
-    // std::unique_ptr<DescriptorBufferStorageImage> renderTargetDescriptors{};
+    DescriptorSetLayout renderTargetSetLayout{};
+    DescriptorBufferStorageImage renderTargetDescriptors{};
     //
     // VkDescriptorSetLayout bindlessUniformSetLayout{};
     // std::unique_ptr<DescriptorBufferUniform> bindlessUniforms{};
@@ -61,6 +67,28 @@ private:
     // VkDescriptorSetLayout bindlessStorageImageSetLayout{};
     // std::unique_ptr<DescriptorBufferStorageImage> bindlessStorageImages{};
 
+    ModelData boxTextured;
+    std::vector<MeshInformation> boxMeshInformation;
+
+    AllocatedBuffer megaVertexPositionBuffer;
+    AllocatedBuffer megaVertexPropertyBuffer;
+    AllocatedBuffer megaIndexBuffer;
+
+    AllocatedBuffer materialBuffer;
+    AllocatedBuffer primitiveBuffer;
+    AllocatedBuffer modelBuffer;
+    AllocatedBuffer instanceBuffer;
+    std::vector<Instance> instances;
+
+    AllocatedBuffer indexedIndirectBuffer;
+    uint32_t indirectCommandCount{0};
+
+    PipelineLayout renderPipelineLayout;
+    Pipeline renderPipeline;
+
+    float cameraPos[3]{0.0f, 0.0f, -2.0f};
+    float cameraLook[3]{0.0f, 0.0f, 0.0f};
+    float boxPos[3]{0.0f, 0.0f, 0.0f};
 
     bool bShouldExit{false};
 

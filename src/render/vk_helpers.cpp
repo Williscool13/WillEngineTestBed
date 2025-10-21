@@ -303,4 +303,26 @@ VkRenderingInfo VkHelpers::RenderingInfo(const VkExtent2D renderExtent, const Vk
         .pStencilAttachment = nullptr,
     };
 }
+
+VkViewport VkHelpers::GenerateViewport(uint32_t width, uint32_t height)
+{
+    return {
+        .x = 0.0f,
+        .y = static_cast<float>(height),
+        .width = static_cast<float>(width),
+        .height = -static_cast<float>(height),
+        .minDepth = 0.f,
+        .maxDepth = 1.f,
+    };
+}
+
+VkRect2D VkHelpers::GenerateScissor(uint32_t width, uint32_t height)
+{
+    VkRect2D scissor = {};
+    scissor.offset.x = 0;
+    scissor.offset.y = 0;
+    scissor.extent.width = width;
+    scissor.extent.height = height;
+    return scissor;
+}
 }

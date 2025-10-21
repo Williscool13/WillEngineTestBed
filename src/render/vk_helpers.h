@@ -52,6 +52,9 @@ VkComputePipelineCreateInfo ComputePipelineCreateInfo(VkPipelineLayout pipelineL
 VkRenderingAttachmentInfo RenderingAttachmentInfo(VkImageView view, const VkClearValue* clear, VkImageLayout layout);
 
 VkRenderingInfo RenderingInfo(VkExtent2D renderExtent, const VkRenderingAttachmentInfo* colorAttachment, const VkRenderingAttachmentInfo* depthAttachment);
+
+VkViewport GenerateViewport(uint32_t width, uint32_t height);
+VkRect2D GenerateScissor(uint32_t width, uint32_t height);
 }
 
 

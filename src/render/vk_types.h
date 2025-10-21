@@ -6,6 +6,7 @@
 #define WILLENGINETESTBED_VK_TYPES_H
 
 #include <glm/glm.hpp>
+#include <volk/volk.h>
 
 namespace Renderer
 {
@@ -24,7 +25,7 @@ struct VertexPosition
 struct VertexProperty
 {
     glm::vec3 normal{0.0f, 1.0f, 0.0f};
-    glm::vec4 tangent = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f);
+    glm::vec4 tangent{1.0f, 0.0f, 0.0f, 1.0f};
     glm::vec4 color{1.0f};
     glm::vec2 uv{0, 0};
 };
@@ -54,6 +55,14 @@ struct MaterialProperties
     glm::vec4 physicalProperties{1.5f, 0.0f, 1.0f, 0.0f}; // x: IOR, y: dispersion, z: normal scale, w: occlusion strength
 };
 
+struct BindlessAddressPushConstant
+{
+    glm::mat4 viewProj;
+    VkDeviceAddress materialBuffer;
+    VkDeviceAddress primitiveBuffer;
+    VkDeviceAddress modelBuffer;
+    VkDeviceAddress instanceBuffer;
+};
 }
 
 

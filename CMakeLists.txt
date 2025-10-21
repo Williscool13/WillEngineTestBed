@@ -4,6 +4,7 @@ project(WillEngineTestBed)
 set(CMAKE_CXX_STANDARD 20)
 
 add_compile_definitions(NOMINMAX)
+add_definitions(-DGLM_FORCE_DEPTH_ZERO_TO_ONE)
 
 # Dependencies
 add_subdirectory(extern/fmt)

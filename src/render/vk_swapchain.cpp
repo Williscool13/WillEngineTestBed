@@ -115,5 +115,6 @@ void Swapchain::Dump()
     LOG_INFO("Extent: {}x{}", extent.width, extent.height);
     LOG_INFO("Images: {}", swapchainImages.size());
     LOG_INFO("Image Views: {}", swapchainImageViews.size());
+    LOG_INFO("======================");
 }
 } // Renderer
