@@ -17,7 +17,7 @@ VkImageSubresourceRange SubresourceRange(VkImageAspectFlags aspectMask, uint32_t
 
 VkDependencyInfo DependencyInfo(VkImageMemoryBarrier2* imageBarrier);
 
-VkCommandPoolCreateInfo CommandPoolCreateInfo();
+VkCommandPoolCreateInfo CommandPoolCreateInfo(uint32_t queueFamilyIndex);
 
 VkCommandBufferAllocateInfo CommandBufferAllocateInfo(uint32_t bufferCount, VkCommandPool commandPool = VK_NULL_HANDLE);
 

@@ -72,8 +72,8 @@ add_library(engine-common INTERFACE
         src/utils/constants.h
         src/utils/handle_allocator.cpp
         src/utils/handle_allocator.h
-        model-loading/model_loading.cpp
-        model-loading/model_loading.h
+        src/core/asset_loading_thread.cpp
+        src/core/asset_loading_thread.h
 )
 
 target_compile_definitions(engine-common INTERFACE

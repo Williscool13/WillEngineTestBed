@@ -55,12 +55,13 @@ VkDependencyInfo VkHelpers::DependencyInfo(VkImageMemoryBarrier2* imageBarrier)
     };
 }
 
-VkCommandPoolCreateInfo VkHelpers::CommandPoolCreateInfo()
+VkCommandPoolCreateInfo VkHelpers::CommandPoolCreateInfo(uint32_t queueFamilyIndex)
 {
     return {
         .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
         .pNext = nullptr,
         .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+        .queueFamilyIndex = queueFamilyIndex,
     };
 }
 

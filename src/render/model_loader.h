@@ -18,11 +18,9 @@ public:
 
     explicit ModelLoader(VulkanContext* context);
 
-    ~ModelLoader() = default;
+    ~ModelLoader();
 
-
-
-    ModelData LoadGltf(std::filesystem::path path);
+    ModelData LoadGltf(const std::filesystem::path& path);
 
     VkFilter ExtractFilter(fastgltf::Filter filter);
 
@@ -36,8 +34,14 @@ public:
 
     glm::vec4 GenerateBoundingSphere(const std::vector<VertexPosition>& vertices);
 
+    AllocatedImage CreateImageFromData(unsigned char* data, size_t size, VkExtent3D imageExtent, VkFormat format, VkImageUsageFlagBits usage, bool mipmapped);
+
 private:
     VulkanContext* context{};
+
+    VkCommandPool commandPool{};
+    VkCommandBuffer commandBuffer{};
+    VkFence uploadFence{};
 };
 } // Renderer
 

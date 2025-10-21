@@ -37,6 +37,11 @@ struct AllocatedBuffer
     AllocatedBuffer(AllocatedBuffer&& other) noexcept;
 
     AllocatedBuffer& operator=(AllocatedBuffer&& other) noexcept;
+
+    /**
+     * Explicitly release the buffer's resources. Use carefully.
+     */
+    void Release();
 };
 
 struct AllocatedImage
@@ -163,6 +168,8 @@ namespace VkResources
     ImageView CreateImageView(VulkanContext* context, const VkImageViewCreateInfo& imageViewCreateInfo);
 
     AllocatedBuffer CreateAllocatedBuffer(VulkanContext* context, const VkBufferCreateInfo& bufferInfo, const VmaAllocationCreateInfo& vmaAllocInfo);
+
+    AllocatedBuffer CreateAllocatedStagingBuffer(VulkanContext* context, size_t bufferSize, VkBufferUsageFlags additionalUsages = 0);
 
     Sampler CreateSampler(VulkanContext* context, const VkSamplerCreateInfo& samplerCreateInfo);
 

@@ -66,6 +66,17 @@ AllocatedBuffer& AllocatedBuffer::operator=(AllocatedBuffer&& other) noexcept
     return *this;
 }
 
+void AllocatedBuffer::Release()
+{
+    if (handle != VK_NULL_HANDLE) {
+        vmaDestroyBuffer(context->allocator, handle, allocation);
+        handle = VK_NULL_HANDLE;
+        allocation = VK_NULL_HANDLE;
+        address = 0;
+        size = 0;
+    }
+}
+
 AllocatedImage::~AllocatedImage()
 {
     if (handle != VK_NULL_HANDLE && allocation != VK_NULL_HANDLE) {
@@ -324,6 +335,30 @@ AllocatedBuffer VkResources::CreateAllocatedBuffer(VulkanContext* context, const
     VK_CHECK(vmaCreateBuffer(context->allocator, &bufferInfo, &vmaAllocInfo, &buffer.handle, &buffer.allocation, &buffer.allocationInfo));
     buffer.size = bufferInfo.size;
     buffer.address = VkHelpers::GetDeviceAddress(context->device, buffer.handle);
+    return buffer;
+}
+
+AllocatedBuffer VkResources::CreateAllocatedStagingBuffer(VulkanContext* context, size_t bufferSize, VkBufferUsageFlags additionalUsages)
+{
+    const VkBufferCreateInfo bufferInfo{
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .size = bufferSize,
+        .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | additionalUsages,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE
+    };
+
+    const VmaAllocationCreateInfo allocInfo{
+        .flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT,
+        .usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST,
+        .requiredFlags = 0
+    };
+
+    AllocatedBuffer buffer;
+    buffer.context = context;
+    VK_CHECK(vmaCreateBuffer(context->allocator, &bufferInfo, &allocInfo, &buffer.handle, &buffer.allocation, &buffer.allocationInfo));
+    buffer.size = bufferInfo.size;
+    // Staging buffer doesn't typically need device address. If needed, make a new function
+    // buffer.address = VkHelpers::GetDeviceAddress(context->device, buffer.handle);
     return buffer;
 }
 

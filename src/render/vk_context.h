@@ -28,6 +28,8 @@ struct VulkanContext
     VkDevice device{};
     VkQueue graphicsQueue{};
     uint32_t graphicsQueueFamily{};
+    VkQueue transferQueue{};
+    uint32_t transferQueueFamily{};
     VmaAllocator allocator{};
     VkDebugUtilsMessengerEXT debugMessenger{};
 

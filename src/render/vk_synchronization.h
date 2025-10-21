@@ -22,7 +22,7 @@ struct FrameData
     VkSemaphore renderSemaphore{};
 
     FrameData() = default;
-    FrameData(VulkanContext* context);
+    explicit FrameData(VulkanContext* context);
     ~FrameData();
 
     FrameData(const FrameData&) = delete;

@@ -17,14 +17,14 @@ namespace Renderer
 {
 DeviceInfo VulkanContext::deviceInfo{};
 
-VulkanContext:: VulkanContext(SDL_Window* window)
+VulkanContext::VulkanContext(SDL_Window* window)
 {
     VkResult res = volkInitialize();
-     if (res != VK_SUCCESS) {
-         LOG_ERROR("Failed to initialize volk: {}", string_VkResult(res));
-         CrashHandler::TriggerManualDump();
-         exit(1);
-     }
+    if (res != VK_SUCCESS) {
+        LOG_ERROR("Failed to initialize volk: {}", string_VkResult(res));
+        CrashHandler::TriggerManualDump();
+        exit(1);
+    }
 
     vkb::InstanceBuilder builder;
     std::vector<const char*> enabledInstanceExtensions;
@@ -77,7 +77,7 @@ VulkanContext:: VulkanContext(SDL_Window* window)
     descriptorBufferFeatures.descriptorBuffer = VK_TRUE;
     features12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
     features12.shaderStorageImageArrayNonUniformIndexing = VK_TRUE;
-    features12.shaderUniformBufferArrayNonUniformIndexing  = VK_TRUE;
+    features12.shaderUniformBufferArrayNonUniformIndexing = VK_TRUE;
     features12.shaderStorageBufferArrayNonUniformIndexing = VK_TRUE;
 
     // SV_VertexID
@@ -103,8 +103,40 @@ VulkanContext:: VulkanContext(SDL_Window* window)
     volkLoadDevice(device);
     physicalDevice = targetDevice.physical_device;
 
-    graphicsQueue = vkbDevice.get_queue(vkb::QueueType::graphics).value();
-    graphicsQueueFamily = vkbDevice.get_queue_index(vkb::QueueType::graphics).value();
+    // Queues and queue family
+    {
+        auto graphicsQueueResult = vkbDevice.get_queue(vkb::QueueType::graphics);
+        if (!graphicsQueueResult) {
+            LOG_ERROR("Failed to get graphics queue: {}", graphicsQueueResult.error().message());
+            CrashHandler::TriggerManualDump();
+            exit(1);
+        }
+        graphicsQueue = graphicsQueueResult.value();
+
+        auto graphicsQueueFamilyResult = vkbDevice.get_queue_index(vkb::QueueType::graphics);
+        if (!graphicsQueueFamilyResult) {
+            LOG_ERROR("Failed to get graphics queue family index: {}", graphicsQueueFamilyResult.error().message());
+            CrashHandler::TriggerManualDump();
+            exit(1);
+        }
+        graphicsQueueFamily = graphicsQueueFamilyResult.value();
+
+        auto transferQueueResult = vkbDevice.get_queue(vkb::QueueType::transfer);
+        if (!transferQueueResult) {
+            LOG_ERROR("Failed to get transfer queue: {}", transferQueueResult.error().message());
+            CrashHandler::TriggerManualDump();
+            exit(1);
+        }
+        transferQueue = transferQueueResult.value();
+
+        auto transferQueueFamilyResult = vkbDevice.get_queue_index(vkb::QueueType::transfer);
+        if (!transferQueueFamilyResult) {
+            LOG_ERROR("Failed to get transfer queue family index: {}", transferQueueFamilyResult.error().message());
+            CrashHandler::TriggerManualDump();
+            exit(1);
+        }
+        transferQueueFamily = transferQueueFamilyResult.value();
+    }
 
     VmaAllocatorCreateInfo allocatorInfo = {};
     allocatorInfo.physicalDevice = physicalDevice;

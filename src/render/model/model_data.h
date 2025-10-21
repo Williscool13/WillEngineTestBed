@@ -15,7 +15,7 @@
 namespace Renderer
 {
 
-struct Mesh
+struct MeshInformation
 {
     std::string name;
     std::vector<uint32_t> primitiveIndices;
@@ -35,6 +35,21 @@ struct Primitive
     glm::vec4 boundingSphere{};
 };
 
+
+struct Instance
+{
+    uint32_t primitiveIndex{INT32_MAX};
+    uint32_t meshIndex{INT32_MAX};
+    bool bIsAllocated{false};
+};
+
+struct Mesh
+{
+    glm::mat4 modelMatrix{1.0f};
+    glm::mat4 prevModelMatrix{1.0f};
+    glm::vec4 flags{1.0f}; // x: visible, y: shadow-caster, zw: reserved
+};
+
 struct ModelData
 {
     std::vector<Sampler> samplers{};
@@ -47,7 +62,7 @@ struct ModelData
     std::vector<VertexProperty> vertexProperties{};
     std::vector<uint32_t> indices{};
 
-    std::vector<Mesh> meshes{};
+    std::vector<MeshInformation> meshes{};
     std::vector<Primitive> primitives{};
 };
 } // Renderer

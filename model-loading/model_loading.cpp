@@ -73,13 +73,17 @@ void ModelLoading::Initialize()
     }
 
     ModelLoader mLoader{vulkanContext.get()};
-    auto model = mLoader.LoadGltf(std::filesystem::path("../assets/BoxTextured.glb"));
-    LOG_INFO("Model Sampler Count: {}", model.samplers.size());
-    LOG_INFO("Model Image Count: {}", model.images.size());
-    LOG_INFO("Model Image View Count: {}", model.imageViews.size());
-    LOG_INFO("Model Material Count: {}", model.materials.size());
-    LOG_INFO("Vertices: {}", model.vertexPositions.size());
-    LOG_INFO("Indices: {}", model.indices.size());
+    {
+        Utils::ScopedTimer loadModel{"Load Model"};
+        auto model = mLoader.LoadGltf(std::filesystem::path("../assets/BoxTextured.glb"));
+        LOG_INFO("Model Sampler Count: {}", model.samplers.size());
+        LOG_INFO("Model Image Count: {}", model.images.size());
+        LOG_INFO("Model Image View Count: {}", model.imageViews.size());
+        LOG_INFO("Model Material Count: {}", model.materials.size());
+        LOG_INFO("Vertices: {}", model.vertexPositions.size());
+        LOG_INFO("Indices: {}", model.indices.size());
+    }
+
 }
 
 void ModelLoading::Run()

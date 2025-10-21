@@ -71,7 +71,7 @@ FrameData& FrameData::operator=(FrameData&& other) noexcept
 
 void FrameData::Initialize()
 {
-    VkCommandPoolCreateInfo commandPoolCreateInfo = VkHelpers::CommandPoolCreateInfo();
+    VkCommandPoolCreateInfo commandPoolCreateInfo = VkHelpers::CommandPoolCreateInfo(context->graphicsQueueFamily);
     VkCommandBufferAllocateInfo commandBufferAllocateInfo = VkHelpers::CommandBufferAllocateInfo(1);
     VK_CHECK(vkCreateCommandPool(context->device, &commandPoolCreateInfo, nullptr, &commandPool));
     commandBufferAllocateInfo.commandPool = commandPool;
