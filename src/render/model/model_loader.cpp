@@ -10,8 +10,8 @@
 
 #include <glm/glm.hpp>
 
-#include "render_utils.h"
-#include "vk_helpers.h"
+#include "../render_utils.h"
+#include "../vk_helpers.h"
 #include "crash-handling/crash_handler.h"
 #include "stb/stb_image.h"
 #include "utils/utils.h"
@@ -21,7 +21,7 @@ namespace Renderer
 ModelLoader::ModelLoader(VulkanContext* context)
     : context(context)
 {
-    VkCommandPoolCreateInfo poolInfo = VkHelpers::CommandPoolCreateInfo(context->graphicsQueueFamily);
+    VkCommandPoolCreateInfo poolInfo = VkHelpers::CommandPoolCreateInfo(context->transferQueueFamily);
     VK_CHECK(vkCreateCommandPool(context->device, &poolInfo, nullptr, &commandPool));
     VkCommandBufferAllocateInfo cmdInfo = VkHelpers::CommandBufferAllocateInfo(1, commandPool);
     VK_CHECK(vkAllocateCommandBuffers(context->device, &cmdInfo, &commandBuffer));
@@ -32,6 +32,8 @@ ModelLoader::ModelLoader(VulkanContext* context)
         .flags = 0, // Unsignaled
     };
     VK_CHECK(vkCreateFence(context->device, &fenceInfo, nullptr, &uploadFence));
+
+    imageStagingBuffer = VkResources::CreateAllocatedStagingBuffer(context, IMAGE_UPLOAD_STAGING_SIZE);
 }
 
 ModelLoader::~ModelLoader()
@@ -83,11 +85,8 @@ ExtractedModel ModelLoader::LoadGltf(const std::filesystem::path& path)
     }
 
     model.images.reserve(gltf.images.size());
-    for (const fastgltf::Image& gltfImage : gltf.images) {
-        // todo: job system to parallelize stb decoding.
-        // todo: batch the image upload on the GPU, so we only have to call the fence once.
-        model.images.push_back(LoadGltfImage(gltf, gltfImage, path.parent_path()));
-    }
+    // todo: job system to parallelize stb decoding.
+    LoadGltfImages(gltf, path.parent_path(), model.images);
 
     model.imageViews.reserve(gltf.images.size());
     for (const AllocatedImage& image : model.images) {
@@ -268,226 +267,255 @@ VkSamplerMipmapMode ModelLoader::ExtractMipmapMode(fastgltf::Filter filter)
     }
 }
 
-AllocatedImage ModelLoader::LoadGltfImage(const fastgltf::Asset& asset, const fastgltf::Image& image, const std::filesystem::path& parentFolder)
+void ModelLoader::LoadGltfImages(const fastgltf::Asset& asset, const std::filesystem::path& parentFolder, std::vector<AllocatedImage>& outAllocatedImages)
 {
-    AllocatedImage newImage{};
-    newImage.context = context;;
-
+    unsigned char* stbiData{nullptr};
     int32_t width{};
     int32_t height{};
     int32_t nrChannels{};
 
-    std::visit(
-        fastgltf::visitor{
-            [&](auto& arg) {},
-            [&](const fastgltf::sources::URI& fileName) {
-                assert(fileName.fileByteOffset == 0); // We don't support offsets with stbi.
-                assert(fileName.uri.isLocalPath()); // We're only capable of loading
-                // local files.
-                const std::wstring widePath(fileName.uri.path().begin(), fileName.uri.path().end());
-                const std::filesystem::path fullPath = parentFolder / widePath;
+    bool bIsRecording = false;
 
-                // if (fullPath.extension() == ".ktx") {
-                //     ktxTexture1* kTexture;
-                //     const ktx_error_code_e ktxResult = ktxTexture1_CreateFromNamedFile(fullPath.string().c_str(),
-                //                                                                        KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT,
-                //                                                                        &kTexture);
-                //
-                //     if (ktxResult == KTX_SUCCESS) {
-                //         newImage = processKtxVector(resourceManager, kTexture);
-                //     }
-                //
-                //     ktxTexture1_Destroy(kTexture);
-                // }
-                // else if (fullPath.extension() == ".ktx2") {
-                //     ktxTexture2* kTexture;
-                //     const ktx_error_code_e ktxResult = ktxTexture2_CreateFromNamedFile(fullPath.string().c_str(),
-                //                                                                        KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT,
-                //                                                                        &kTexture);
-                //
-                //     if (ktxResult == KTX_SUCCESS) {
-                //         newImage = processKtxVector(resourceManager, kTexture);
-                //     }
-                //
-                //     ktxTexture2_Destroy(kTexture);
-                // }
-                // else {
-                unsigned char* data = stbi_load(fullPath.string().c_str(), &width, &height, &nrChannels, 4);
-                if (data) {
-                    VkExtent3D imagesize;
-                    imagesize.width = width;
-                    imagesize.height = height;
-                    imagesize.depth = 1;
-                    const size_t size = width * height * 4;
-                    newImage = CreateImageFromData(data, size, imagesize, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT, false);
+    for (const fastgltf::Image& gltfImage : asset.images) {
+        AllocatedImage newImage{};
 
-                    stbi_image_free(data);
-                }
-                // }
-            },
-            [&](const fastgltf::sources::Array& vector) {
-                if (vector.bytes.size() > 30) {
-                    // Minimum size for a meaningful check
-                    std::string_view strData(reinterpret_cast<const char*>(vector.bytes.data()),
-                                             std::min(size_t(100), vector.bytes.size()));
 
-                    if (strData.find("https://git-lfs.github.com/spec") != std::string_view::npos) {
-                        throw std::runtime_error(
-                            fmt::format("Git LFS pointer detected instead of actual texture data for image: {}. "
-                                        "Please run 'git lfs pull' to retrieve the actual files.",
-                                        image.name.c_str()));
+        std::visit(
+            fastgltf::visitor{
+                [&](auto& arg) {},
+                [&](const fastgltf::sources::URI& fileName) {
+                    assert(fileName.fileByteOffset == 0); // We don't support offsets with stbi.
+                    assert(fileName.uri.isLocalPath()); // We're only capable of loading
+                    // local files.
+                    const std::wstring widePath(fileName.uri.path().begin(), fileName.uri.path().end());
+                    const std::filesystem::path fullPath = parentFolder / widePath;
+
+                    // if (fullPath.extension() == ".ktx") {
+                    //     ktxTexture1* kTexture;
+                    //     const ktx_error_code_e ktxResult = ktxTexture1_CreateFromNamedFile(fullPath.string().c_str(),
+                    //                                                                        KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT,
+                    //                                                                        &kTexture);
+                    //
+                    //     if (ktxResult == KTX_SUCCESS) {
+                    //         newImage = processKtxVector(resourceManager, kTexture);
+                    //     }
+                    //
+                    //     ktxTexture1_Destroy(kTexture);
+                    // }
+                    // else if (fullPath.extension() == ".ktx2") {
+                    //     ktxTexture2* kTexture;
+                    //     const ktx_error_code_e ktxResult = ktxTexture2_CreateFromNamedFile(fullPath.string().c_str(),
+                    //                                                                        KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT,
+                    //                                                                        &kTexture);
+                    //
+                    //     if (ktxResult == KTX_SUCCESS) {
+                    //         newImage = processKtxVector(resourceManager, kTexture);
+                    //     }
+                    //
+                    //     ktxTexture2_Destroy(kTexture);
+                    // }
+                    // else {
+                    stbiData = stbi_load(fullPath.string().c_str(), &width, &height, &nrChannels, 4);
+
+                    // }
+                },
+                [&](const fastgltf::sources::Array& vector) {
+                    if (vector.bytes.size() > 30) {
+                        // Minimum size for a meaningful check
+                        std::string_view strData(reinterpret_cast<const char*>(vector.bytes.data()),
+                                                 std::min(size_t(100), vector.bytes.size()));
+
+                        if (strData.find("https://git-lfs.github.com/spec") != std::string_view::npos) {
+                            throw std::runtime_error(
+                                fmt::format("Git LFS pointer detected instead of actual texture data for image: {}. "
+                                            "Please run 'git lfs pull' to retrieve the actual files.",
+                                            gltfImage.name.c_str()));
+                        }
                     }
-                }
 
-                //const int32_t ktxVersion = isKtxTexture(vector);
-                //switch (ktxVersion) {
-                // case 1:
-                // {
-                //     if (validateVector(vector, 0, vector.bytes.size())) {
-                //         ktxTexture1* kTexture;
-                //         const ktx_error_code_e ktxResult = ktxTexture1_CreateFromMemory(
-                //             reinterpret_cast<const unsigned char*>(vector.bytes.data()),
-                //             vector.bytes.size(),
-                //             KTX_TEXTURE_CREATE_NO_FLAGS,
-                //             &kTexture);
-                //
-                //
-                //         if (ktxResult == KTX_SUCCESS) {
-                //             newImage = processKtxVector(resourceManager, kTexture);
-                //         }
-                //
-                //         ktxTexture1_Destroy(kTexture);
-                //     }
-                //     else {
-                //         fmt::print("Error: Failed to validate vector data that contains ktx data\n");
-                //     }
-                // }
-                // break;
-                // case 2:
-                // {
-                //     if (validateVector(vector, 0, vector.bytes.size())) {
-                //         ktxTexture2* kTexture;
-                //
-                //         const KTX_error_code ktxResult = ktxTexture2_CreateFromMemory(
-                //             reinterpret_cast<const unsigned char*>(vector.bytes.data()),
-                //             vector.bytes.size(),
-                //             KTX_TEXTURE_CREATE_NO_FLAGS,
-                //             &kTexture);
-                //
-                //         if (ktxResult == KTX_SUCCESS) {
-                //             newImage = processKtxVector(resourceManager, kTexture);
-                //         }
-                //
-                //         ktxTexture2_Destroy(kTexture);
-                //     }
-                // }
-                // break;
-                // default:
-                // {
-                unsigned char* data = stbi_load_from_memory(reinterpret_cast<const unsigned char*>(vector.bytes.data()),
-                                                            static_cast<int>(vector.bytes.size()), &width, &height, &nrChannels, 4);
-                if (data) {
-                    VkExtent3D imagesize;
-                    imagesize.width = width;
-                    imagesize.height = height;
-                    imagesize.depth = 1;
-                    const size_t size = width * height * 4;
-                    newImage = CreateImageFromData(data, size, imagesize, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT, false);
+                    //const int32_t ktxVersion = isKtxTexture(vector);
+                    //switch (ktxVersion) {
+                    // case 1:
+                    // {
+                    //     if (validateVector(vector, 0, vector.bytes.size())) {
+                    //         ktxTexture1* kTexture;
+                    //         const ktx_error_code_e ktxResult = ktxTexture1_CreateFromMemory(
+                    //             reinterpret_cast<const unsigned char*>(vector.bytes.data()),
+                    //             vector.bytes.size(),
+                    //             KTX_TEXTURE_CREATE_NO_FLAGS,
+                    //             &kTexture);
+                    //
+                    //
+                    //         if (ktxResult == KTX_SUCCESS) {
+                    //             newImage = processKtxVector(resourceManager, kTexture);
+                    //         }
+                    //
+                    //         ktxTexture1_Destroy(kTexture);
+                    //     }
+                    //     else {
+                    //         fmt::print("Error: Failed to validate vector data that contains ktx data\n");
+                    //     }
+                    // }
+                    // break;
+                    // case 2:
+                    // {
+                    //     if (validateVector(vector, 0, vector.bytes.size())) {
+                    //         ktxTexture2* kTexture;
+                    //
+                    //         const KTX_error_code ktxResult = ktxTexture2_CreateFromMemory(
+                    //             reinterpret_cast<const unsigned char*>(vector.bytes.data()),
+                    //             vector.bytes.size(),
+                    //             KTX_TEXTURE_CREATE_NO_FLAGS,
+                    //             &kTexture);
+                    //
+                    //         if (ktxResult == KTX_SUCCESS) {
+                    //             newImage = processKtxVector(resourceManager, kTexture);
+                    //         }
+                    //
+                    //         ktxTexture2_Destroy(kTexture);
+                    //     }
+                    // }
+                    // break;
+                    // default:
+                    // {
+                    stbiData = stbi_load_from_memory(reinterpret_cast<const unsigned char*>(vector.bytes.data()), static_cast<int>(vector.bytes.size()), &width, &height, &nrChannels, 4);
+                    // }
+                    // break;
+                    //}
+                },
+                [&](const fastgltf::sources::BufferView& view) {
+                    const fastgltf::BufferView& bufferView = asset.bufferViews[view.bufferViewIndex];
+                    const fastgltf::Buffer& buffer = asset.buffers[bufferView.bufferIndex];
+                    // We only care about VectorWithMime here, because we
+                    // specify LoadExternalBuffers, meaning all buffers
+                    // are already loaded into a vector.
+                    std::visit(fastgltf::visitor{
+                                   [](auto&) {},
+                                   [&](const fastgltf::sources::Array& vector) {
+                                       // const int32_t ktxVersion = isKtxTexture(vector);
+                                       // switch (ktxVersion) {
+                                       //     case 1:
+                                       //     {
+                                       //         if (validateVector(vector, 0, vector.bytes.size())) {
+                                       //             ktxTexture1* kTexture;
+                                       //             const KTX_error_code ktxResult = ktxTexture1_CreateFromMemory(
+                                       //                 reinterpret_cast<const unsigned char*>(vector.bytes.data() + bufferView.byteOffset),
+                                       //                 bufferView.byteLength,
+                                       //                 KTX_TEXTURE_CREATE_NO_FLAGS,
+                                       //                 &kTexture);
+                                       //
+                                       //
+                                       //             if (ktxResult == KTX_SUCCESS) {
+                                       //                 newImage = processKtxVector(resourceManager, kTexture);
+                                       //             }
+                                       //
+                                       //             ktxTexture1_Destroy(kTexture);
+                                       //         }
+                                       //         else {
+                                       //             fmt::print("Error: Failed to validate vector data that contains ktx data\n");
+                                       //         }
+                                       //     }
+                                       //     break;
+                                       //     case 2:
+                                       //     {
+                                       //         if (validateVector(vector, 0, vector.bytes.size())) {
+                                       //             ktxTexture2* kTexture;
+                                       //
+                                       //             const KTX_error_code ktxResult = ktxTexture2_CreateFromMemory(
+                                       //                 reinterpret_cast<const unsigned char*>(vector.bytes.data() + bufferView.byteOffset),
+                                       //                 bufferView.byteLength,
+                                       //                 KTX_TEXTURE_CREATE_NO_FLAGS,
+                                       //                 &kTexture);
+                                       //
+                                       //             if (ktxResult == KTX_SUCCESS) {
+                                       //                 newImage = processKtxVector(resourceManager, kTexture);
+                                       //             }
+                                       //
+                                       //             ktxTexture2_Destroy(kTexture);
+                                       //         }
+                                       //         else {
+                                       //             fmt::print("Error: Failed to validate vector data that contains ktx data\n");
+                                       //         }
+                                       //     }
+                                       //     break;
+                                       //     default:
+                                       stbiData = stbi_load_from_memory(reinterpret_cast<const stbi_uc*>(vector.bytes.data() + bufferView.byteOffset), static_cast<int>(bufferView.byteLength), &width,
+                                                                        &height,
+                                                                        &nrChannels, 4);
+                                       //
+                                       //         break;
+                                       // }
+                                   }
+                               }, buffer.data);
+                }
+            }, gltfImage.data);
 
-                    stbi_image_free(data);
+
+        if (stbiData) {
+            VkExtent3D imagesize;
+            imagesize.width = width;
+            imagesize.height = height;
+            imagesize.depth = 1;
+            const size_t size = width * height * 4;
+
+
+
+            OffsetAllocator::Allocation allocation = imageStagingAllocator.allocate(size);
+            if (allocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
+                if (bIsRecording) {
+                    // Flush staging buffer
+                    VK_CHECK(vkEndCommandBuffer(commandBuffer));
+                    VkCommandBufferSubmitInfo cmdSubmitInfo = VkHelpers::CommandBufferSubmitInfo(commandBuffer);
+                    const VkSubmitInfo2 submitInfo = VkHelpers::SubmitInfo(&cmdSubmitInfo, nullptr, nullptr);
+                    VK_CHECK(vkQueueSubmit2(context->transferQueue, 1, &submitInfo, uploadFence));
+                    imageStagingAllocator.reset();
+                    VK_CHECK(vkWaitForFences(context->device, 1, &uploadFence, true, 1000000000));
+                    VK_CHECK(vkResetFences(context->device, 1, &uploadFence));
+                    VK_CHECK(vkResetCommandBuffer(commandBuffer, 0));
+                    bIsRecording = false;
+
+
+                    // Try again
+                    allocation = imageStagingAllocator.allocate(size);
+                    if (allocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
+                        CrashHandler::TriggerManualDump("Texture too large to fit in staging buffer. Increase staging buffer size or do not load this texture");
+                        exit(1);
+                    }
+                } else {
+                    // If command buffer hasn't begun, then there are no other textures queued for load - which means that this texture we're attempting to load is larger than an empty staging buffer
+                    CrashHandler::TriggerManualDump("Texture too large to fit in staging buffer. Increase staging buffer size or do not load this texture");
+                    exit(1);
                 }
-                else {
-                    fmt::print("Error: Failed to validate vector data that contains ktx data\n");
-                }
-                // }
-                // break;
-                //}
-            },
-            [&](const fastgltf::sources::BufferView& view) {
-                const fastgltf::BufferView& bufferView = asset.bufferViews[view.bufferViewIndex];
-                const fastgltf::Buffer& buffer = asset.buffers[bufferView.bufferIndex];
-                // We only care about VectorWithMime here, because we
-                // specify LoadExternalBuffers, meaning all buffers
-                // are already loaded into a vector.
-                std::visit(fastgltf::visitor{
-                               [](auto&) {},
-                               [&](const fastgltf::sources::Array& vector) {
-                                   // const int32_t ktxVersion = isKtxTexture(vector);
-                                   // switch (ktxVersion) {
-                                   //     case 1:
-                                   //     {
-                                   //         if (validateVector(vector, 0, vector.bytes.size())) {
-                                   //             ktxTexture1* kTexture;
-                                   //             const KTX_error_code ktxResult = ktxTexture1_CreateFromMemory(
-                                   //                 reinterpret_cast<const unsigned char*>(vector.bytes.data() + bufferView.byteOffset),
-                                   //                 bufferView.byteLength,
-                                   //                 KTX_TEXTURE_CREATE_NO_FLAGS,
-                                   //                 &kTexture);
-                                   //
-                                   //
-                                   //             if (ktxResult == KTX_SUCCESS) {
-                                   //                 newImage = processKtxVector(resourceManager, kTexture);
-                                   //             }
-                                   //
-                                   //             ktxTexture1_Destroy(kTexture);
-                                   //         }
-                                   //         else {
-                                   //             fmt::print("Error: Failed to validate vector data that contains ktx data\n");
-                                   //         }
-                                   //     }
-                                   //     break;
-                                   //     case 2:
-                                   //     {
-                                   //         if (validateVector(vector, 0, vector.bytes.size())) {
-                                   //             ktxTexture2* kTexture;
-                                   //
-                                   //             const KTX_error_code ktxResult = ktxTexture2_CreateFromMemory(
-                                   //                 reinterpret_cast<const unsigned char*>(vector.bytes.data() + bufferView.byteOffset),
-                                   //                 bufferView.byteLength,
-                                   //                 KTX_TEXTURE_CREATE_NO_FLAGS,
-                                   //                 &kTexture);
-                                   //
-                                   //             if (ktxResult == KTX_SUCCESS) {
-                                   //                 newImage = processKtxVector(resourceManager, kTexture);
-                                   //             }
-                                   //
-                                   //             ktxTexture2_Destroy(kTexture);
-                                   //         }
-                                   //         else {
-                                   //             fmt::print("Error: Failed to validate vector data that contains ktx data\n");
-                                   //         }
-                                   //     }
-                                   //     break;
-                                   //     default:
-                                   unsigned char* data = stbi_load_from_memory(reinterpret_cast<const stbi_uc*>(vector.bytes.data() + bufferView.byteOffset),
-                                                                               static_cast<int>(bufferView.byteLength), &width, &height, &nrChannels, 4);
-                                   if (data) {
-                                       VkExtent3D imagesize;
-                                       imagesize.width = width;
-                                       imagesize.height = height;
-                                       imagesize.depth = 1;
-                                       const size_t size = width * height * 4;
-                                       newImage = CreateImageFromData(data, size, imagesize, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT, false);
-                                       stbi_image_free(data);
-                                   }
-                                   else {
-                                       fmt::print("Error: Failed to get correct ktx version from buffer view. Fallback stbi load from memory also failed.\n");
-                                   }
-                                   //
-                                   //         break;
-                                   // }
-                               }
-                           }, buffer.data);
             }
-        }, image.data);
 
+            if (!bIsRecording) {
+                const VkCommandBufferBeginInfo cmdBeginInfo = VkHelpers::CommandBufferBeginInfo();
+                VK_CHECK(vkBeginCommandBuffer(commandBuffer, &cmdBeginInfo));
+                bIsRecording = true;
+            }
 
-    if (newImage.handle == VK_NULL_HANDLE) {
-        fmt::print("Image failed to load: {}\n", image.name.c_str());
-        return {};
+            newImage = RecordCreateImageFromData(commandBuffer, allocation.offset, stbiData, size, imagesize, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT, false);
+
+            stbi_image_free(stbiData);
+            stbiData = nullptr;
+
+        }
+
+        outAllocatedImages.push_back(std::move(newImage));
     }
 
-    return newImage;
+    if (bIsRecording) {
+        // Final flush staging buffer
+        VK_CHECK(vkEndCommandBuffer(commandBuffer));
+        VkCommandBufferSubmitInfo cmdSubmitInfo = VkHelpers::CommandBufferSubmitInfo(commandBuffer);
+        const VkSubmitInfo2 submitInfo = VkHelpers::SubmitInfo(&cmdSubmitInfo, nullptr, nullptr);
+        VK_CHECK(vkQueueSubmit2(context->transferQueue, 1, &submitInfo, uploadFence));
+        imageStagingAllocator.reset();
+        VK_CHECK(vkWaitForFences(context->device, 1, &uploadFence, true, 1000000000));
+        VK_CHECK(vkResetFences(context->device, 1, &uploadFence));
+        VK_CHECK(vkResetCommandBuffer(commandBuffer, 0));
+        bIsRecording = false;
+    }
 }
 
 MaterialProperties ModelLoader::ExtractMaterial(fastgltf::Asset& gltf, const fastgltf::Material& gltfMaterial)
@@ -614,20 +642,13 @@ glm::vec4 ModelLoader::GenerateBoundingSphere(const std::vector<Vertex>& vertice
     return glm::vec4(center, radius);
 }
 
-AllocatedImage ModelLoader::CreateImageFromData(unsigned char* data, size_t size, VkExtent3D imageExtent, VkFormat format, VkImageUsageFlagBits usage, bool mipmapped)
+AllocatedImage ModelLoader::RecordCreateImageFromData(VkCommandBuffer cmd, size_t offset, unsigned char* data, size_t size, VkExtent3D imageExtent, VkFormat format, VkImageUsageFlagBits usage, bool mipmapped)
 {
-    VK_CHECK(vkResetFences(context->device, 1, &uploadFence));
-    VK_CHECK(vkResetCommandBuffer(commandBuffer, 0));
-    VkCommandBuffer cmd = commandBuffer;
-    const VkCommandBufferBeginInfo cmdBeginInfo = VkHelpers::CommandBufferBeginInfo();
-    VK_CHECK(vkBeginCommandBuffer(cmd, &cmdBeginInfo));
+    char* bufferOffset = static_cast<char*>(imageStagingBuffer.allocationInfo.pMappedData) + offset;
+    memcpy(bufferOffset, data, size);
 
-    // todo: can probably cache a mega staging buffer
-    AllocatedBuffer uploadBuffer = VkResources::CreateAllocatedStagingBuffer(context, size);
-    memcpy(uploadBuffer.allocationInfo.pMappedData, data, size);
-
-    VkImageCreateInfo drawImageCreateInfo = VkHelpers::ImageCreateInfo(format, imageExtent, usage | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT); // transfer src for mipmap only
-    AllocatedImage newImage = VkResources::CreateAllocatedImage(context, drawImageCreateInfo);
+    VkImageCreateInfo imageCreateInfo = VkHelpers::ImageCreateInfo(format, imageExtent, usage | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT); // transfer src for mipmap only
+    AllocatedImage newImage = VkResources::CreateAllocatedImage(context, imageCreateInfo);
 
     VkImageMemoryBarrier2 barrier = VkHelpers::ImageMemoryBarrier(
         newImage.handle,
@@ -641,7 +662,7 @@ AllocatedImage ModelLoader::CreateImageFromData(unsigned char* data, size_t size
     vkCmdPipelineBarrier2(cmd, &depInfo);
 
     VkBufferImageCopy copyRegion = {};
-    copyRegion.bufferOffset = 0;
+    copyRegion.bufferOffset = offset;
     copyRegion.bufferRowLength = 0;
     copyRegion.bufferImageHeight = 0;
     copyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -650,7 +671,7 @@ AllocatedImage ModelLoader::CreateImageFromData(unsigned char* data, size_t size
     copyRegion.imageSubresource.layerCount = 1;
     copyRegion.imageExtent = imageExtent;
 
-    vkCmdCopyBufferToImage(cmd, uploadBuffer.handle, newImage.handle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
+    vkCmdCopyBufferToImage(cmd, imageStagingBuffer.handle, newImage.handle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
 
 
     // todo: mipmapping
@@ -663,21 +684,13 @@ AllocatedImage ModelLoader::CreateImageFromData(unsigned char* data, size_t size
         newImage.handle,
         VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT),
         VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-        VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL // fragment sample
+        VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
     );
-
+    barrier.srcQueueFamilyIndex = context->transferQueueFamily;
+    barrier.dstQueueFamilyIndex = context->graphicsQueueFamily;
     vkCmdPipelineBarrier2(cmd, &depInfo);
-
-    VK_CHECK(vkEndCommandBuffer(cmd));
-    VkCommandBufferSubmitInfo cmdSubmitInfo = VkHelpers::CommandBufferSubmitInfo(cmd);
-    const VkSubmitInfo2 submitInfo = VkHelpers::SubmitInfo(&cmdSubmitInfo, nullptr, nullptr);
-
-    VK_CHECK(vkQueueSubmit2(context->graphicsQueue, 1, &submitInfo, uploadFence));
-    VK_CHECK(vkWaitForFences(context->device, 1, &uploadFence, true, 1000000000));
-
     newImage.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-    uploadBuffer.Release();
     return newImage;
 }
 } // Renderer

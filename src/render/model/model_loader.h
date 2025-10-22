@@ -7,7 +7,8 @@
 #include <filesystem>
 
 #include "fastgltf/types.hpp"
-#include "model/model_data.h"
+#include "model_data.h"
+#include "render/render_constants.h"
 
 namespace Renderer
 {
@@ -22,11 +23,12 @@ public:
 
     ExtractedModel LoadGltf(const std::filesystem::path& path);
 
+private:
     VkFilter ExtractFilter(fastgltf::Filter filter);
 
     VkSamplerMipmapMode ExtractMipmapMode(fastgltf::Filter filter);
 
-    AllocatedImage LoadGltfImage(const fastgltf::Asset& asset, const fastgltf::Image& image, const std::filesystem::path& parentFolder);
+    void LoadGltfImages(const fastgltf::Asset& asset, const std::filesystem::path& parentFolder, std::vector<AllocatedImage>& outAllocatedImages);
 
     MaterialProperties ExtractMaterial(fastgltf::Asset& gltf, const fastgltf::Material& gltfMaterial);
 
@@ -34,7 +36,7 @@ public:
 
     glm::vec4 GenerateBoundingSphere(const std::vector<Vertex>& vertices);
 
-    AllocatedImage CreateImageFromData(unsigned char* data, size_t size, VkExtent3D imageExtent, VkFormat format, VkImageUsageFlagBits usage, bool mipmapped);
+    AllocatedImage RecordCreateImageFromData(VkCommandBuffer cmd, size_t offset, unsigned char* data, size_t size, VkExtent3D imageExtent, VkFormat format, VkImageUsageFlagBits usage, bool mipmapped);
 
 private:
     VulkanContext* context{};
@@ -42,6 +44,9 @@ private:
     VkCommandPool commandPool{};
     VkCommandBuffer commandBuffer{};
     VkFence uploadFence{};
+
+    AllocatedBuffer imageStagingBuffer{};
+    OffsetAllocator::Allocator imageStagingAllocator{IMAGE_UPLOAD_STAGING_SIZE};
 };
 } // Renderer
 

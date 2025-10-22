@@ -25,8 +25,8 @@ add_library(render-lib STATIC
         render_context.h
         render_targets.cpp
         render_targets.h
-        model_loader.cpp
-        model_loader.h
+        model/model_loader.cpp
+        model/model_loader.h
         model/model_data.cpp
         model/model_data.h
         descriptor_buffer/descriptor_buffer_uniform.cpp

@@ -32,6 +32,8 @@ inline static constexpr int32_t MEGA_INDEX_BUFFER_COUNT = 524288;
 inline static constexpr int32_t MEGA_PRIMITIVE_BUFFER_COUNT = 65536;
 inline static constexpr int32_t MEGA_MATERIAL_BUFFER_COUNT = 16384;
 
+inline static constexpr int32_t IMAGE_UPLOAD_STAGING_SIZE = 64 * 1024 * 1024; // 64 MB (1x uncompressed 4k rgba8, or 4x 4k BC7)
+
 inline static constexpr uint32_t DEFAULT_SWAPCHAIN_WIDTH = 1700;
 inline static constexpr uint32_t DEFAULT_SWAPCHAIN_HEIGHT = 900;
 inline static constexpr uint32_t DEFAULT_RENDER_TARGET_WIDTH = 1700;

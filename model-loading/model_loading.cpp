@@ -28,7 +28,7 @@
 #include "render/descriptor_buffer/descriptor_buffer_uniform.h"
 
 #include "input/input.h"
-#include "render/model_loader.h"
+#include "../src/render/model/model_loader.h"
 #include "render/render_targets.h"
 #include "utils/utils.h"
 #include "utils/world_constants.h"
