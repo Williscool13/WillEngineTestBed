@@ -4,6 +4,9 @@ struct VertexOutput
 {
     float4 position : SV_Position;
     float3 color : COLOR0;
+    float2 uv : TEXCOORD0;
+    nointerpolation int32_t colorSamplerIndex : TEXCOORD1;
+    nointerpolation int32_t colorTextureIndex : TEXCOORD2;
 };
 
 
@@ -17,11 +20,10 @@ struct PushConsts {
 };
 
 
-// [[vk::binding(0, 0)]]
-// SamplerState samplers[];
-//
-// [[vk::binding(1, 0)]]
-// Texture2D images[];
+[[vk::binding(0, 0)]]
+SamplerState samplers[];
+[[vk::binding(1, 0)]]
+Texture2D textures[];
 
 [shader("vertex")]
 VertexOutput vertexMain(Vertex vertex, uniform PushConsts pushConstants, uint startInstanceId : SV_StartInstanceLocation, uint vertexId : SV_VertexID) {
@@ -29,11 +31,19 @@ VertexOutput vertexMain(Vertex vertex, uniform PushConsts pushConstants, uint st
 
     Instance i = (*pushConstants.instanceBuffer).instances[startInstanceId];
     Model m = (*pushConstants.modelBuffer).models[i.modelIndex];
+    Primitive p = (*pushConstants.primitiveBuffer).primitives[i.primitiveIndex];
+    MaterialProperties mt = (*pushConstants.materialBuffer).materials[p.materialIndex];
     float4x4 modelMatrix = m.modelMatrix;
 
     output.position = mul(modelMatrix, float4(vertex.position, 1.0f));
     output.position = mul(pushConstants.viewProj, output.position);
-    output.color = vertex.normal * 0.5f + 0.5f;
+
+    output.uv = vertex.uv;
+
+    output.colorSamplerIndex = mt.textureSamplerIndices.x;
+    output.colorTextureIndex = mt.textureImageIndices.x;
+
+    output.color = vertex.color.xyz;
 
     return output;
 }
@@ -41,6 +51,11 @@ VertexOutput vertexMain(Vertex vertex, uniform PushConsts pushConstants, uint st
 [shader("fragment")]
 float4 fragmentMain(VertexOutput input) : SV_Target
 {
-    // float4 color = images[index].Sample(samplers[index], uv);
-    return float4(input.color, 1.0);
+    float4 color = textures[input.colorTextureIndex].Sample(samplers[input.colorSamplerIndex], input.uv);
+    return float4(input.color * color.xyz, 1.0);
+
+    //return float(input.color, 1.0f);
+
+    //float f = float(input.colorTextureIndex);
+    //return float4(f,f,f,1.0f);
 }

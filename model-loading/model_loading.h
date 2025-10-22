@@ -13,6 +13,7 @@
 #include "render/render_context.h"
 #include "render/vk_synchronization.h"
 #include "render/vk_resources.h"
+#include "render/descriptor_buffer/descriptor_buffer_bindless_resources.h"
 #include "render/descriptor_buffer/descriptor_buffer_storage_image.h"
 #include "render/model/model_data.h"
 
@@ -36,6 +37,8 @@ public:
     ~ModelLoading();
 
     void CreateResources();
+
+    void CreateModels();
 
     void Initialize();
 
@@ -61,13 +64,8 @@ private:
     //  - Scene Data
     DescriptorSetLayout renderTargetSetLayout{};
     DescriptorBufferStorageImage renderTargetDescriptors{};
-    //
-    // VkDescriptorSetLayout bindlessUniformSetLayout{};
-    // std::unique_ptr<DescriptorBufferUniform> bindlessUniforms{};
-    // VkDescriptorSetLayout bindlessCombinedImageSamplerSetLayout{};
-    // std::unique_ptr<DescriptorBufferCombinedImageSampler> bindlessCombinedImageSamplers{};
-    // VkDescriptorSetLayout bindlessStorageImageSetLayout{};
-    // std::unique_ptr<DescriptorBufferStorageImage> bindlessStorageImages{};
+
+    DescriptorBufferBindlessResources bindlessResourcesDescriptorBuffer{};
 
 
     std::vector<ModelData> modelDatas{};
@@ -104,7 +102,6 @@ private:
     // Render Information
     bool bSwapchainOutdated{false};
     std::unique_ptr<RenderContext> renderContext{};
-
 };
 }
 

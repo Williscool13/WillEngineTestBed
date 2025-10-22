@@ -23,6 +23,8 @@ inline static constexpr VkFormat DEPTH_IMAGE_FORMAT = VK_FORMAT_D32_SFLOAT;
 inline static constexpr int32_t BINDLESS_UNIFORM_BUFFER_COUNT = 1000;
 inline static constexpr int32_t BINDLESS_COMBINED_IMAGE_SAMPLER_COUNT = 1000;
 inline static constexpr int32_t BINDLESS_STORAGE_IMAGE_COUNT = 1000;
+inline static constexpr int32_t BINDLESS_SAMPLER_COUNT = 64;
+inline static constexpr int32_t BINDLESS_SAMPLED_IMAGE_COUNT = 8192;
 
 inline static constexpr int32_t BINDLESS_MODEL_COUNT = 16384;
 inline static constexpr int32_t BINDLESS_INSTANCE_COUNT = 131072;

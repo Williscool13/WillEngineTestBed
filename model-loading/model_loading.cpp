@@ -61,6 +61,8 @@ void ModelLoading::CreateResources()
     drawDescriptorInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
     renderTargetDescriptors.UpdateDescriptor(drawDescriptorInfo, 0, 0, 0);
 
+    bindlessResourcesDescriptorBuffer = DescriptorBufferBindlessResources(vulkanContext.get());
+
     //
     {
         VkPipelineLayoutCreateInfo computePipelineLayoutCreateInfo{};
@@ -101,15 +103,12 @@ void ModelLoading::CreateResources()
 
         VkPipelineLayoutCreateInfo renderPipelineLayoutCreateInfo{};
         renderPipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        renderPipelineLayoutCreateInfo.setLayoutCount = 0;
-        renderPipelineLayoutCreateInfo.pSetLayouts = nullptr;
+        renderPipelineLayoutCreateInfo.pSetLayouts = &bindlessResourcesDescriptorBuffer.descriptorSetLayout.handle;
+        renderPipelineLayoutCreateInfo.setLayoutCount = 1;
+        //renderPipelineLayoutCreateInfo.pSetLayouts = nullptr;
+        //renderPipelineLayoutCreateInfo.setLayoutCount = 0;
         renderPipelineLayoutCreateInfo.pPushConstantRanges = &renderPushConstantRange;
         renderPipelineLayoutCreateInfo.pushConstantRangeCount = 1;
-
-        // std::array layouts{resourceManager.getSceneDataLayout(), samplerDescriptorLayout->layout};
-        // layoutInfo.setLayoutCount = 0;
-        // layoutInfo.pSetLayouts = layouts.data();
-
 
         renderPipelineLayout = VkResources::CreatePipelineLayout(vulkanContext.get(), renderPipelineLayoutCreateInfo);
 
@@ -188,43 +187,8 @@ void ModelLoading::CreateResources()
     }
 }
 
-void ModelLoading::Initialize()
+void ModelLoading::CreateModels()
 {
-    Utils::ScopedTimer timer{"Model Loading Initialization"};
-    bool sdlInitSuccess = SDL_Init(SDL_INIT_VIDEO);
-    if (!sdlInitSuccess) {
-        LOG_ERROR("SDL_Init failed: {}", SDL_GetError());
-        CrashHandler::TriggerManualDump();
-        exit(1);
-    }
-
-    renderContext = std::make_unique<RenderContext>(DEFAULT_SWAPCHAIN_WIDTH, DEFAULT_SWAPCHAIN_HEIGHT, DEFAULT_RENDER_SCALE);
-    std::array<uint32_t, 2> renderExtent = renderContext->GetRenderExtent();
-
-    constexpr auto window_flags = SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE;
-
-    window = SDL_CreateWindow("Vulkan Test Bed", renderExtent[0], renderExtent[1], window_flags);
-
-    SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
-    SDL_ShowWindow(window);
-
-    vulkanContext = std::make_unique<VulkanContext>(window);
-    swapchain = std::make_unique<Swapchain>(vulkanContext.get(), renderExtent[0], renderExtent[1]);
-    imgui = std::make_unique<ImguiWrapper>(vulkanContext.get(), window, swapchain->imageCount, swapchain->format);
-    renderTargets = std::make_unique<RenderTargets>(vulkanContext.get(), DEFAULT_RENDER_TARGET_WIDTH, DEFAULT_RENDER_TARGET_HEIGHT);
-    Input::Input::Get().Init(window, swapchain->extent.width, swapchain->extent.height);
-
-    renderFramesInFlight = swapchain->imageCount;
-
-    frameSynchronization.reserve(renderFramesInFlight);
-    for (int32_t i = 0; i < renderFramesInFlight; ++i) {
-        frameSynchronization.emplace_back(vulkanContext.get());
-        frameSynchronization[i].Initialize();
-    }
-
-    modelLoader = std::make_unique<ModelLoader>(vulkanContext.get());
-
-
     // todo: optimize so that it's GPU only, use a staging buffer to upload in production
     VkBufferCreateInfo bufferInfo = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
     bufferInfo.pNext = nullptr;
@@ -248,7 +212,7 @@ void ModelLoading::Initialize()
     indirectCountBuffers.reserve(swapchain->imageCount);
     opaqueIndexedIndirectBuffers.reserve(swapchain->imageCount);
     for (int32_t i = 0; i < swapchain->imageCount; ++i) {
-        bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT;
+        bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
         bufferInfo.size = sizeof(IndirectCount);
         indirectCountBuffers.push_back(VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo));
 
@@ -282,9 +246,49 @@ void ModelLoading::Initialize()
     size_t sizeIndices = suzanne.indices.size() * sizeof(uint32_t);
     suzanneModelData.indexAllocation = indexBufferAllocator.allocate(sizeIndices);
     memcpy(static_cast<char*>(megaIndexBuffer.allocationInfo.pMappedData) + suzanneModelData.indexAllocation.offset, suzanne.indices.data(), sizeIndices);
+
+
+    auto RemapIndices = [](auto& indices, const auto& map) {
+        indices.x = map.at(indices.x);
+        indices.y = map.at(indices.y);
+        indices.z = map.at(indices.z);
+        indices.w = map.at(indices.w);
+    };
+
+    std::unordered_map<int32_t, int32_t> materialToBufferMap;
+    materialToBufferMap[-1] = -1;
+
+    // Samplers
+    for (int32_t i = 0; i < suzanne.samplers.size(); ++i) {
+        materialToBufferMap[i] = bindlessResourcesDescriptorBuffer.AllocateSampler(suzanne.samplers[i].handle);
+    }
+
+    for (MaterialProperties& material : suzanne.materials) {
+        RemapIndices(material.textureSamplerIndices, materialToBufferMap);
+        RemapIndices(material.textureSamplerIndices2, materialToBufferMap);
+    }
+
+    // Textures
+    materialToBufferMap.clear();
+    materialToBufferMap[-1] = -1;
+
+    for (int32_t i = 0; i < suzanne.imageViews.size(); ++i) {
+        materialToBufferMap[i] = bindlessResourcesDescriptorBuffer.AllocateTexture({
+            .imageView = suzanne.imageViews[i].handle,
+            .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+        });
+    }
+
+    for (MaterialProperties& material : suzanne.materials) {
+        RemapIndices(material.textureImageIndices, materialToBufferMap);
+        RemapIndices(material.textureImageIndices2, materialToBufferMap);
+    }
+
+
     size_t sizeMaterials = suzanne.materials.size() * sizeof(MaterialProperties);
     suzanneModelData.materialAllocation = materialBufferAllocator.allocate(sizeMaterials);
     memcpy(static_cast<char*>(materialBuffer.allocationInfo.pMappedData) + suzanneModelData.materialAllocation.offset, suzanne.materials.data(), sizeMaterials);
+
     uint32_t firstIndexCount = suzanneModelData.indexAllocation.offset / sizeof(uint32_t);
     uint32_t vertexOffsetCount = suzanneModelData.vertexPositionAllocation.offset / sizeof(Vertex);
     uint32_t materialOffsetCount = suzanneModelData.materialAllocation.offset / sizeof(MaterialProperties);
@@ -322,6 +326,37 @@ void ModelLoading::Initialize()
     sizeIndices = boxTextured.indices.size() * sizeof(uint32_t);
     boxModelData.indexAllocation = indexBufferAllocator.allocate(sizeIndices);
     memcpy(static_cast<char*>(megaIndexBuffer.allocationInfo.pMappedData) + boxModelData.indexAllocation.offset, boxTextured.indices.data(), sizeIndices);
+
+
+    materialToBufferMap.clear();
+    materialToBufferMap[-1] = -1;
+
+    // Samplers
+    for (int32_t i = 0; i < boxTextured.samplers.size(); ++i) {
+        materialToBufferMap[i] = bindlessResourcesDescriptorBuffer.AllocateSampler(boxTextured.samplers[i].handle);
+    }
+
+    for (MaterialProperties& material : boxTextured.materials) {
+        RemapIndices(material.textureSamplerIndices, materialToBufferMap);
+        RemapIndices(material.textureSamplerIndices2, materialToBufferMap);
+    }
+
+    // Textures
+    materialToBufferMap.clear();
+    materialToBufferMap[-1] = -1;
+
+    for (int32_t i = 0; i < boxTextured.imageViews.size(); ++i) {
+        materialToBufferMap[i] = bindlessResourcesDescriptorBuffer.AllocateTexture({
+            .imageView = boxTextured.imageViews[i].handle,
+            .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+        });
+    }
+
+    for (MaterialProperties& material : boxTextured.materials) {
+        RemapIndices(material.textureImageIndices, materialToBufferMap);
+        RemapIndices(material.textureImageIndices2, materialToBufferMap);
+    }
+
     sizeMaterials = boxTextured.materials.size() * sizeof(MaterialProperties);
     boxModelData.materialAllocation = materialBufferAllocator.allocate(sizeMaterials);
     memcpy(static_cast<char*>(materialBuffer.allocationInfo.pMappedData) + boxModelData.materialAllocation.offset, boxTextured.materials.data(), sizeMaterials);
@@ -409,8 +444,47 @@ void ModelLoading::Initialize()
     }
     memcpy(instanceBuffer.allocationInfo.pMappedData, instances.data(), sizeof(Instance) * instances.size());
     highestInstanceIndex = instances.size();
+}
+
+void ModelLoading::Initialize()
+{
+    Utils::ScopedTimer timer{"Model Loading Initialization"};
+    bool sdlInitSuccess = SDL_Init(SDL_INIT_VIDEO);
+    if (!sdlInitSuccess) {
+        LOG_ERROR("SDL_Init failed: {}", SDL_GetError());
+        CrashHandler::TriggerManualDump();
+        exit(1);
+    }
+
+    renderContext = std::make_unique<RenderContext>(DEFAULT_SWAPCHAIN_WIDTH, DEFAULT_SWAPCHAIN_HEIGHT, DEFAULT_RENDER_SCALE);
+    std::array<uint32_t, 2> renderExtent = renderContext->GetRenderExtent();
+
+    constexpr auto window_flags = SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE;
+
+    window = SDL_CreateWindow("Vulkan Test Bed", renderExtent[0], renderExtent[1], window_flags);
+
+    SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+    SDL_ShowWindow(window);
+
+    vulkanContext = std::make_unique<VulkanContext>(window);
+    swapchain = std::make_unique<Swapchain>(vulkanContext.get(), renderExtent[0], renderExtent[1]);
+    imgui = std::make_unique<ImguiWrapper>(vulkanContext.get(), window, swapchain->imageCount, swapchain->format);
+    renderTargets = std::make_unique<RenderTargets>(vulkanContext.get(), DEFAULT_RENDER_TARGET_WIDTH, DEFAULT_RENDER_TARGET_HEIGHT);
+    Input::Input::Get().Init(window, swapchain->extent.width, swapchain->extent.height);
+
+    renderFramesInFlight = swapchain->imageCount;
+
+    frameSynchronization.reserve(renderFramesInFlight);
+    for (int32_t i = 0; i < renderFramesInFlight; ++i) {
+        frameSynchronization.emplace_back(vulkanContext.get());
+        frameSynchronization[i].Initialize();
+    }
+
+    modelLoader = std::make_unique<ModelLoader>(vulkanContext.get());
 
     CreateResources();
+
+    CreateModels();
 }
 
 void ModelLoading::Run()
@@ -550,6 +624,9 @@ void ModelLoading::Render()
         // Draw/Cull pass (compute) - Construct indexed indirect buffer
         {
             {
+
+                vkCmdFillBuffer(cmd, indirectCountBuffers[currentFrameInFlight].handle,offsetof(IndirectCount, opaqueCount), sizeof(uint32_t), 0);
+
                 vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, drawCullPipeline.handle);
                 BindlessIndirectPushConstant pushData{
                     proj * view,
@@ -641,6 +718,13 @@ void ModelLoading::Render()
             };
 
             vkCmdPushConstants(cmd, renderPipelineLayout.handle, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(BindlessAddressPushConstant), &pushData);
+
+            VkDescriptorBufferBindingInfoEXT bindingInfo = bindlessResourcesDescriptorBuffer.GetBindingInfo();
+            vkCmdBindDescriptorBuffersEXT(cmd, 1, &bindingInfo);
+
+            uint32_t bufferIndexImage = 0;
+            VkDeviceSize bufferOffset = 0;
+            vkCmdSetDescriptorBufferOffsetsEXT(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, renderPipelineLayout.handle, 0, 1, &bufferIndexImage, &bufferOffset);
 
 
             const VkBuffer vertexBuffers[2] = {megaVertexBuffer.handle, megaVertexBuffer.handle};

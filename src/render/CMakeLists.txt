@@ -41,8 +41,8 @@ add_library(render-lib STATIC
         descriptor_buffer/descriptor_buffer_sampler.h
         descriptor_buffer/descriptor_buffer_storage_image.cpp
         descriptor_buffer/descriptor_buffer_storage_image.h
-        descriptor_buffer/descripor_buffer_bindless_resources.cpp
-        descriptor_buffer/descripor_buffer_bindless_resources.h
+        descriptor_buffer/descriptor_buffer_bindless_resources.cpp
+        descriptor_buffer/descriptor_buffer_bindless_resources.h
 )
 
 target_link_libraries(render-lib PUBLIC

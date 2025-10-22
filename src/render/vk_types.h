@@ -73,10 +73,6 @@ struct BindlessAddressPushConstant
 struct IndirectCount
 {
     uint32_t opaqueCount;
-    /**
-     * The maximum number of primitives that are in the buffer. Equal to size of indirect buffer
-     */
-    uint32_t limit;
 };
 }
 

@@ -77,6 +77,9 @@ struct ModelData
 
     std::vector<MeshInformation> meshes{};
 
+    std::unordered_map<int32_t, int32_t> samplerIndexToDescriptorBufferIndexMap{};
+    std::unordered_map<int32_t, int32_t> textureIndexToDescriptorBufferIndexMap{};
+
     OffsetAllocator::Allocation vertexPositionAllocation{};
     OffsetAllocator::Allocation vertexPropertyAllocation{};
     OffsetAllocator::Allocation indexAllocation{};
