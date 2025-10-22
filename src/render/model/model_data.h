@@ -61,8 +61,7 @@ struct ExtractedModel
     std::vector<ImageView> imageViews{};
 
     // Split for passes that only require position (shadow pass, depth prepass)
-    std::vector<VertexPosition> vertexPositions{};
-    std::vector<VertexProperty> vertexProperties{};
+    std::vector<Vertex> vertices{};
     std::vector<uint32_t> indices{};
 
     std::vector<MaterialProperties> materials{};

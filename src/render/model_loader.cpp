@@ -102,8 +102,7 @@ ExtractedModel ModelLoader::LoadGltf(const std::filesystem::path& path)
         model.materials.push_back(material);
     }
 
-    std::vector<VertexPosition> primitiveVertexPositions{};
-    std::vector<VertexProperty> primitiveVertexProperties{};
+    std::vector<Vertex> primitiveVertices{};
     std::vector<uint32_t> primitiveIndices{};
 
     model.meshes.reserve(gltf.meshes.size());
@@ -133,18 +132,12 @@ ExtractedModel ModelLoader::LoadGltf(const std::filesystem::path& path)
             // POSITION (REQUIRED)
             const fastgltf::Attribute* positionIt = p.findAttribute("POSITION");
             const fastgltf::Accessor& posAccessor = gltf.accessors[positionIt->accessorIndex];
-            primitiveVertexPositions.clear();
-            primitiveVertexPositions.resize(posAccessor.count);
-            primitiveVertexProperties.clear();
-            primitiveVertexProperties.resize(posAccessor.count);
+            primitiveVertices.clear();
+            primitiveVertices.resize(posAccessor.count);
 
             fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec3>(gltf, posAccessor, [&](fastgltf::math::fvec3 v, const size_t index) {
-                VertexPosition newVertexPos{};
-                newVertexPos.position = {v.x(), v.y(), v.z()};
-                primitiveVertexPositions[index] = newVertexPos;
-
-                const VertexProperty newVertexProp{};
-                primitiveVertexProperties[index] = newVertexProp;
+                primitiveVertices[index] = {};
+                primitiveVertices[index].position = {v.x(), v.y(), v.z()};
             });
 
 
@@ -152,7 +145,7 @@ ExtractedModel ModelLoader::LoadGltf(const std::filesystem::path& path)
             const fastgltf::Attribute* normals = p.findAttribute("NORMAL");
             if (normals != p.attributes.end()) {
                 fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec3>(gltf, gltf.accessors[normals->accessorIndex], [&](fastgltf::math::fvec3 n, const size_t index) {
-                    primitiveVertexProperties[index].normal = {n.x(), n.y(), n.z()};
+                    primitiveVertices[index].normal = {n.x(), n.y(), n.z()};
                 });
             }
 
@@ -160,7 +153,7 @@ ExtractedModel ModelLoader::LoadGltf(const std::filesystem::path& path)
             const fastgltf::Attribute* tangents = p.findAttribute("TANGENT");
             if (tangents != p.attributes.end()) {
                 fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec4>(gltf, gltf.accessors[tangents->accessorIndex], [&](fastgltf::math::fvec4 n, const size_t index) {
-                    primitiveVertexProperties[index].tangent = {n.x(), n.y(), n.z(), n.w()};
+                    primitiveVertices[index].tangent = {n.x(), n.y(), n.z(), n.w()};
                 });
             }
 
@@ -175,7 +168,7 @@ ExtractedModel ModelLoader::LoadGltf(const std::filesystem::path& path)
                             // f = max(c / 127.0, -1.0)
                             float u = std::max(static_cast<float>(uv.x()) / 127.0f, -1.0f);
                             float v = std::max(static_cast<float>(uv.y()) / 127.0f, -1.0f);
-                            primitiveVertexProperties[index].uv = {u, v};
+                            primitiveVertices[index].uv = {u, v};
                         });
                         break;
                     case fastgltf::ComponentType::UnsignedByte:
@@ -183,7 +176,7 @@ ExtractedModel ModelLoader::LoadGltf(const std::filesystem::path& path)
                             // f = c / 255.0
                             float u = static_cast<float>(uv.x()) / 255.0f;
                             float v = static_cast<float>(uv.y()) / 255.0f;
-                            primitiveVertexProperties[index].uv = {u, v};
+                            primitiveVertices[index].uv = {u, v};
                         });
                         break;
                     case fastgltf::ComponentType::Short:
@@ -193,7 +186,7 @@ ExtractedModel ModelLoader::LoadGltf(const std::filesystem::path& path)
                                 static_cast<float>(uv.x()) / 32767.0f, -1.0f);
                             float v = std::max(
                                 static_cast<float>(uv.y()) / 32767.0f, -1.0f);
-                            primitiveVertexProperties[index].uv = {u, v};
+                            primitiveVertices[index].uv = {u, v};
                         });
                         break;
                     case fastgltf::ComponentType::UnsignedShort:
@@ -201,12 +194,12 @@ ExtractedModel ModelLoader::LoadGltf(const std::filesystem::path& path)
                             // f = c / 65535.0
                             float u = static_cast<float>(uv.x()) / 65535.0f;
                             float v = static_cast<float>(uv.y()) / 65535.0f;
-                            primitiveVertexProperties[index].uv = {u, v};
+                            primitiveVertices[index].uv = {u, v};
                         });
                         break;
                     case fastgltf::ComponentType::Float:
                         fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec2>(gltf, uvAccessor, [&](fastgltf::math::fvec2 uv, const size_t index) {
-                            primitiveVertexProperties[index].uv = {uv.x(), uv.y()};
+                            primitiveVertices[index].uv = {uv.x(), uv.y()};
                         });
                         break;
                     default:
@@ -218,21 +211,19 @@ ExtractedModel ModelLoader::LoadGltf(const std::filesystem::path& path)
             // VERTEX COLOR
             const fastgltf::Attribute* colors = p.findAttribute("COLOR_0");
             if (colors != p.attributes.end()) {
-                fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec4>(gltf, gltf.accessors[colors->accessorIndex],
-                                                                          [&](fastgltf::math::fvec4 color, const size_t index) {
-                                                                              primitiveVertexProperties[index].color = {
-                                                                                  color.x(), color.y(), color.z(), color.w()
-                                                                              };
-                                                                          });
+                fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec4>(gltf, gltf.accessors[colors->accessorIndex], [&](fastgltf::math::fvec4 color, const size_t index) {
+                    primitiveVertices[index].color = {
+                        color.x(), color.y(), color.z(), color.w()
+                    };
+                });
             }
 
             primitiveData.firstIndex = static_cast<uint32_t>(model.indices.size());
-            primitiveData.vertexOffset = static_cast<int32_t>(model.vertexPositions.size());
+            primitiveData.vertexOffset = static_cast<int32_t>(model.vertices.size());
             primitiveData.indexCount = static_cast<uint32_t>(primitiveIndices.size());
-            primitiveData.boundingSphere = GenerateBoundingSphere(primitiveVertexPositions);
+            primitiveData.boundingSphere = GenerateBoundingSphere(primitiveVertices);
 
-            model.vertexPositions.insert(model.vertexPositions.end(), primitiveVertexPositions.begin(), primitiveVertexPositions.end());
-            model.vertexProperties.insert(model.vertexProperties.end(), primitiveVertexProperties.begin(), primitiveVertexProperties.end());
+            model.vertices.insert(model.vertices.end(), primitiveVertices.begin(), primitiveVertices.end());
             model.indices.insert(model.indices.end(), primitiveIndices.begin(), primitiveIndices.end());
 
             meshData.primitiveIndices.push_back(model.primitives.size());
@@ -604,7 +595,7 @@ void ModelLoader::LoadTextureIndicesAndUV(const fastgltf::TextureInfo& texture, 
     }
 }
 
-glm::vec4 ModelLoader::GenerateBoundingSphere(const std::vector<VertexPosition>& vertices)
+glm::vec4 ModelLoader::GenerateBoundingSphere(const std::vector<Vertex>& vertices)
 {
     glm::vec3 center = {0, 0, 0};
 

@@ -98,12 +98,12 @@ void ModelLoading::CreateResources()
         const std::vector<VkVertexInputBindingDescription> vertexBindings{
             {
                 .binding = 0,
-                .stride = sizeof(VertexPosition),
+                .stride = sizeof(Vertex),
                 .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
             },
             {
                 .binding = 1,
-                .stride = sizeof(VertexProperty),
+                .stride = sizeof(Vertex),
                 .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
             }
         };
@@ -113,36 +113,31 @@ void ModelLoading::CreateResources()
                 .location = 0,
                 .binding = 0,
                 .format = VK_FORMAT_R32G32B32_SFLOAT,
-                .offset = offsetof(VertexPosition, position),
-
+                .offset = offsetof(Vertex, position),
             },
             {
                 .location = 1,
                 .binding = 1,
                 .format = VK_FORMAT_R32G32B32_SFLOAT,
-                .offset = offsetof(VertexProperty, normal),
-
+                .offset = offsetof(Vertex, normal),
             },
             {
                 .location = 2,
                 .binding = 1,
                 .format = VK_FORMAT_R32G32B32A32_SFLOAT,
-                .offset = offsetof(VertexProperty, tangent),
-
+                .offset = offsetof(Vertex, tangent),
             },
             {
                 .location = 3,
                 .binding = 1,
                 .format = VK_FORMAT_R32G32B32A32_SFLOAT,
-                .offset = offsetof(VertexProperty, color),
-
+                .offset = offsetof(Vertex, color),
             },
             {
                 .location = 4,
                 .binding = 1,
                 .format = VK_FORMAT_R32G32_SFLOAT,
-                .offset = offsetof(VertexProperty, uv),
-
+                .offset = offsetof(Vertex, uv),
             }
         };
 
@@ -208,11 +203,8 @@ void ModelLoading::Initialize()
     vmaAllocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
     bufferInfo.usage = VK_BUFFER_USAGE_2_VERTEX_BUFFER_BIT;
-    bufferInfo.size = sizeof(VertexPosition) * MEGA_VERTEX_BUFFER_COUNT;
-    megaVertexPositionBuffer = VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
-    bufferInfo.usage = VK_BUFFER_USAGE_2_VERTEX_BUFFER_BIT;
-    bufferInfo.size = sizeof(VertexProperty) * MEGA_VERTEX_BUFFER_COUNT;
-    megaVertexPropertyBuffer = VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
+    bufferInfo.size = sizeof(Vertex) * MEGA_VERTEX_BUFFER_COUNT;
+    megaVertexBuffer = VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
     bufferInfo.usage = VK_BUFFER_USAGE_2_INDEX_BUFFER_BIT;
     bufferInfo.size = sizeof(uint32_t) * MEGA_INDEX_BUFFER_COUNT;
     megaIndexBuffer = VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
@@ -243,12 +235,9 @@ void ModelLoading::Initialize()
     suzanneModelData.name = suzannePath.filename().string();
     suzanneModelData.path = suzannePath;
     // todo: unify vertex buffers and use stride instead.
-    size_t sizeVertexPos = suzanne.vertexPositions.size() * sizeof(VertexPosition);
-    suzanneModelData.vertexPositionAllocation = vertexPositionBufferAllocator.allocate(sizeVertexPos);
-    memcpy(static_cast<char*>(megaVertexPositionBuffer.allocationInfo.pMappedData) + suzanneModelData.vertexPositionAllocation.offset, suzanne.vertexPositions.data(), sizeVertexPos);
-    size_t sizeVertexProp = suzanne.vertexProperties.size() * sizeof(VertexProperty);
-    suzanneModelData.vertexPropertyAllocation = vertexPropertyBufferAllocator.allocate(sizeVertexProp);
-    memcpy(static_cast<char*>(megaVertexPropertyBuffer.allocationInfo.pMappedData) + suzanneModelData.vertexPropertyAllocation.offset, suzanne.vertexProperties.data(), sizeVertexProp);
+    size_t sizeVertexPos = suzanne.vertices.size() * sizeof(Vertex);
+    suzanneModelData.vertexPositionAllocation = vertexBufferAllocator.allocate(sizeVertexPos);
+    memcpy(static_cast<char*>(megaVertexBuffer.allocationInfo.pMappedData) + suzanneModelData.vertexPositionAllocation.offset, suzanne.vertices.data(), sizeVertexPos);
     size_t sizeIndices = suzanne.indices.size() * sizeof(uint32_t);
     suzanneModelData.indexAllocation = indexBufferAllocator.allocate(sizeIndices);
     memcpy(static_cast<char*>(megaIndexBuffer.allocationInfo.pMappedData) + suzanneModelData.indexAllocation.offset, suzanne.indices.data(), sizeIndices);
@@ -256,7 +245,7 @@ void ModelLoading::Initialize()
     suzanneModelData.materialAllocation = materialBufferAllocator.allocate(sizeMaterials);
     memcpy(static_cast<char*>(materialBuffer.allocationInfo.pMappedData) + suzanneModelData.materialAllocation.offset, suzanne.materials.data(), sizeMaterials);
     uint32_t firstIndexCount = suzanneModelData.indexAllocation.offset / sizeof(uint32_t);
-    uint32_t vertexOffsetCount = suzanneModelData.vertexPositionAllocation.offset / sizeof(VertexPosition);
+    uint32_t vertexOffsetCount = suzanneModelData.vertexPositionAllocation.offset / sizeof(Vertex);
     uint32_t materialOffsetCount = suzanneModelData.materialAllocation.offset / sizeof(MaterialProperties);
     for (auto& primitive : suzanne.primitives) {
         primitive.firstIndex += firstIndexCount;
@@ -286,12 +275,9 @@ void ModelLoading::Initialize()
 
     boxModelData.name = boxPath.filename().string();
     boxModelData.path = boxPath;
-    sizeVertexPos = boxTextured.vertexPositions.size() * sizeof(VertexPosition);
-    boxModelData.vertexPositionAllocation = vertexPositionBufferAllocator.allocate(sizeVertexPos);
-    memcpy(static_cast<char*>(megaVertexPositionBuffer.allocationInfo.pMappedData) + boxModelData.vertexPositionAllocation.offset, boxTextured.vertexPositions.data(), sizeVertexPos);
-    sizeVertexProp = boxTextured.vertexProperties.size() * sizeof(VertexProperty);
-    boxModelData.vertexPropertyAllocation = vertexPropertyBufferAllocator.allocate(sizeVertexProp);
-    memcpy(static_cast<char*>(megaVertexPropertyBuffer.allocationInfo.pMappedData) + boxModelData.vertexPropertyAllocation.offset, boxTextured.vertexProperties.data(), sizeVertexProp);
+    sizeVertexPos = boxTextured.vertices.size() * sizeof(Vertex);
+    boxModelData.vertexPositionAllocation = vertexBufferAllocator.allocate(sizeVertexPos);
+    memcpy(static_cast<char*>(megaVertexBuffer.allocationInfo.pMappedData) + boxModelData.vertexPositionAllocation.offset, boxTextured.vertices.data(), sizeVertexPos);
     sizeIndices = boxTextured.indices.size() * sizeof(uint32_t);
     boxModelData.indexAllocation = indexBufferAllocator.allocate(sizeIndices);
     memcpy(static_cast<char*>(megaIndexBuffer.allocationInfo.pMappedData) + boxModelData.indexAllocation.offset, boxTextured.indices.data(), sizeIndices);
@@ -299,7 +285,7 @@ void ModelLoading::Initialize()
     boxModelData.materialAllocation = materialBufferAllocator.allocate(sizeMaterials);
     memcpy(static_cast<char*>(materialBuffer.allocationInfo.pMappedData) + boxModelData.materialAllocation.offset, boxTextured.materials.data(), sizeMaterials);
     firstIndexCount = boxModelData.indexAllocation.offset / sizeof(uint32_t);
-    vertexOffsetCount = boxModelData.vertexPositionAllocation.offset / sizeof(VertexPosition);
+    vertexOffsetCount = boxModelData.vertexPositionAllocation.offset / sizeof(Vertex);
     materialOffsetCount = boxModelData.materialAllocation.offset / sizeof(MaterialProperties);
     for (auto& primitive : boxTextured.primitives) {
         primitive.firstIndex += firstIndexCount;
@@ -598,7 +584,7 @@ void ModelLoading::Render()
             vkCmdPushConstants(cmd, renderPipelineLayout.handle, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(BindlessAddressPushConstant), &pushData);
 
 
-            const VkBuffer vertexBuffers[2] = {megaVertexPositionBuffer.handle, megaVertexPropertyBuffer.handle};
+            const VkBuffer vertexBuffers[2] = {megaVertexBuffer.handle, megaVertexBuffer.handle};
             constexpr VkDeviceSize vertexOffsets[2] = {0, 0};
             vkCmdBindVertexBuffers(cmd, 0, 2, vertexBuffers, vertexOffsets);
             vkCmdBindIndexBuffer(cmd, megaIndexBuffer.handle, 0, VK_INDEX_TYPE_UINT32);

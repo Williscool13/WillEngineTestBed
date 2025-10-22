@@ -72,10 +72,8 @@ private:
 
     std::vector<ModelData> modelDatas{};
 
-    AllocatedBuffer megaVertexPositionBuffer;
-    OffsetAllocator::Allocator vertexPositionBufferAllocator{sizeof(VertexPosition) * MEGA_VERTEX_BUFFER_COUNT};
-    AllocatedBuffer megaVertexPropertyBuffer;
-    OffsetAllocator::Allocator vertexPropertyBufferAllocator{sizeof(VertexProperty) * MEGA_VERTEX_BUFFER_COUNT};
+    AllocatedBuffer megaVertexBuffer;
+    OffsetAllocator::Allocator vertexBufferAllocator{sizeof(Vertex) * MEGA_VERTEX_BUFFER_COUNT};
     AllocatedBuffer megaIndexBuffer;
     OffsetAllocator::Allocator indexBufferAllocator{sizeof(uint32_t) * MEGA_INDEX_BUFFER_COUNT};
     AllocatedBuffer materialBuffer;

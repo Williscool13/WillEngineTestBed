@@ -32,7 +32,7 @@ public:
 
     void LoadTextureIndicesAndUV(const fastgltf::TextureInfo& texture, const fastgltf::Asset& gltf, int& imageIndex, int& samplerIndex, glm::vec4& uvTransform);
 
-    glm::vec4 GenerateBoundingSphere(const std::vector<VertexPosition>& vertices);
+    glm::vec4 GenerateBoundingSphere(const std::vector<Vertex>& vertices);
 
     AllocatedImage CreateImageFromData(unsigned char* data, size_t size, VkExtent3D imageExtent, VkFormat format, VkImageUsageFlagBits usage, bool mipmapped);
 
