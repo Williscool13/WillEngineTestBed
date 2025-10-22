@@ -51,6 +51,16 @@ struct MaterialProperties
     glm::vec4 physicalProperties{1.5f, 0.0f, 1.0f, 0.0f}; // x: IOR, y: dispersion, z: normal scale, w: occlusion strength
 };
 
+struct BindlessIndirectPushConstant
+{
+    glm::mat4 viewProj;
+    VkDeviceAddress primitiveBuffer;
+    VkDeviceAddress modelBuffer;
+    VkDeviceAddress instanceBuffer;
+    VkDeviceAddress indirectBuffer;
+    VkDeviceAddress indirectCountBuffer;
+};
+
 struct BindlessAddressPushConstant
 {
     glm::mat4 viewProj;
@@ -58,6 +68,15 @@ struct BindlessAddressPushConstant
     VkDeviceAddress primitiveBuffer;
     VkDeviceAddress modelBuffer;
     VkDeviceAddress instanceBuffer;
+};
+
+struct IndirectCount
+{
+    uint32_t opaqueCount;
+    /**
+     * The maximum number of primitives that are in the buffer. Equal to size of indirect buffer
+     */
+    uint32_t limit;
 };
 }
 

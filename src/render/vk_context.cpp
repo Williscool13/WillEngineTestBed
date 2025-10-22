@@ -51,44 +51,35 @@ VulkanContext::VulkanContext(SDL_Window* window)
 
     SDL_Vulkan_CreateSurface(window, instance, nullptr, &surface);
 
-    // vk 1.3
     VkPhysicalDeviceVulkan13Features features{};
     features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
-    // vk 1.2
     VkPhysicalDeviceVulkan12Features features12{};
     features12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
-
     VkPhysicalDeviceVulkan11Features features11{};
     features11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
-
-
     VkPhysicalDeviceFeatures otherFeatures{};
-
 
     // Descriptor Buffer Extension
     VkPhysicalDeviceDescriptorBufferFeaturesEXT descriptorBufferFeatures = {};
     descriptorBufferFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_FEATURES_EXT;
 
-    // Dynamic Rendering
+    // Modern Rendering (Vulkan 1.3)
     features.dynamicRendering = VK_TRUE;
-
-    // Synchronization
     features.synchronization2 = VK_TRUE;
 
-    // Bindless
+    // GPU Driven Rendering
     features12.bufferDeviceAddress = VK_TRUE;
     features12.runtimeDescriptorArray = VK_TRUE;
-    descriptorBufferFeatures.descriptorBuffer = VK_TRUE;
     features12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
     features12.shaderStorageImageArrayNonUniformIndexing = VK_TRUE;
     features12.shaderUniformBufferArrayNonUniformIndexing = VK_TRUE;
     features12.shaderStorageBufferArrayNonUniformIndexing = VK_TRUE;
+    features12.drawIndirectCount = VK_TRUE;
+    descriptorBufferFeatures.descriptorBuffer = VK_TRUE;
+    otherFeatures.multiDrawIndirect = VK_TRUE;
 
     // SV_VertexID
     features11.shaderDrawParameters = VK_TRUE;
-
-    otherFeatures.multiDrawIndirect = VK_TRUE;
-
 
 
     vkb::PhysicalDeviceSelector selector{vkb_inst};

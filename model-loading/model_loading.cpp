@@ -61,6 +61,36 @@ void ModelLoading::CreateResources()
     drawDescriptorInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
     renderTargetDescriptors.UpdateDescriptor(drawDescriptorInfo, 0, 0, 0);
 
+    //
+    {
+        VkPipelineLayoutCreateInfo computePipelineLayoutCreateInfo{};
+        computePipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        computePipelineLayoutCreateInfo.pNext = nullptr;
+        computePipelineLayoutCreateInfo.pSetLayouts = nullptr;
+        computePipelineLayoutCreateInfo.setLayoutCount = 0;
+
+        VkPushConstantRange pushConstant{};
+        pushConstant.offset = 0;
+        pushConstant.size = sizeof(BindlessIndirectPushConstant);
+        pushConstant.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+        computePipelineLayoutCreateInfo.pPushConstantRanges = &pushConstant;
+        computePipelineLayoutCreateInfo.pushConstantRangeCount = 1;
+
+        drawCullPipelineLayout = VkResources::CreatePipelineLayout(vulkanContext.get(), computePipelineLayoutCreateInfo);
+
+        VkShaderModule computeShader;
+        if (!VkHelpers::LoadShaderModule("shaders\\drawCull_compute.spv", vulkanContext->device, &computeShader)) {
+            throw std::runtime_error("Error when building the compute shader (drawCull_compute.spv)");
+        }
+
+        VkPipelineShaderStageCreateInfo pipelineShaderStageCreateInfo = VkHelpers::PipelineShaderStageCreateInfo(computeShader, VK_SHADER_STAGE_COMPUTE_BIT);
+        VkComputePipelineCreateInfo computePipelineCreateInfo = VkHelpers::ComputePipelineCreateInfo(drawCullPipelineLayout.handle, pipelineShaderStageCreateInfo);
+        drawCullPipeline = VkResources::CreateComputePipeline(vulkanContext.get(), computePipelineCreateInfo);
+
+        // Cleanup
+        vkDestroyShaderModule(vulkanContext->device, computeShader, nullptr);
+    }
+
 
     //
     {
@@ -215,6 +245,18 @@ void ModelLoading::Initialize()
     bufferInfo.size = sizeof(Primitive) * MEGA_PRIMITIVE_BUFFER_COUNT;
     primitiveBuffer = VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
 
+    indirectCountBuffers.reserve(swapchain->imageCount);
+    opaqueIndexedIndirectBuffers.reserve(swapchain->imageCount);
+    for (int32_t i = 0; i < swapchain->imageCount; ++i) {
+        bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT;
+        bufferInfo.size = sizeof(IndirectCount);
+        indirectCountBuffers.push_back(VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo));
+
+        bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT;
+        bufferInfo.size = sizeof(VkDrawIndexedIndirectCommand) * BINDLESS_INSTANCE_COUNT;
+        opaqueIndexedIndirectBuffers.push_back(VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo));
+    }
+
     // todo: there should be N(FIF) of this, but for this test bed all resources are initialized well before render loop and are not modified.
     bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
     bufferInfo.size = sizeof(Model) * BINDLESS_MODEL_COUNT;
@@ -234,7 +276,6 @@ void ModelLoading::Initialize()
 
     suzanneModelData.name = suzannePath.filename().string();
     suzanneModelData.path = suzannePath;
-    // todo: unify vertex buffers and use stride instead.
     size_t sizeVertexPos = suzanne.vertices.size() * sizeof(Vertex);
     suzanneModelData.vertexPositionAllocation = vertexBufferAllocator.allocate(sizeVertexPos);
     memcpy(static_cast<char*>(megaVertexBuffer.allocationInfo.pMappedData) + suzanneModelData.vertexPositionAllocation.offset, suzanne.vertices.data(), sizeVertexPos);
@@ -367,37 +408,7 @@ void ModelLoading::Initialize()
         }
     }
     memcpy(instanceBuffer.allocationInfo.pMappedData, instances.data(), sizeof(Instance) * instances.size());
-
-    // This will be done in a compute shader in the future.
-    {
-
-        // A CPU copy of the primitive buffer to mimic what the drawCull pass would look like
-        std::vector<Primitive> cpuPrimitives;
-        cpuPrimitives.push_back(suzanne.primitives[0]);
-        cpuPrimitives.push_back(boxTextured.primitives[0]);
-
-        std::vector<VkDrawIndexedIndirectCommand> indirectCommands;
-        for (auto& instance : instances) {
-            // We use extracted model here, but the data is readily available in the primitve buffer for the compute shader. Access will also be different.
-            ExtractedModel* _m = &suzanne;
-            indirectCommands.push_back({
-                cpuPrimitives[instance.primitiveIndex].indexCount,
-                1, // instanceCount is always 1
-                cpuPrimitives[instance.primitiveIndex].firstIndex,
-                cpuPrimitives[instance.primitiveIndex].vertexOffset,
-                instance.modelIndex
-            });
-            indirectCommandCount++;
-        }
-
-        const size_t indirectBufferSize = sizeof(VkDrawIndexedIndirectCommand) * indirectCommandCount;
-
-        bufferInfo.usage = VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT;
-        bufferInfo.size = indirectBufferSize;
-        indexedIndirectBuffer = VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
-
-        memcpy(indexedIndirectBuffer.allocationInfo.pMappedData, indirectCommands.data(), indirectBufferSize);
-    }
+    highestInstanceIndex = instances.size();
 
     CreateResources();
 }
@@ -523,8 +534,74 @@ void ModelLoading::Render()
     };
     memcpy(modelBuffer.allocationInfo.pMappedData, &m, sizeof(Model));
 
+    glm::mat4 view = glm::lookAt(
+        glm::vec3(cameraPos[0], cameraPos[1], cameraPos[2]),
+        glm::vec3(cameraLook[0], cameraLook[1], cameraLook[2]),
+        WORLD_UP);
+
+    glm::mat4 proj = glm::perspective(
+        glm::radians(75.0f),
+        static_cast<float>(scaledRenderExtent[0]) / static_cast<float>(scaledRenderExtent[1]),
+        1000.0f,
+        0.1f);
+
     //
     {
+        // Draw/Cull pass (compute) - Construct indexed indirect buffer
+        {
+            {
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, drawCullPipeline.handle);
+                BindlessIndirectPushConstant pushData{
+                    proj * view,
+                    primitiveBuffer.address,
+                    modelBuffer.address,
+                    instanceBuffer.address,
+                    opaqueIndexedIndirectBuffers[currentFrameInFlight].address,
+                    indirectCountBuffers[currentFrameInFlight].address,
+                };
+
+                vkCmdPushConstants(cmd, drawCullPipelineLayout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(BindlessIndirectPushConstant), &pushData);
+                uint32_t groupsX = (highestInstanceIndex + 63) / 64;
+                vkCmdDispatch(cmd, groupsX, 1, 1);
+            }
+
+            //
+            {
+                VkBufferMemoryBarrier2 bufferBarrier[2];
+                bufferBarrier[0].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+                bufferBarrier[0].pNext = nullptr;
+                bufferBarrier[0].buffer = opaqueIndexedIndirectBuffers[currentFrameInFlight].handle;
+                bufferBarrier[0].srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+                bufferBarrier[0].srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
+                bufferBarrier[0].dstStageMask = VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT;
+                bufferBarrier[0].dstAccessMask = VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT;
+                bufferBarrier[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                bufferBarrier[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                bufferBarrier[0].offset = 0;
+                bufferBarrier[0].size = VK_WHOLE_SIZE;
+                bufferBarrier[1].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+                bufferBarrier[1].pNext = nullptr;
+                bufferBarrier[1].buffer = indirectCountBuffers[currentFrameInFlight].handle;
+                bufferBarrier[1].srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+                bufferBarrier[1].srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
+                bufferBarrier[1].dstStageMask = VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT;
+                bufferBarrier[1].dstAccessMask = VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT;
+                bufferBarrier[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                bufferBarrier[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                bufferBarrier[1].offset = 0;
+                bufferBarrier[1].size = VK_WHOLE_SIZE;
+
+                VkDependencyInfo depInfo{};
+                depInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+                depInfo.pNext = nullptr;
+                depInfo.dependencyFlags = 0;
+                depInfo.bufferMemoryBarrierCount = 2;
+                depInfo.pBufferMemoryBarriers = bufferBarrier;
+
+                vkCmdPipelineBarrier2(cmd, &depInfo);
+            }
+        }
+
         // Transition 1
         {
             auto subresource = VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT);
@@ -550,27 +627,10 @@ void ModelLoading::Render()
             vkCmdBeginRendering(cmd, &renderInfo);
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, renderPipeline.handle);
 
-            // Dynamic States
-            //  Viewport
             VkViewport viewport = VkHelpers::GenerateViewport(scaledRenderExtent[0], scaledRenderExtent[1]);
             vkCmdSetViewport(cmd, 0, 1, &viewport);
-            //  Scissor
             VkRect2D scissor = VkHelpers::GenerateScissor(scaledRenderExtent[0], scaledRenderExtent[1]);
             vkCmdSetScissor(cmd, 0, 1, &scissor);
-
-
-            glm::mat4 view = glm::lookAt(
-                glm::vec3(cameraPos[0], cameraPos[1], cameraPos[2]),
-                glm::vec3(cameraLook[0], cameraLook[1], cameraLook[2]),
-                WORLD_UP
-            );
-
-            glm::mat4 proj = glm::perspective(
-                glm::radians(75.0f),
-                static_cast<float>(scaledRenderExtent[0]) / static_cast<float>(scaledRenderExtent[1]),
-                1000.0f,
-                0.1f
-            );
 
             BindlessAddressPushConstant pushData{
                 proj * view,
@@ -580,7 +640,6 @@ void ModelLoading::Render()
                 instanceBuffer.address,
             };
 
-
             vkCmdPushConstants(cmd, renderPipelineLayout.handle, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(BindlessAddressPushConstant), &pushData);
 
 
@@ -588,7 +647,10 @@ void ModelLoading::Render()
             constexpr VkDeviceSize vertexOffsets[2] = {0, 0};
             vkCmdBindVertexBuffers(cmd, 0, 2, vertexBuffers, vertexOffsets);
             vkCmdBindIndexBuffer(cmd, megaIndexBuffer.handle, 0, VK_INDEX_TYPE_UINT32);
-            vkCmdDrawIndexedIndirect(cmd, indexedIndirectBuffer.handle, 0, indirectCommandCount, sizeof(VkDrawIndexedIndirectCommand));
+            vkCmdDrawIndexedIndirectCount(cmd,
+                                          opaqueIndexedIndirectBuffers[currentFrameInFlight].handle, 0,
+                                          indirectCountBuffers[currentFrameInFlight].handle, offsetof(IndirectCount, opaqueCount),
+                                          highestInstanceIndex, sizeof(VkDrawIndexedIndirectCommand));
 
             vkCmdEndRendering(cmd);
         }

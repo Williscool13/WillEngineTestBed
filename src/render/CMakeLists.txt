@@ -60,7 +60,7 @@ target_link_libraries(render-lib PUBLIC
 find_program(SLANGC slangc REQUIRED)
 
 set(COMMON_SHADER_INCLUDES
-        # ${CMAKE_CURRENT_SOURCE_DIR}/shaders/common.slang
+        ${CMAKE_CURRENT_SOURCE_DIR}/shaders/common.slang
 )
 
 function(compile_shader TARGET SHADER_SOURCE STAGE ENTRY)

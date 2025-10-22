@@ -85,11 +85,15 @@ private:
     AllocatedBuffer instanceBuffer;
     std::vector<Instance> instances;
 
-    AllocatedBuffer indexedIndirectBuffer;
-    uint32_t indirectCommandCount{0};
+    uint32_t highestInstanceIndex{0};
+    std::vector<AllocatedBuffer> opaqueIndexedIndirectBuffers;
+    std::vector<AllocatedBuffer> indirectCountBuffers; // size = FIF
 
+    PipelineLayout drawCullPipelineLayout;
+    Pipeline drawCullPipeline;
     PipelineLayout renderPipelineLayout;
     Pipeline renderPipeline;
+
 
     float cameraPos[3]{0.0f, 0.0f, -2.0f};
     float cameraLook[3]{0.0f, 0.0f, 0.0f};
@@ -100,6 +104,7 @@ private:
     // Render Information
     bool bSwapchainOutdated{false};
     std::unique_ptr<RenderContext> renderContext{};
+
 };
 }
 

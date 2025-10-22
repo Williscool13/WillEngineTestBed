@@ -7,14 +7,20 @@
   <component name="CidrRootsConfiguration">
     <libraryRoots>
       <file path="$PROJECT_DIR$/extern" />
+      <file path="$PROJECT_DIR$/extern/JoltPhysics" />
+      <file path="$PROJECT_DIR$/extern/LockFreeQueue" />
+      <file path="$PROJECT_DIR$/extern/OffsetAllocator" />
       <file path="$PROJECT_DIR$/extern/SDL" />
+      <file path="$PROJECT_DIR$/extern/dr_libs" />
       <file path="$PROJECT_DIR$/extern/enkiTS" />
       <file path="$PROJECT_DIR$/extern/entt" />
+      <file path="$PROJECT_DIR$/extern/fastgltf" />
       <file path="$PROJECT_DIR$/extern/fmt" />
       <file path="$PROJECT_DIR$/extern/glm" />
       <file path="$PROJECT_DIR$/extern/imgui" />
       <file path="$PROJECT_DIR$/extern/json" />
       <file path="$PROJECT_DIR$/extern/spdlog" />
+      <file path="$PROJECT_DIR$/extern/stb" />
       <file path="$PROJECT_DIR$/extern/vk-bootstrap" />
       <file path="$PROJECT_DIR$/extern/vma" />
       <file path="$PROJECT_DIR$/extern/volk" />

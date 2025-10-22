@@ -18,10 +18,7 @@ add_custom_command(TARGET model-loading POST_BUILD
 )
 
 compile_shaders(model-loading
-        #${CMAKE_SOURCE_DIR}/shaders/compute.slang compute computeMain
-)
-
-compile_shaders(model-loading
         ${CMAKE_SOURCE_DIR}/shaders/indirectDraw.slang vertex vertexMain
         ${CMAKE_SOURCE_DIR}/shaders/indirectDraw.slang fragment fragmentMain
+        ${CMAKE_SOURCE_DIR}/shaders/drawCull.slang compute computeMain
 )
