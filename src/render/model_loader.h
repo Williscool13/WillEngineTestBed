@@ -20,7 +20,7 @@ public:
 
     ~ModelLoader();
 
-    ModelData LoadGltf(const std::filesystem::path& path);
+    ExtractedModel LoadGltf(const std::filesystem::path& path);
 
     VkFilter ExtractFilter(fastgltf::Filter filter);
 

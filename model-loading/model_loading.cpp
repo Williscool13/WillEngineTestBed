@@ -9,6 +9,7 @@
 #include <backends/imgui_impl_vulkan.h>
 #include <glm/glm.hpp>
 
+#include "offsetAllocator.hpp"
 #include "crash-handling/crash_handler.h"
 #include "crash-handling/logger.h"
 #include "glm/ext/matrix_clip_space.hpp"
@@ -198,18 +199,6 @@ void ModelLoading::Initialize()
 
     modelLoader = std::make_unique<ModelLoader>(vulkanContext.get());
 
-    //
-    {
-        Utils::ScopedTimer loadModel{"[Box Textured] Load Time"};
-        //boxTextured = modelLoader->LoadGltf(std::filesystem::path("../assets/BoxTextured.glb"));
-        boxTextured = modelLoader->LoadGltf(std::filesystem::path("../assets/Suzanne/glTF/Suzanne.gltf"));
-        LOG_INFO("[Box Textured] Sampler Count: {}", boxTextured.samplers.size());
-        LOG_INFO("[Box Textured] Image Count: {}", boxTextured.images.size());
-        LOG_INFO("[Box Textured] Image View Count: {}", boxTextured.imageViews.size());
-        LOG_INFO("[Box Textured] Material Count: {}", boxTextured.materials.size());
-        LOG_INFO("[Box Textured] Vertices: {}", boxTextured.vertexPositions.size());
-        LOG_INFO("[Box Textured] Indices: {}", boxTextured.indices.size());
-    }
 
     // todo: optimize so that it's GPU only, use a staging buffer to upload in production
     VkBufferCreateInfo bufferInfo = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
@@ -218,35 +207,21 @@ void ModelLoading::Initialize()
     vmaAllocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
     vmaAllocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
-    bufferInfo.usage = VK_BUFFER_USAGE_2_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
+    bufferInfo.usage = VK_BUFFER_USAGE_2_VERTEX_BUFFER_BIT;
     bufferInfo.size = sizeof(VertexPosition) * MEGA_VERTEX_BUFFER_COUNT;
     megaVertexPositionBuffer = VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
-    size_t sizeVertexPos = boxTextured.vertexPositions.size() * sizeof(VertexPosition);
-    memcpy(megaVertexPositionBuffer.allocationInfo.pMappedData, boxTextured.vertexPositions.data(), sizeVertexPos);
-
-    bufferInfo.usage = VK_BUFFER_USAGE_2_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
+    bufferInfo.usage = VK_BUFFER_USAGE_2_VERTEX_BUFFER_BIT;
     bufferInfo.size = sizeof(VertexProperty) * MEGA_VERTEX_BUFFER_COUNT;
     megaVertexPropertyBuffer = VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
-    size_t sizeVertexProp = boxTextured.vertexProperties.size() * sizeof(VertexProperty);
-    memcpy(megaVertexPropertyBuffer.allocationInfo.pMappedData, boxTextured.vertexProperties.data(), sizeVertexProp);
-
-    bufferInfo.usage = VK_BUFFER_USAGE_2_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
+    bufferInfo.usage = VK_BUFFER_USAGE_2_INDEX_BUFFER_BIT;
     bufferInfo.size = sizeof(uint32_t) * MEGA_INDEX_BUFFER_COUNT;
     megaIndexBuffer = VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
-    size_t sizeIndices = boxTextured.indices.size() * sizeof(uint32_t);
-    memcpy(megaIndexBuffer.allocationInfo.pMappedData, boxTextured.indices.data(), sizeIndices);
-
     bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
-    bufferInfo.size = sizeof(MaterialProperties) * BINDLESS_MATERIAL_COUNT;
+    bufferInfo.size = sizeof(MaterialProperties) * MEGA_MATERIAL_BUFFER_COUNT;
     materialBuffer = VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
-    const size_t materialBufferSize = boxTextured.materials.size() * sizeof(MaterialProperties);
-    memcpy(materialBuffer.allocationInfo.pMappedData, boxTextured.materials.data(), materialBufferSize);
-
     bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
-    bufferInfo.size = sizeof(Primitive) * BINDLESS_PRIMITIVE_COUNT;
+    bufferInfo.size = sizeof(Primitive) * MEGA_PRIMITIVE_BUFFER_COUNT;
     primitiveBuffer = VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
-    const size_t primitiveBufferSize = boxTextured.primitives.size() * sizeof(Primitive);
-    memcpy(primitiveBuffer.allocationInfo.pMappedData, boxTextured.primitives.data(), primitiveBufferSize);
 
     // todo: there should be N(FIF) of this, but for this test bed all resources are initialized well before render loop and are not modified.
     bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
@@ -256,39 +231,174 @@ void ModelLoading::Initialize()
     bufferInfo.size = sizeof(Instance) * BINDLESS_INSTANCE_COUNT;
     instanceBuffer = VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
 
-    // 1 box at {0, 0, 0};
-    glm::mat4 boxPosition = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 0.0f));
-    boxPosition = glm::rotate(boxPosition, glm::radians(45.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 
-    Model m{
-        .modelMatrix = boxPosition,
-        .prevModelMatrix = boxPosition,
-        .flags = {1.0f, 1.0f, 1.0f, 1.0f}
-    };
-    memcpy(modelBuffer.allocationInfo.pMappedData, &m, sizeof(Model));
+    // Suzanne Model
+    auto suzannePath = std::filesystem::path("../assets/Suzanne/glTF/Suzanne.gltf");
+    ExtractedModel suzanne = modelLoader->LoadGltf(suzannePath);
 
-    m.modelMatrix = glm::translate(glm::mat4(1.0f), glm::vec3(1.5f, 0.0f, 0.0f));
-    memcpy((char*) modelBuffer.allocationInfo.pMappedData + sizeof(Model), &m, sizeof(Model));
+    modelDatas.reserve(2);
+    modelDatas.emplace_back();
+    ModelData& suzanneModelData = modelDatas[0];
 
+    suzanneModelData.name = suzannePath.filename().string();
+    suzanneModelData.path = suzannePath;
+    // todo: unify vertex buffers and use stride instead.
+    size_t sizeVertexPos = suzanne.vertexPositions.size() * sizeof(VertexPosition);
+    suzanneModelData.vertexPositionAllocation = vertexPositionBufferAllocator.allocate(sizeVertexPos);
+    memcpy(static_cast<char*>(megaVertexPositionBuffer.allocationInfo.pMappedData) + suzanneModelData.vertexPositionAllocation.offset, suzanne.vertexPositions.data(), sizeVertexPos);
+    size_t sizeVertexProp = suzanne.vertexProperties.size() * sizeof(VertexProperty);
+    suzanneModelData.vertexPropertyAllocation = vertexPropertyBufferAllocator.allocate(sizeVertexProp);
+    memcpy(static_cast<char*>(megaVertexPropertyBuffer.allocationInfo.pMappedData) + suzanneModelData.vertexPropertyAllocation.offset, suzanne.vertexProperties.data(), sizeVertexProp);
+    size_t sizeIndices = suzanne.indices.size() * sizeof(uint32_t);
+    suzanneModelData.indexAllocation = indexBufferAllocator.allocate(sizeIndices);
+    memcpy(static_cast<char*>(megaIndexBuffer.allocationInfo.pMappedData) + suzanneModelData.indexAllocation.offset, suzanne.indices.data(), sizeIndices);
+    size_t sizeMaterials = suzanne.materials.size() * sizeof(MaterialProperties);
+    suzanneModelData.materialAllocation = materialBufferAllocator.allocate(sizeMaterials);
+    memcpy(static_cast<char*>(materialBuffer.allocationInfo.pMappedData) + suzanneModelData.materialAllocation.offset, suzanne.materials.data(), sizeMaterials);
+    uint32_t firstIndexCount = suzanneModelData.indexAllocation.offset / sizeof(uint32_t);
+    uint32_t vertexOffsetCount = suzanneModelData.vertexPositionAllocation.offset / sizeof(VertexPosition);
+    uint32_t materialOffsetCount = suzanneModelData.materialAllocation.offset / sizeof(MaterialProperties);
+    for (auto& primitive : suzanne.primitives) {
+        primitive.firstIndex += firstIndexCount;
+        primitive.vertexOffset += vertexOffsetCount;
+        primitive.materialIndex += materialOffsetCount;
+    }
 
-    for (const MeshInformation& gltfMesh : boxTextured.meshes) {
-        for (auto primitiveIndex : gltfMesh.primitiveIndices) {
-            instances.emplace_back(primitiveIndex, 0, 1);
+    size_t sizePrimitives = suzanne.primitives.size() * sizeof(Primitive);
+    suzanneModelData.primitiveAllocation = primitiveBufferAllocator.allocate(sizePrimitives);
+    memcpy(static_cast<char*>(primitiveBuffer.allocationInfo.pMappedData) + suzanneModelData.primitiveAllocation.offset, suzanne.primitives.data(), sizePrimitives);
+
+    uint32_t primitiveOffsetCount = suzanneModelData.primitiveAllocation.offset / sizeof(Primitive);
+    suzanneModelData.meshes = std::move(suzanne.meshes);
+    for (auto& mesh : suzanneModelData.meshes) {
+        for (auto& primitiveIndex : mesh.primitiveIndices) {
+            primitiveIndex += primitiveOffsetCount;
         }
     }
-    instances.emplace_back(0, 1, 1);
+
+
+    // Box Model
+    auto boxPath = std::filesystem::path("../assets/BoxTextured.glb");
+    ExtractedModel boxTextured = modelLoader->LoadGltf(boxPath);
+
+    modelDatas.emplace_back();
+    ModelData& boxModelData = modelDatas[1];
+
+    boxModelData.name = boxPath.filename().string();
+    boxModelData.path = boxPath;
+    sizeVertexPos = boxTextured.vertexPositions.size() * sizeof(VertexPosition);
+    boxModelData.vertexPositionAllocation = vertexPositionBufferAllocator.allocate(sizeVertexPos);
+    memcpy(static_cast<char*>(megaVertexPositionBuffer.allocationInfo.pMappedData) + boxModelData.vertexPositionAllocation.offset, boxTextured.vertexPositions.data(), sizeVertexPos);
+    sizeVertexProp = boxTextured.vertexProperties.size() * sizeof(VertexProperty);
+    boxModelData.vertexPropertyAllocation = vertexPropertyBufferAllocator.allocate(sizeVertexProp);
+    memcpy(static_cast<char*>(megaVertexPropertyBuffer.allocationInfo.pMappedData) + boxModelData.vertexPropertyAllocation.offset, boxTextured.vertexProperties.data(), sizeVertexProp);
+    sizeIndices = boxTextured.indices.size() * sizeof(uint32_t);
+    boxModelData.indexAllocation = indexBufferAllocator.allocate(sizeIndices);
+    memcpy(static_cast<char*>(megaIndexBuffer.allocationInfo.pMappedData) + boxModelData.indexAllocation.offset, boxTextured.indices.data(), sizeIndices);
+    sizeMaterials = boxTextured.materials.size() * sizeof(MaterialProperties);
+    boxModelData.materialAllocation = materialBufferAllocator.allocate(sizeMaterials);
+    memcpy(static_cast<char*>(materialBuffer.allocationInfo.pMappedData) + boxModelData.materialAllocation.offset, boxTextured.materials.data(), sizeMaterials);
+    firstIndexCount = boxModelData.indexAllocation.offset / sizeof(uint32_t);
+    vertexOffsetCount = boxModelData.vertexPositionAllocation.offset / sizeof(VertexPosition);
+    materialOffsetCount = boxModelData.materialAllocation.offset / sizeof(MaterialProperties);
+    for (auto& primitive : boxTextured.primitives) {
+        primitive.firstIndex += firstIndexCount;
+        primitive.vertexOffset += vertexOffsetCount;
+        primitive.materialIndex += materialOffsetCount;
+    }
+
+    sizePrimitives = boxTextured.primitives.size() * sizeof(Primitive);
+    boxModelData.primitiveAllocation = primitiveBufferAllocator.allocate(sizePrimitives);
+    memcpy(static_cast<char*>(primitiveBuffer.allocationInfo.pMappedData) + boxModelData.primitiveAllocation.offset, boxTextured.primitives.data(), sizePrimitives);
+
+    primitiveOffsetCount = boxModelData.primitiveAllocation.offset / sizeof(Primitive);
+    boxModelData.meshes = std::move(boxTextured.meshes);
+    for (auto& mesh : boxModelData.meshes) {
+        for (auto& primitiveIndex : mesh.primitiveIndices) {
+            primitiveIndex += primitiveOffsetCount;
+        }
+    }
+
+    // 3x3 on X+Y axis (model index 0->8)
+    for (int y = 0; y < 3; ++y) {
+        for (int x = 0; x < 3; ++x) {
+            glm::mat4 boxPosition = glm::translate(glm::mat4(1.0f), glm::vec3(x * 2.0f, y * 2.0f, 0.0f));
+            boxPosition = glm::rotate(boxPosition, glm::radians(45.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+
+            Model m{
+                .modelMatrix = boxPosition,
+                .prevModelMatrix = boxPosition,
+                .flags = {1.0f, 1.0f, 1.0f, 1.0f}
+            };
+
+            size_t offset = (y * 3 + x) * sizeof(Model);
+            memcpy(static_cast<char*>(modelBuffer.allocationInfo.pMappedData) + offset, &m, sizeof(Model));
+        }
+    }
+
+    // 3x3 on X+Y axis, 5 Z forward (model index 9->17)
+    for (int y = 0; y < 3; ++y) {
+        for (int x = 0; x < 3; ++x) {
+            glm::mat4 boxPosition = glm::translate(glm::mat4(1.0f), glm::vec3(x * 2.0f, y * 2.0f, 5.0f));
+            boxPosition = glm::rotate(boxPosition, glm::radians(45.0f), glm::vec3(0.0f, 1.0f, 5.0f));
+
+            Model m{
+                .modelMatrix = boxPosition,
+                .prevModelMatrix = boxPosition,
+                .flags = {1.0f, 1.0f, 1.0f, 1.0f}
+            };
+
+            size_t offset = (y * 3 + x + 9) * sizeof(Model);
+            memcpy(static_cast<char*>(modelBuffer.allocationInfo.pMappedData) + offset, &m, sizeof(Model));
+        }
+    }
+
+
+    for (const MeshInformation& mesh : suzanneModelData.meshes) {
+        for (auto primitiveIndex : mesh.primitiveIndices) {
+            instances.emplace_back(primitiveIndex, 0, 1);
+            instances.emplace_back(primitiveIndex, 1, 1);
+            instances.emplace_back(primitiveIndex, 2, 1);
+            instances.emplace_back(primitiveIndex, 3, 1);
+            instances.emplace_back(primitiveIndex, 4, 1);
+            instances.emplace_back(primitiveIndex, 5, 1);
+            instances.emplace_back(primitiveIndex, 6, 1);
+            instances.emplace_back(primitiveIndex, 7, 1);
+            instances.emplace_back(primitiveIndex, 8, 1);
+        }
+    }
+    for (const MeshInformation& mesh : boxModelData.meshes) {
+        for (auto primitiveIndex : mesh.primitiveIndices) {
+            instances.emplace_back(primitiveIndex, 9, 1);
+            instances.emplace_back(primitiveIndex, 10, 1);
+            instances.emplace_back(primitiveIndex, 11, 1);
+            instances.emplace_back(primitiveIndex, 12, 1);
+            instances.emplace_back(primitiveIndex, 13, 1);
+            instances.emplace_back(primitiveIndex, 14, 1);
+            instances.emplace_back(primitiveIndex, 15, 1);
+            instances.emplace_back(primitiveIndex, 16, 1);
+            instances.emplace_back(primitiveIndex, 17, 1);
+        }
+    }
     memcpy(instanceBuffer.allocationInfo.pMappedData, instances.data(), sizeof(Instance) * instances.size());
 
     // This will be done in a compute shader in the future.
     {
+
+        // A CPU copy of the primitive buffer to mimic what the drawCull pass would look like
+        std::vector<Primitive> cpuPrimitives;
+        cpuPrimitives.push_back(suzanne.primitives[0]);
+        cpuPrimitives.push_back(boxTextured.primitives[0]);
+
         std::vector<VkDrawIndexedIndirectCommand> indirectCommands;
         for (auto& instance : instances) {
-            // When using mega vertex/index buffer with multiple loaded models, these values will be offset by their real position in the buffer.
+            // We use extracted model here, but the data is readily available in the primitve buffer for the compute shader. Access will also be different.
+            ExtractedModel* _m = &suzanne;
             indirectCommands.push_back({
-                boxTextured.primitives[instance.primitiveIndex].indexCount,
+                cpuPrimitives[instance.primitiveIndex].indexCount,
                 1, // instanceCount is always 1
-                boxTextured.primitives[instance.primitiveIndex].firstIndex,
-                boxTextured.primitives[instance.primitiveIndex].vertexOffset,
+                cpuPrimitives[instance.primitiveIndex].firstIndex,
+                cpuPrimitives[instance.primitiveIndex].vertexOffset,
                 instance.modelIndex
             });
             indirectCommandCount++;
@@ -296,7 +406,7 @@ void ModelLoading::Initialize()
 
         const size_t indirectBufferSize = sizeof(VkDrawIndexedIndirectCommand) * indirectCommandCount;
 
-        bufferInfo.usage = VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
+        bufferInfo.usage = VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT;
         bufferInfo.size = indirectBufferSize;
         indexedIndirectBuffer = VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
 

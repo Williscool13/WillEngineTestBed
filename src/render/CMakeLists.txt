@@ -54,6 +54,7 @@ target_link_libraries(render-lib PUBLIC
         vk-bootstrap::vk-bootstrap
         SDL3::SDL3
         fastgltf
+        offsetAllocator
 )
 
 find_program(SLANGC slangc REQUIRED)

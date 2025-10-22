@@ -6,6 +6,8 @@
 #define WILLENGINETESTBED_MODEL_LOADING_H
 #include <memory>
 #include <vector>
+
+#include "offsetAllocator.hpp"
 #include "SDL3/SDL.h"
 
 #include "render/render_context.h"
@@ -67,15 +69,20 @@ private:
     // VkDescriptorSetLayout bindlessStorageImageSetLayout{};
     // std::unique_ptr<DescriptorBufferStorageImage> bindlessStorageImages{};
 
-    ModelData boxTextured;
-    std::vector<MeshInformation> boxMeshInformation;
+
+    std::vector<ModelData> modelDatas{};
 
     AllocatedBuffer megaVertexPositionBuffer;
+    OffsetAllocator::Allocator vertexPositionBufferAllocator{sizeof(VertexPosition) * MEGA_VERTEX_BUFFER_COUNT};
     AllocatedBuffer megaVertexPropertyBuffer;
+    OffsetAllocator::Allocator vertexPropertyBufferAllocator{sizeof(VertexProperty) * MEGA_VERTEX_BUFFER_COUNT};
     AllocatedBuffer megaIndexBuffer;
-
+    OffsetAllocator::Allocator indexBufferAllocator{sizeof(uint32_t) * MEGA_INDEX_BUFFER_COUNT};
     AllocatedBuffer materialBuffer;
+    OffsetAllocator::Allocator materialBufferAllocator{sizeof(MaterialProperties) * MEGA_MATERIAL_BUFFER_COUNT};
     AllocatedBuffer primitiveBuffer;
+    OffsetAllocator::Allocator primitiveBufferAllocator{sizeof(MaterialProperties) * MEGA_PRIMITIVE_BUFFER_COUNT};
+
     AllocatedBuffer modelBuffer;
     AllocatedBuffer instanceBuffer;
     std::vector<Instance> instances;

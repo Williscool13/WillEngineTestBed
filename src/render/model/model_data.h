@@ -5,9 +5,11 @@
 #ifndef WILLENGINETESTBED_MODEL_H
 #define WILLENGINETESTBED_MODEL_H
 
+#include <filesystem>
 #include <string>
 
 #include <volk/volk.h>
+#include <OffsetAllocator/offsetAllocator.hpp>
 
 #include "render/vk_resources.h"
 #include "render/vk_types.h"
@@ -50,8 +52,10 @@ struct Model
     glm::vec4 flags{1.0f}; // x: visible, y: shadow-caster, zw: reserved
 };
 
-struct ModelData
+struct ExtractedModel
 {
+    std::string name{};
+
     std::vector<Sampler> samplers{};
     std::vector<AllocatedImage> images{};
     std::vector<ImageView> imageViews{};
@@ -65,6 +69,20 @@ struct ModelData
     std::vector<Primitive> primitives{};
 
     std::vector<MeshInformation> meshes{};
+};
+
+struct ModelData
+{
+    std::string name{};
+    std::filesystem::path path{};
+
+    std::vector<MeshInformation> meshes{};
+
+    OffsetAllocator::Allocation vertexPositionAllocation{};
+    OffsetAllocator::Allocation vertexPropertyAllocation{};
+    OffsetAllocator::Allocation indexAllocation{};
+    OffsetAllocator::Allocation materialAllocation{};
+    OffsetAllocator::Allocation primitiveAllocation{};
 };
 } // Renderer
 

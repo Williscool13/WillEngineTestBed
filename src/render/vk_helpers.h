@@ -7,6 +7,8 @@
 
 #include <volk/volk.h>
 
+#include "offsetAllocator.hpp"
+
 namespace Renderer::VkHelpers
 {
 VkImageMemoryBarrier2 ImageMemoryBarrier(VkImage image, const VkImageSubresourceRange& subresourceRange,
@@ -55,6 +57,14 @@ VkRenderingInfo RenderingInfo(VkExtent2D renderExtent, const VkRenderingAttachme
 
 VkViewport GenerateViewport(uint32_t width, uint32_t height);
 VkRect2D GenerateScissor(uint32_t width, uint32_t height);
+
+template<typename T>
+OffsetAllocator::Allocation AllocateToBuffer(OffsetAllocator::Allocator& allocator, char* mappedBufferPtr, T* dataPtr, size_t size)
+{
+    const OffsetAllocator::Allocation allocation = allocator.allocate(size);
+    memcpy(mappedBufferPtr + allocation.offset, dataPtr, size);
+    return allocation;
+}
 }
 
 

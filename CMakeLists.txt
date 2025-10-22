@@ -18,6 +18,7 @@ add_subdirectory(extern/volk)
 add_subdirectory(extern/vma)
 add_subdirectory(extern/vk-bootstrap)
 add_subdirectory(extern/fastgltf)
+add_subdirectory(extern/OffsetAllocator)
 
 # My Libs
 add_subdirectory(src/crash-handling)

@@ -23,15 +23,14 @@ inline static constexpr VkFormat DEPTH_IMAGE_FORMAT = VK_FORMAT_D32_SFLOAT;
 inline static constexpr int32_t BINDLESS_UNIFORM_BUFFER_COUNT = 1000;
 inline static constexpr int32_t BINDLESS_COMBINED_IMAGE_SAMPLER_COUNT = 1000;
 inline static constexpr int32_t BINDLESS_STORAGE_IMAGE_COUNT = 1000;
-inline static constexpr int32_t BINDLESS_MATERIAL_COUNT = 16384;
-inline static constexpr int32_t BINDLESS_PRIMITIVE_COUNT = 65536;
+
 inline static constexpr int32_t BINDLESS_MODEL_COUNT = 16384;
 inline static constexpr int32_t BINDLESS_INSTANCE_COUNT = 131072;
 
 inline static constexpr int32_t MEGA_VERTEX_BUFFER_COUNT = 262144;
 inline static constexpr int32_t MEGA_INDEX_BUFFER_COUNT = 524288;
-inline static constexpr int32_t MEGA_VERTEX_BUFFER_CHUNK_SIZE = 4096;
-inline static constexpr int32_t MEGA_INDEX_BUFFER_CHUNK_SIZE = 8192;
+inline static constexpr int32_t MEGA_PRIMITIVE_BUFFER_COUNT = 65536;
+inline static constexpr int32_t MEGA_MATERIAL_BUFFER_COUNT = 16384;
 
 inline static constexpr uint32_t DEFAULT_SWAPCHAIN_WIDTH = 1700;
 inline static constexpr uint32_t DEFAULT_SWAPCHAIN_HEIGHT = 900;

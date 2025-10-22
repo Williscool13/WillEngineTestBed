@@ -334,7 +334,9 @@ AllocatedBuffer VkResources::CreateAllocatedBuffer(VulkanContext* context, const
     buffer.context = context;
     VK_CHECK(vmaCreateBuffer(context->allocator, &bufferInfo, &vmaAllocInfo, &buffer.handle, &buffer.allocation, &buffer.allocationInfo));
     buffer.size = bufferInfo.size;
-    buffer.address = VkHelpers::GetDeviceAddress(context->device, buffer.handle);
+    if (bufferInfo.usage & VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT) {
+        buffer.address = VkHelpers::GetDeviceAddress(context->device, buffer.handle);
+    }
     return buffer;
 }
 

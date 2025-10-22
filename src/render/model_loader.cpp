@@ -43,9 +43,9 @@ ModelLoader::~ModelLoader()
     }
 }
 
-ModelData ModelLoader::LoadGltf(const std::filesystem::path& path)
+ExtractedModel ModelLoader::LoadGltf(const std::filesystem::path& path)
 {
-    ModelData model{};
+    ExtractedModel model{};
 
     fastgltf::Parser parser{fastgltf::Extensions::KHR_texture_basisu | fastgltf::Extensions::KHR_mesh_quantization | fastgltf::Extensions::KHR_texture_transform};
     constexpr auto gltfOptions = fastgltf::Options::DontRequireValidAssetMember
