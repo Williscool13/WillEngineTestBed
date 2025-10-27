@@ -174,7 +174,7 @@ void ModelLoading::CreateResources()
 
         renderPipelineBuilder.setShaders(vertShader, fragShader);
         renderPipelineBuilder.setupInputAssembly(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-        renderPipelineBuilder.setupRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
+        renderPipelineBuilder.setupRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_BACK_BIT, VK_FRONT_FACE_COUNTER_CLOCKWISE);
         renderPipelineBuilder.disableMultisampling();
         renderPipelineBuilder.enableDepthTest(true, VK_COMPARE_OP_GREATER_OR_EQUAL);
         renderPipelineBuilder.setupRenderer({DRAW_IMAGE_FORMAT}, DEPTH_IMAGE_FORMAT);
@@ -231,161 +231,20 @@ void ModelLoading::CreateModels()
 
 
     // Suzanne Model
+    modelDatas.resize(3);
     auto suzannePath = std::filesystem::path("../assets/Suzanne/glTF/Suzanne.gltf");
-    ExtractedModel suzanne = modelLoader->LoadGltf(suzannePath);
-
-    modelDatas.reserve(2);
-    modelDatas.emplace_back();
-    ModelData& suzanneModelData = modelDatas[0];
-
-    suzanneModelData.name = suzannePath.filename().string();
-    suzanneModelData.path = suzannePath;
-    size_t sizeVertexPos = suzanne.vertices.size() * sizeof(Vertex);
-    suzanneModelData.vertexPositionAllocation = vertexBufferAllocator.allocate(sizeVertexPos);
-    memcpy(static_cast<char*>(megaVertexBuffer.allocationInfo.pMappedData) + suzanneModelData.vertexPositionAllocation.offset, suzanne.vertices.data(), sizeVertexPos);
-    size_t sizeIndices = suzanne.indices.size() * sizeof(uint32_t);
-    suzanneModelData.indexAllocation = indexBufferAllocator.allocate(sizeIndices);
-    memcpy(static_cast<char*>(megaIndexBuffer.allocationInfo.pMappedData) + suzanneModelData.indexAllocation.offset, suzanne.indices.data(), sizeIndices);
-
-
-    auto RemapIndices = [](auto& indices, const auto& map) {
-        indices.x = map.at(indices.x);
-        indices.y = map.at(indices.y);
-        indices.z = map.at(indices.z);
-        indices.w = map.at(indices.w);
-    };
-
-    std::unordered_map<int32_t, int32_t> materialToBufferMap;
-    materialToBufferMap[-1] = -1;
-
-    // Samplers
-    for (int32_t i = 0; i < suzanne.samplers.size(); ++i) {
-        materialToBufferMap[i] = bindlessResourcesDescriptorBuffer.AllocateSampler(suzanne.samplers[i].handle);
-    }
-
-    for (MaterialProperties& material : suzanne.materials) {
-        RemapIndices(material.textureSamplerIndices, materialToBufferMap);
-        RemapIndices(material.textureSamplerIndices2, materialToBufferMap);
-    }
-
-    // Textures
-    materialToBufferMap.clear();
-    materialToBufferMap[-1] = -1;
-
-    for (int32_t i = 0; i < suzanne.imageViews.size(); ++i) {
-        materialToBufferMap[i] = bindlessResourcesDescriptorBuffer.AllocateTexture({
-            .imageView = suzanne.imageViews[i].handle,
-            .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-        });
-    }
-
-    for (MaterialProperties& material : suzanne.materials) {
-        RemapIndices(material.textureImageIndices, materialToBufferMap);
-        RemapIndices(material.textureImageIndices2, materialToBufferMap);
-    }
-
-
-    size_t sizeMaterials = suzanne.materials.size() * sizeof(MaterialProperties);
-    suzanneModelData.materialAllocation = materialBufferAllocator.allocate(sizeMaterials);
-    memcpy(static_cast<char*>(materialBuffer.allocationInfo.pMappedData) + suzanneModelData.materialAllocation.offset, suzanne.materials.data(), sizeMaterials);
-
-    uint32_t firstIndexCount = suzanneModelData.indexAllocation.offset / sizeof(uint32_t);
-    uint32_t vertexOffsetCount = suzanneModelData.vertexPositionAllocation.offset / sizeof(Vertex);
-    uint32_t materialOffsetCount = suzanneModelData.materialAllocation.offset / sizeof(MaterialProperties);
-    for (auto& primitive : suzanne.primitives) {
-        primitive.firstIndex += firstIndexCount;
-        primitive.vertexOffset += vertexOffsetCount;
-        primitive.materialIndex += materialOffsetCount;
-    }
-
-    size_t sizePrimitives = suzanne.primitives.size() * sizeof(Primitive);
-    suzanneModelData.primitiveAllocation = primitiveBufferAllocator.allocate(sizePrimitives);
-    memcpy(static_cast<char*>(primitiveBuffer.allocationInfo.pMappedData) + suzanneModelData.primitiveAllocation.offset, suzanne.primitives.data(), sizePrimitives);
-
-    uint32_t primitiveOffsetCount = suzanneModelData.primitiveAllocation.offset / sizeof(Primitive);
-    suzanneModelData.meshes = std::move(suzanne.meshes);
-    for (auto& mesh : suzanneModelData.meshes) {
-        for (auto& primitiveIndex : mesh.primitiveIndices) {
-            primitiveIndex += primitiveOffsetCount;
-        }
-    }
-
-
-    // Box Model
+    LoadModelIntoBuffers(suzannePath, modelDatas[0]);
     auto boxPath = std::filesystem::path("../assets/BoxTextured.glb");
-    ExtractedModel boxTextured = modelLoader->LoadGltf(boxPath);
+    LoadModelIntoBuffers(boxPath, modelDatas[1]);
+    auto riggedFigurePath = std::filesystem::path("../assets/RiggedFigure.glb");
+    LoadModelIntoBuffers(riggedFigurePath, modelDatas[2]);
 
-    modelDatas.emplace_back();
-    ModelData& boxModelData = modelDatas[1];
-
-    boxModelData.name = boxPath.filename().string();
-    boxModelData.path = boxPath;
-    sizeVertexPos = boxTextured.vertices.size() * sizeof(Vertex);
-    boxModelData.vertexPositionAllocation = vertexBufferAllocator.allocate(sizeVertexPos);
-    memcpy(static_cast<char*>(megaVertexBuffer.allocationInfo.pMappedData) + boxModelData.vertexPositionAllocation.offset, boxTextured.vertices.data(), sizeVertexPos);
-    sizeIndices = boxTextured.indices.size() * sizeof(uint32_t);
-    boxModelData.indexAllocation = indexBufferAllocator.allocate(sizeIndices);
-    memcpy(static_cast<char*>(megaIndexBuffer.allocationInfo.pMappedData) + boxModelData.indexAllocation.offset, boxTextured.indices.data(), sizeIndices);
-
-
-    materialToBufferMap.clear();
-    materialToBufferMap[-1] = -1;
-
-    // Samplers
-    for (int32_t i = 0; i < boxTextured.samplers.size(); ++i) {
-        materialToBufferMap[i] = bindlessResourcesDescriptorBuffer.AllocateSampler(boxTextured.samplers[i].handle);
-    }
-
-    for (MaterialProperties& material : boxTextured.materials) {
-        RemapIndices(material.textureSamplerIndices, materialToBufferMap);
-        RemapIndices(material.textureSamplerIndices2, materialToBufferMap);
-    }
-
-    // Textures
-    materialToBufferMap.clear();
-    materialToBufferMap[-1] = -1;
-
-    for (int32_t i = 0; i < boxTextured.imageViews.size(); ++i) {
-        materialToBufferMap[i] = bindlessResourcesDescriptorBuffer.AllocateTexture({
-            .imageView = boxTextured.imageViews[i].handle,
-            .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-        });
-    }
-
-    for (MaterialProperties& material : boxTextured.materials) {
-        RemapIndices(material.textureImageIndices, materialToBufferMap);
-        RemapIndices(material.textureImageIndices2, materialToBufferMap);
-    }
-
-    sizeMaterials = boxTextured.materials.size() * sizeof(MaterialProperties);
-    boxModelData.materialAllocation = materialBufferAllocator.allocate(sizeMaterials);
-    memcpy(static_cast<char*>(materialBuffer.allocationInfo.pMappedData) + boxModelData.materialAllocation.offset, boxTextured.materials.data(), sizeMaterials);
-    firstIndexCount = boxModelData.indexAllocation.offset / sizeof(uint32_t);
-    vertexOffsetCount = boxModelData.vertexPositionAllocation.offset / sizeof(Vertex);
-    materialOffsetCount = boxModelData.materialAllocation.offset / sizeof(MaterialProperties);
-    for (auto& primitive : boxTextured.primitives) {
-        primitive.firstIndex += firstIndexCount;
-        primitive.vertexOffset += vertexOffsetCount;
-        primitive.materialIndex += materialOffsetCount;
-    }
-
-    sizePrimitives = boxTextured.primitives.size() * sizeof(Primitive);
-    boxModelData.primitiveAllocation = primitiveBufferAllocator.allocate(sizePrimitives);
-    memcpy(static_cast<char*>(primitiveBuffer.allocationInfo.pMappedData) + boxModelData.primitiveAllocation.offset, boxTextured.primitives.data(), sizePrimitives);
-
-    primitiveOffsetCount = boxModelData.primitiveAllocation.offset / sizeof(Primitive);
-    boxModelData.meshes = std::move(boxTextured.meshes);
-    for (auto& mesh : boxModelData.meshes) {
-        for (auto& primitiveIndex : mesh.primitiveIndices) {
-            primitiveIndex += primitiveOffsetCount;
-        }
-    }
 
     // 3x3 on X+Y axis (model index 0->8)
     for (int y = 0; y < 3; ++y) {
         for (int x = 0; x < 3; ++x) {
             glm::mat4 boxPosition = glm::translate(glm::mat4(1.0f), glm::vec3(x * 2.0f, y * 2.0f, 0.0f));
-            boxPosition = glm::rotate(boxPosition, glm::radians(45.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+            boxPosition = glm::rotate(boxPosition, glm::radians(180.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 
             Model m{
                 .modelMatrix = boxPosition,
@@ -415,8 +274,10 @@ void ModelLoading::CreateModels()
         }
     }
 
+    ModelData& suzanne = modelDatas[0];
+    ModelData& box = modelDatas[1];
 
-    for (const MeshInformation& mesh : suzanneModelData.meshes) {
+    for (const MeshInformation& mesh : suzanne.meshes) {
         for (auto primitiveIndex : mesh.primitiveIndices) {
             instances.emplace_back(primitiveIndex, 0, 1);
             instances.emplace_back(primitiveIndex, 1, 1);
@@ -429,7 +290,7 @@ void ModelLoading::CreateModels()
             instances.emplace_back(primitiveIndex, 8, 1);
         }
     }
-    for (const MeshInformation& mesh : boxModelData.meshes) {
+    for (const MeshInformation& mesh : box.meshes) {
         for (auto primitiveIndex : mesh.primitiveIndices) {
             instances.emplace_back(primitiveIndex, 9, 1);
             instances.emplace_back(primitiveIndex, 10, 1);
@@ -598,16 +459,6 @@ void ModelLoading::Render()
         ImGui::Render();
     }
 
-    // Warning: Synchronization issues present in this code
-    glm::mat4 boxPosition = glm::translate(glm::mat4(1.0f), glm::vec3(boxPos[0], boxPos[1], boxPos[2]));
-    boxPosition = glm::rotate(boxPosition, glm::radians(45.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-    Model m{
-        .modelMatrix = boxPosition,
-        .prevModelMatrix = boxPosition,
-        .flags = {1.0f, 1.0f, 1.0f, 1.0f}
-    };
-    memcpy(modelBuffer.allocationInfo.pMappedData, &m, sizeof(Model));
-
     glm::mat4 view = glm::lookAt(
         glm::vec3(cameraPos[0], cameraPos[1], cameraPos[2]),
         glm::vec3(cameraLook[0], cameraLook[1], cameraLook[2]),
@@ -624,7 +475,6 @@ void ModelLoading::Render()
         // Draw/Cull pass (compute) - Construct indexed indirect buffer
         {
             {
-
                 vkCmdFillBuffer(cmd, indirectCountBuffers[currentFrameInFlight].handle,offsetof(IndirectCount, opaqueCount), sizeof(uint32_t), 0);
 
                 vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, drawCullPipeline.handle);
@@ -872,5 +722,88 @@ void ModelLoading::Cleanup()
     vkDeviceWaitIdle(vulkanContext->device);
 
     SDL_DestroyWindow(window);
+}
+
+void ModelLoading::LoadModelIntoBuffers(const std::filesystem::path& modelPath, ModelData& modelData)
+{
+    ExtractedModel model = modelLoader->LoadGltf(modelPath);
+
+    modelData.name = modelPath.filename().string();
+    modelData.path = modelPath;
+
+    // Vertices
+    size_t sizeVertexPos = model.vertices.size() * sizeof(Vertex);
+    modelData.vertexPositionAllocation = vertexBufferAllocator.allocate(sizeVertexPos);
+    memcpy(static_cast<char*>(megaVertexBuffer.allocationInfo.pMappedData) + modelData.vertexPositionAllocation.offset, model.vertices.data(), sizeVertexPos);
+
+    // Indices
+    size_t sizeIndices = model.indices.size() * sizeof(uint32_t);
+    modelData.indexAllocation = indexBufferAllocator.allocate(sizeIndices);
+    memcpy(static_cast<char*>(megaIndexBuffer.allocationInfo.pMappedData) + modelData.indexAllocation.offset, model.indices.data(), sizeIndices);
+
+    auto RemapIndices = [](auto& indices, const auto& map) {
+        indices.x = map.at(indices.x);
+        indices.y = map.at(indices.y);
+        indices.z = map.at(indices.z);
+        indices.w = map.at(indices.w);
+    };
+
+    std::unordered_map<int32_t, int32_t> materialToBufferMap;
+    materialToBufferMap[-1] = -1;
+
+    // Samplers
+    for (int32_t i = 0; i < model.samplers.size(); ++i) {
+        materialToBufferMap[i] = bindlessResourcesDescriptorBuffer.AllocateSampler(model.samplers[i].handle);
+    }
+
+    for (MaterialProperties& material : model.materials) {
+        RemapIndices(material.textureSamplerIndices, materialToBufferMap);
+        RemapIndices(material.textureSamplerIndices2, materialToBufferMap);
+    }
+
+    // Textures
+    materialToBufferMap.clear();
+    materialToBufferMap[-1] = -1;
+
+    for (int32_t i = 0; i < model.imageViews.size(); ++i) {
+        materialToBufferMap[i] = bindlessResourcesDescriptorBuffer.AllocateTexture({
+            .imageView = model.imageViews[i].handle,
+            .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+        });
+    }
+
+    for (MaterialProperties& material : model.materials) {
+        RemapIndices(material.textureImageIndices, materialToBufferMap);
+        RemapIndices(material.textureImageIndices2, materialToBufferMap);
+    }
+
+    // Materials
+    size_t sizeMaterials = model.materials.size() * sizeof(MaterialProperties);
+    modelData.materialAllocation = materialBufferAllocator.allocate(sizeMaterials);
+    memcpy(static_cast<char*>(materialBuffer.allocationInfo.pMappedData) + modelData.materialAllocation.offset, model.materials.data(), sizeMaterials);
+
+    // Primitives
+    uint32_t firstIndexCount = modelData.indexAllocation.offset / sizeof(uint32_t);
+    uint32_t vertexOffsetCount = modelData.vertexPositionAllocation.offset / sizeof(Vertex);
+    uint32_t materialOffsetCount = modelData.materialAllocation.offset / sizeof(MaterialProperties);
+
+    for (auto& primitive : model.primitives) {
+        primitive.firstIndex += firstIndexCount;
+        primitive.vertexOffset += static_cast<int32_t>(vertexOffsetCount);
+        primitive.materialIndex += materialOffsetCount;
+    }
+
+    size_t sizePrimitives = model.primitives.size() * sizeof(Primitive);
+    modelData.primitiveAllocation = primitiveBufferAllocator.allocate(sizePrimitives);
+    memcpy(static_cast<char*>(primitiveBuffer.allocationInfo.pMappedData) + modelData.primitiveAllocation.offset,
+           model.primitives.data(), sizePrimitives);
+
+    uint32_t primitiveOffsetCount = modelData.primitiveAllocation.offset / sizeof(Primitive);
+    modelData.meshes = std::move(model.meshes);
+    for (auto& mesh : modelData.meshes) {
+        for (auto& primitiveIndex : mesh.primitiveIndices) {
+            primitiveIndex += primitiveOffsetCount;
+        }
+    }
 }
 }

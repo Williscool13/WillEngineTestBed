@@ -51,10 +51,14 @@ VertexOutput vertexMain(Vertex vertex, uniform PushConsts pushConstants, uint st
 [shader("fragment")]
 float4 fragmentMain(VertexOutput input) : SV_Target
 {
-    float4 color = textures[input.colorTextureIndex].Sample(samplers[input.colorSamplerIndex], input.uv);
+    float4 color = float4(1.0f, 1.0f, 1.0f, 1.0f);
+    if (input.colorTextureIndex >= 0 && input.colorSamplerIndex >= 0) {
+        color = textures[input.colorTextureIndex].Sample(samplers[input.colorSamplerIndex], input.uv);
+    }
+
     return float4(input.color * color.xyz, 1.0);
 
-    //return float(input.color, 1.0f);
+    // return float4(input.color, 1.0f);
 
     //float f = float(input.colorTextureIndex);
     //return float4(f,f,f,1.0f);

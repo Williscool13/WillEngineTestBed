@@ -49,6 +49,9 @@ public:
     void Cleanup();
 
 private:
+    void LoadModelIntoBuffers(const std::filesystem::path& modelPath, ModelData& modelData);
+
+private:
     SDL_Window* window{nullptr};
     std::unique_ptr<VulkanContext> vulkanContext{};
     std::unique_ptr<Swapchain> swapchain{};
