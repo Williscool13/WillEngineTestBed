@@ -92,6 +92,9 @@ struct ModelData
 
     std::vector<MeshInformation> meshes{};
 
+    std::vector<AllocatedImage> images{};
+    std::vector<Sampler> samplers{};
+
     std::unordered_map<int32_t, int32_t> samplerIndexToDescriptorBufferIndexMap{};
     std::unordered_map<int32_t, int32_t> textureIndexToDescriptorBufferIndexMap{};
 

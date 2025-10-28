@@ -827,6 +827,8 @@ bool ModelLoading::LoadModelIntoBuffers(const std::filesystem::path& modelPath, 
         }
     }
 
+    modelData.samplers = std::move(model.samplers);
+    modelData.images = std::move(model.images);
     return true;
 }
 }
