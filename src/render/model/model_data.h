@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <string>
 
+#include <glm/gtc/quaternion.hpp>
 #include <volk/volk.h>
 #include <OffsetAllocator/offsetAllocator.hpp>
 
@@ -52,9 +53,21 @@ struct Model
     glm::vec4 flags{1.0f}; // x: visible, y: shadow-caster, zw: reserved
 };
 
+struct Node
+{
+    std::string name{};
+    uint32_t parent{~0u};
+    uint32_t meshIndex{};
+
+    glm::vec3 localTranslation{};
+    glm::quat localRotation{};
+    glm::vec3 localScale{};
+};
+
 struct ExtractedModel
 {
     std::string name{};
+    bool bSuccessfullyLoaded{false};
 
     std::vector<Sampler> samplers{};
     std::vector<AllocatedImage> images{};
@@ -68,6 +81,8 @@ struct ExtractedModel
     std::vector<Primitive> primitives{};
 
     std::vector<MeshInformation> meshes{};
+    std::vector<Node> nodes{};
+    std::vector<int32_t> topNodes{};
 };
 
 struct ModelData

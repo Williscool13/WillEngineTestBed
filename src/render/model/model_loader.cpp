@@ -13,6 +13,7 @@
 #include "../render_utils.h"
 #include "../vk_helpers.h"
 #include "crash-handling/crash_handler.h"
+#include "glm/gtc/quaternion.hpp"
 #include "stb/stb_image.h"
 #include "utils/utils.h"
 
@@ -47,6 +48,7 @@ ModelLoader::~ModelLoader()
 
 ExtractedModel ModelLoader::LoadGltf(const std::filesystem::path& path)
 {
+    Utils::ScopedTimer timer{fmt::format("{} Load Time", path.filename().string())};
     ExtractedModel model{};
 
     fastgltf::Parser parser{fastgltf::Extensions::KHR_texture_basisu | fastgltf::Extensions::KHR_mesh_quantization | fastgltf::Extensions::KHR_texture_transform};
@@ -67,6 +69,7 @@ ExtractedModel ModelLoader::LoadGltf(const std::filesystem::path& path)
         return model;
     }
 
+    model.bSuccessfullyLoaded = true;
     fastgltf::Asset gltf = std::move(load.get());
 
     model.samplers.reserve(gltf.samplers.size());
@@ -151,8 +154,24 @@ ExtractedModel ModelLoader::LoadGltf(const std::filesystem::path& path)
             // TANGENTS
             const fastgltf::Attribute* tangents = p.findAttribute("TANGENT");
             if (tangents != p.attributes.end()) {
-                fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec4>(gltf, gltf.accessors[tangents->accessorIndex], [&](fastgltf::math::fvec4 n, const size_t index) {
-                    primitiveVertices[index].tangent = {n.x(), n.y(), n.z(), n.w()};
+                fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec4>(gltf, gltf.accessors[tangents->accessorIndex], [&](fastgltf::math::fvec4 t, const size_t index) {
+                    primitiveVertices[index].tangent = {t.x(), t.y(), t.z(), t.w()};
+                });
+            }
+
+            // JOINTS_0
+            const fastgltf::Attribute* joints0 = p.findAttribute("JOINTS_0");
+            if (joints0 != p.attributes.end()) {
+                fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec4>(gltf, gltf.accessors[joints0->accessorIndex], [&](fastgltf::math::fvec4 j, const size_t index) {
+                    primitiveVertices[index].joints = {j.x(), j.y(), j.z(), j.w()};
+                });
+            }
+
+            // WEIGHTS_0
+            const fastgltf::Attribute* weights0 = p.findAttribute("WEIGHTS_0");
+            if (weights0 != p.attributes.end()) {
+                fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec4>(gltf, gltf.accessors[weights0->accessorIndex], [&](fastgltf::math::fvec4 w, const size_t index) {
+                    primitiveVertices[index].weights = {w.x(), w.y(), w.z(), w.w()};
                 });
             }
 
@@ -232,6 +251,58 @@ ExtractedModel ModelLoader::LoadGltf(const std::filesystem::path& path)
         model.meshes.push_back(meshData);
     }
 
+    model.nodes.reserve(gltf.nodes.size());
+    for (const fastgltf::Node& node : gltf.nodes) {
+        Node node_{};
+        node_.name = node.name;
+
+        if (node.meshIndex.has_value()) {
+            node_.meshIndex = static_cast<int>(*node.meshIndex);
+        }
+
+        std::visit(
+            fastgltf::visitor{
+                [&](fastgltf::math::fmat4x4 matrix) {
+                    glm::mat4 glmMatrix;
+                    for (int i = 0; i < 4; ++i) {
+                        for (int j = 0; j < 4; ++j) {
+                            glmMatrix[i][j] = matrix[i][j];
+                        }
+                    }
+
+                    node_.localTranslation = glm::vec3(glmMatrix[3]);
+                    node_.localRotation = glm::quat_cast(glmMatrix);
+                    node_.localScale = glm::vec3(
+                        glm::length(glm::vec3(glmMatrix[0])),
+                        glm::length(glm::vec3(glmMatrix[1])),
+                        glm::length(glm::vec3(glmMatrix[2]))
+                    );
+                },
+                [&](fastgltf::TRS transform) {
+                    node_.localTranslation = {transform.translation[0], transform.translation[1], transform.translation[2]};
+                    node_.localRotation = {transform.rotation[3], transform.rotation[0], transform.rotation[1], transform.rotation[2]};
+                    node_.localScale = {transform.scale[0], transform.scale[1], transform.scale[2]};
+                }
+            }
+            , node.transform
+        );
+
+        model.nodes.push_back(node_);
+    }
+
+    for (int i = 0; i < gltf.nodes.size(); i++) {
+        for (std::size_t& child : gltf.nodes[i].children) {
+            model.nodes[child].parent = i;
+        }
+    }
+
+    for (int i = 0; i < model.nodes.size(); i++) {
+        if (model.nodes[i].parent == ~0u) {
+            model.topNodes.push_back(i);
+        }
+    }
+
+    // todo: gltf.skins
 
     return model;
 }
@@ -459,7 +530,6 @@ void ModelLoader::LoadGltfImages(const fastgltf::Asset& asset, const std::filesy
             const size_t size = width * height * 4;
 
 
-
             OffsetAllocator::Allocation allocation = imageStagingAllocator.allocate(size);
             if (allocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
                 if (bIsRecording) {
@@ -481,7 +551,8 @@ void ModelLoader::LoadGltfImages(const fastgltf::Asset& asset, const std::filesy
                         CrashHandler::TriggerManualDump("Texture too large to fit in staging buffer. Increase staging buffer size or do not load this texture");
                         exit(1);
                     }
-                } else {
+                }
+                else {
                     // If command buffer hasn't begun, then there are no other textures queued for load - which means that this texture we're attempting to load is larger than an empty staging buffer
                     CrashHandler::TriggerManualDump("Texture too large to fit in staging buffer. Increase staging buffer size or do not load this texture");
                     exit(1);
@@ -498,7 +569,6 @@ void ModelLoader::LoadGltfImages(const fastgltf::Asset& asset, const std::filesy
 
             stbi_image_free(stbiData);
             stbiData = nullptr;
-
         }
 
         outAllocatedImages.push_back(std::move(newImage));
@@ -642,7 +712,8 @@ glm::vec4 ModelLoader::GenerateBoundingSphere(const std::vector<Vertex>& vertice
     return glm::vec4(center, radius);
 }
 
-AllocatedImage ModelLoader::RecordCreateImageFromData(VkCommandBuffer cmd, size_t offset, unsigned char* data, size_t size, VkExtent3D imageExtent, VkFormat format, VkImageUsageFlagBits usage, bool mipmapped)
+AllocatedImage ModelLoader::RecordCreateImageFromData(VkCommandBuffer cmd, size_t offset, unsigned char* data, size_t size, VkExtent3D imageExtent, VkFormat format, VkImageUsageFlagBits usage,
+                                                      bool mipmapped)
 {
     char* bufferOffset = static_cast<char*>(imageStagingBuffer.allocationInfo.pMappedData) + offset;
     memcpy(bufferOffset, data, size);
@@ -686,8 +757,8 @@ AllocatedImage ModelLoader::RecordCreateImageFromData(VkCommandBuffer cmd, size_
         VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
         VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
     );
-    barrier.srcQueueFamilyIndex = context->transferQueueFamily;
-    barrier.dstQueueFamilyIndex = context->graphicsQueueFamily;
+    // barrier.srcQueueFamilyIndex = context->transferQueueFamily;
+    // barrier.dstQueueFamilyIndex = context->graphicsQueueFamily;
     vkCmdPipelineBarrier2(cmd, &depInfo);
     newImage.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 

@@ -231,14 +231,13 @@ void ModelLoading::CreateModels()
 
 
     // Suzanne Model
-    modelDatas.resize(3);
     auto suzannePath = std::filesystem::path("../assets/Suzanne/glTF/Suzanne.gltf");
     LoadModelIntoBuffers(suzannePath, modelDatas[0]);
     auto boxPath = std::filesystem::path("../assets/BoxTextured.glb");
     LoadModelIntoBuffers(boxPath, modelDatas[1]);
+    //LoadModelIntoBuffers(suzannePath, modelDatas[3]);
     auto riggedFigurePath = std::filesystem::path("../assets/RiggedFigure.glb");
     LoadModelIntoBuffers(riggedFigurePath, modelDatas[2]);
-
 
     // 3x3 on X+Y axis (model index 0->8)
     for (int y = 0; y < 3; ++y) {
@@ -275,6 +274,7 @@ void ModelLoading::CreateModels()
     }
 
     ModelData& suzanne = modelDatas[0];
+    ModelData& suzanne2 = modelDatas[0];
     ModelData& box = modelDatas[1];
 
     for (const MeshInformation& mesh : suzanne.meshes) {
@@ -285,11 +285,18 @@ void ModelLoading::CreateModels()
             instances.emplace_back(primitiveIndex, 3, 1);
             instances.emplace_back(primitiveIndex, 4, 1);
             instances.emplace_back(primitiveIndex, 5, 1);
+        }
+    }
+    for (const MeshInformation& mesh : suzanne2.meshes) {
+        for (auto primitiveIndex : mesh.primitiveIndices) {
             instances.emplace_back(primitiveIndex, 6, 1);
             instances.emplace_back(primitiveIndex, 7, 1);
             instances.emplace_back(primitiveIndex, 8, 1);
         }
     }
+
+
+
     for (const MeshInformation& mesh : box.meshes) {
         for (auto primitiveIndex : mesh.primitiveIndices) {
             instances.emplace_back(primitiveIndex, 9, 1);
@@ -373,6 +380,9 @@ void ModelLoading::Run()
 
             swapchain->Recreate(w, h);
             Input::Input::Get().UpdateWindowExtent(swapchain->extent.width, swapchain->extent.height);
+            if (RENDER_TARGET_SIZE_EQUALS_SWAPCHAIN_SIZE) {
+                renderContext->RequestRenderExtentResize(w, h);
+            }
             bSwapchainOutdated = false;
         }
 
@@ -724,9 +734,12 @@ void ModelLoading::Cleanup()
     SDL_DestroyWindow(window);
 }
 
-void ModelLoading::LoadModelIntoBuffers(const std::filesystem::path& modelPath, ModelData& modelData)
+bool ModelLoading::LoadModelIntoBuffers(const std::filesystem::path& modelPath, ModelData& modelData)
 {
     ExtractedModel model = modelLoader->LoadGltf(modelPath);
+    if (!model.bSuccessfullyLoaded) {
+        return false;
+    }
 
     modelData.name = modelPath.filename().string();
     modelData.path = modelPath;
@@ -734,11 +747,19 @@ void ModelLoading::LoadModelIntoBuffers(const std::filesystem::path& modelPath, 
     // Vertices
     size_t sizeVertexPos = model.vertices.size() * sizeof(Vertex);
     modelData.vertexPositionAllocation = vertexBufferAllocator.allocate(sizeVertexPos);
+    if (modelData.vertexPositionAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
+        LOG_WARN("[ModelLoading::LoadModelIntoBuffers] Not enough space in vertex buffer");
+        return false;
+    }
     memcpy(static_cast<char*>(megaVertexBuffer.allocationInfo.pMappedData) + modelData.vertexPositionAllocation.offset, model.vertices.data(), sizeVertexPos);
 
     // Indices
     size_t sizeIndices = model.indices.size() * sizeof(uint32_t);
     modelData.indexAllocation = indexBufferAllocator.allocate(sizeIndices);
+    if (modelData.indexAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
+        LOG_WARN("[ModelLoading::LoadModelIntoBuffers] Not enough space in index buffer");
+        return false;
+    }
     memcpy(static_cast<char*>(megaIndexBuffer.allocationInfo.pMappedData) + modelData.indexAllocation.offset, model.indices.data(), sizeIndices);
 
     auto RemapIndices = [](auto& indices, const auto& map) {
@@ -805,5 +826,7 @@ void ModelLoading::LoadModelIntoBuffers(const std::filesystem::path& modelPath, 
             primitiveIndex += primitiveOffsetCount;
         }
     }
+
+    return true;
 }
 }

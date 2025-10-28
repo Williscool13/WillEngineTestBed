@@ -29,8 +29,8 @@ inline static constexpr int32_t BINDLESS_SAMPLED_IMAGE_COUNT = 8192;
 inline static constexpr int32_t BINDLESS_MODEL_COUNT = 16384;
 inline static constexpr int32_t BINDLESS_INSTANCE_COUNT = 131072;
 
-inline static constexpr int32_t MEGA_VERTEX_BUFFER_COUNT = 262144;
-inline static constexpr int32_t MEGA_INDEX_BUFFER_COUNT = 524288;
+inline static constexpr int32_t MEGA_VERTEX_BUFFER_COUNT = 1048576; // 1 << 20
+inline static constexpr int32_t MEGA_INDEX_BUFFER_COUNT = 2097152; // 1 << 21
 inline static constexpr int32_t MEGA_PRIMITIVE_BUFFER_COUNT = 65536;
 inline static constexpr int32_t MEGA_MATERIAL_BUFFER_COUNT = 16384;
 
@@ -41,6 +41,7 @@ inline static constexpr uint32_t DEFAULT_SWAPCHAIN_HEIGHT = 900;
 inline static constexpr uint32_t DEFAULT_RENDER_TARGET_WIDTH = 1700;
 inline static constexpr uint32_t DEFAULT_RENDER_TARGET_HEIGHT = 900;
 inline static constexpr float DEFAULT_RENDER_SCALE = 1.0f;
+inline static constexpr bool RENDER_TARGET_SIZE_EQUALS_SWAPCHAIN_SIZE = true;
 
 
 }

@@ -35,8 +35,8 @@ DescriptorBufferBindlessResources::DescriptorBufferBindlessResources(VulkanConte
     bufferInfo.size = descriptorSetSize;
     bufferInfo.usage = VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
     VmaAllocationCreateInfo vmaAllocInfo = {};
-    vmaAllocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
-    vmaAllocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+    vmaAllocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+    vmaAllocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
     buffer = VkResources::CreateAllocatedBuffer(context, bufferInfo, vmaAllocInfo);
 
     freeSamplerIndices.reserve(BINDLESS_SAMPLER_COUNT);
@@ -129,9 +129,9 @@ int32_t DescriptorBufferBindlessResources::AllocateTexture(const VkDescriptorIma
     descriptorGetInfo.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
     descriptorGetInfo.data.pSampledImage = &imageInfo;
 
-    const size_t samplerDescriptorSize = VulkanContext::deviceInfo.descriptorBufferProps.sampledImageDescriptorSize;
-    char* bufferPtr = basePtr + textureIndex * samplerDescriptorSize;
-    vkGetDescriptorEXT(context->device, &descriptorGetInfo, samplerDescriptorSize, bufferPtr);
+    const size_t sampledImageDescriptorSize = VulkanContext::deviceInfo.descriptorBufferProps.sampledImageDescriptorSize;
+    char* bufferPtr = basePtr + textureIndex * sampledImageDescriptorSize;
+    vkGetDescriptorEXT(context->device, &descriptorGetInfo, sampledImageDescriptorSize, bufferPtr);
 
     return textureIndex;
 }

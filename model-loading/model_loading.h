@@ -49,7 +49,7 @@ public:
     void Cleanup();
 
 private:
-    void LoadModelIntoBuffers(const std::filesystem::path& modelPath, ModelData& modelData);
+    bool LoadModelIntoBuffers(const std::filesystem::path& modelPath, ModelData& modelData);
 
 private:
     SDL_Window* window{nullptr};
@@ -71,7 +71,7 @@ private:
     DescriptorBufferBindlessResources bindlessResourcesDescriptorBuffer{};
 
 
-    std::vector<ModelData> modelDatas{};
+    std::array<ModelData, 100> modelDatas{};
 
     AllocatedBuffer megaVertexBuffer;
     OffsetAllocator::Allocator vertexBufferAllocator{sizeof(Vertex) * MEGA_VERTEX_BUFFER_COUNT};
