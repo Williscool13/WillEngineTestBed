@@ -28,12 +28,12 @@ VulkanContext::VulkanContext(SDL_Window* window)
 
     vkb::InstanceBuilder builder;
     std::vector<const char*> enabledInstanceExtensions;
-    enabledInstanceExtensions.push_back("VK_EXT_debug_utils");
 
 #ifdef NDEBUG
     bool bUseValidation = false;
 #else
     bool bUseValidation = true;
+    enabledInstanceExtensions.push_back("VK_EXT_debug_utils");
 #endif
 
 
@@ -42,6 +42,8 @@ VulkanContext::VulkanContext(SDL_Window* window)
             .use_default_debug_messenger()
             .require_api_version(1, 3)
             .enable_extensions(enabledInstanceExtensions)
+            .add_validation_feature_enable(VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT)
+            .add_validation_feature_enable(VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT)
             .build();
 
     vkb::Instance vkb_inst = resultInstance.value();

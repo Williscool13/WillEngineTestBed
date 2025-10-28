@@ -296,7 +296,6 @@ void ModelLoading::CreateModels()
     }
 
 
-
     for (const MeshInformation& mesh : box.meshes) {
         for (auto primitiveIndex : mesh.primitiveIndices) {
             instances.emplace_back(primitiveIndex, 9, 1);
@@ -486,6 +485,27 @@ void ModelLoading::Render()
         {
             {
                 vkCmdFillBuffer(cmd, indirectCountBuffers[currentFrameInFlight].handle,offsetof(IndirectCount, opaqueCount), sizeof(uint32_t), 0);
+                VkBufferMemoryBarrier2 bufferBarrier[1];
+                bufferBarrier[0].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+                bufferBarrier[0].pNext = nullptr;
+                bufferBarrier[0].buffer = indirectCountBuffers[currentFrameInFlight].handle;
+                bufferBarrier[0].srcStageMask = VK_PIPELINE_STAGE_2_CLEAR_BIT;
+                bufferBarrier[0].srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+                bufferBarrier[0].dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+                bufferBarrier[0].dstAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
+                bufferBarrier[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                bufferBarrier[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                bufferBarrier[0].offset = 0;
+                bufferBarrier[0].size = VK_WHOLE_SIZE;
+
+                VkDependencyInfo depInfo{};
+                depInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+                depInfo.pNext = nullptr;
+                depInfo.dependencyFlags = 0;
+                depInfo.bufferMemoryBarrierCount = 1;
+                depInfo.pBufferMemoryBarriers = bufferBarrier;
+
+                vkCmdPipelineBarrier2(cmd, &depInfo);
 
                 vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, drawCullPipeline.handle);
                 BindlessIndirectPushConstant pushData{
@@ -545,7 +565,7 @@ void ModelLoading::Render()
             auto barrier = VkHelpers::ImageMemoryBarrier(
                 renderTargets->drawImage.handle,
                 subresource,
-                VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_UNDEFINED,
+                VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_UNDEFINED,
                 VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
             );
             auto dependencyInfo = VkHelpers::DependencyInfo(&barrier);
@@ -611,7 +631,7 @@ void ModelLoading::Render()
             barriers[1] = VkHelpers::ImageMemoryBarrier(
                 currentSwapchainImage,
                 VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT),
-                VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_UNDEFINED,
+                VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_UNDEFINED,
                 VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
             );
             VkDependencyInfo depInfo{.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
@@ -654,8 +674,8 @@ void ModelLoading::Render()
             auto barrier = VkHelpers::ImageMemoryBarrier(
                 currentSwapchainImage,
                 subresource,
-                VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+                VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
             );
             auto dependencyInfo = VkHelpers::DependencyInfo(&barrier);
             vkCmdPipelineBarrier2(cmd, &dependencyInfo);
@@ -694,9 +714,9 @@ void ModelLoading::Render()
             currentSwapchainImage,
             subresource,
             VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-            VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+            VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT,
             VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-            VK_PIPELINE_STAGE_2_NONE,
+            VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT,
             VK_ACCESS_2_NONE,
             VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
         );

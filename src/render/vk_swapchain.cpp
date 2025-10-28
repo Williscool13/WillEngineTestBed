@@ -32,7 +32,8 @@ void Swapchain::Create(uint32_t width, uint32_t height)
 {
     vkb::SwapchainBuilder swapchainBuilder{context->physicalDevice, context->device, context->surface};
 
-    uint32_t formatCount;
+    uint32_t formatCount{0};
+    VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(context->physicalDevice, context->surface, &formatCount, nullptr));
     VkSurfaceFormatKHR surfaceFormats[32]{};
     VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(context->physicalDevice, context->surface, &formatCount, surfaceFormats));
 
