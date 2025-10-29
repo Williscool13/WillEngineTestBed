@@ -16,6 +16,7 @@
 #include "render/descriptor_buffer/descriptor_buffer_bindless_resources.h"
 #include "render/descriptor_buffer/descriptor_buffer_storage_image.h"
 #include "render/model/model_data.h"
+#include "utils/handle_allocator.h"
 
 namespace Renderer
 {
@@ -51,6 +52,8 @@ public:
 private:
     bool LoadModelIntoBuffers(const std::filesystem::path& modelPath, ModelData& modelData);
 
+    RuntimeMesh GenerateModel(ModelDataHandle modelDataHandle, const ModelData& modelData, const Transform& topLevelTransform);
+
 private:
     SDL_Window* window{nullptr};
     std::unique_ptr<VulkanContext> vulkanContext{};
@@ -63,28 +66,30 @@ private:
     std::vector<FrameData> frameSynchronization;
     int32_t renderFramesInFlight{0};
 
-    // Probably want separate descriptor buffers/layouts for:
-    //  - Scene Data
     DescriptorSetLayout renderTargetSetLayout{};
     DescriptorBufferStorageImage renderTargetDescriptors{};
 
     DescriptorBufferBindlessResources bindlessResourcesDescriptorBuffer{};
 
 
-    std::array<ModelData, 100> modelDatas{};
+    FreeList<ModelData, MAX_LOADED_MODELS> modelDatas{};
+    std::vector<ModelDataHandle> modelDataHandles;
+    std::vector<RuntimeMesh> runtimeMeshes{};
 
     AllocatedBuffer megaVertexBuffer;
     OffsetAllocator::Allocator vertexBufferAllocator{sizeof(Vertex) * MEGA_VERTEX_BUFFER_COUNT};
     AllocatedBuffer megaIndexBuffer;
     OffsetAllocator::Allocator indexBufferAllocator{sizeof(uint32_t) * MEGA_INDEX_BUFFER_COUNT};
+    // todo: multi-buffer material buffer for runtime modification
     AllocatedBuffer materialBuffer;
     OffsetAllocator::Allocator materialBufferAllocator{sizeof(MaterialProperties) * MEGA_MATERIAL_BUFFER_COUNT};
     AllocatedBuffer primitiveBuffer;
     OffsetAllocator::Allocator primitiveBufferAllocator{sizeof(MaterialProperties) * MEGA_PRIMITIVE_BUFFER_COUNT};
 
-    AllocatedBuffer modelBuffer;
-    AllocatedBuffer instanceBuffer;
-    std::vector<Instance> instances;
+    HandleAllocator<ModelMatrix, BINDLESS_MODEL_MATRIX_COUNT> modelMatrixAllocator;
+    std::vector<AllocatedBuffer> modelBuffers;
+    HandleAllocator<InstanceEntry, BINDLESS_INSTANCE_COUNT> instanceEntryAllocator;
+    std::vector<AllocatedBuffer> instanceBuffers;
 
     uint32_t highestInstanceIndex{0};
     std::vector<AllocatedBuffer> opaqueIndexedIndirectBuffers;

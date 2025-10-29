@@ -219,98 +219,102 @@ void ModelLoading::CreateModels()
         bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT;
         bufferInfo.size = sizeof(VkDrawIndexedIndirectCommand) * BINDLESS_INSTANCE_COUNT;
         opaqueIndexedIndirectBuffers.push_back(VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo));
-    }
 
-    // todo: there should be N(FIF) of this, but for this test bed all resources are initialized well before render loop and are not modified.
-    bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
-    bufferInfo.size = sizeof(Model) * BINDLESS_MODEL_COUNT;
-    modelBuffer = VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
-    bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
-    bufferInfo.size = sizeof(Instance) * BINDLESS_INSTANCE_COUNT;
-    instanceBuffer = VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
+        bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
+        bufferInfo.size = sizeof(Model) * BINDLESS_MODEL_MATRIX_COUNT;
+        modelBuffers.push_back(VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo));
+
+        bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
+        bufferInfo.size = sizeof(Instance) * BINDLESS_INSTANCE_COUNT;
+        instanceBuffers.push_back(VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo));
+    }
 
 
     // Suzanne Model
+
+
+    ModelData md;
+
     auto suzannePath = std::filesystem::path("../assets/Suzanne/glTF/Suzanne.gltf");
-    LoadModelIntoBuffers(suzannePath, modelDatas[0]);
+    LoadModelIntoBuffers(suzannePath, md);
+    modelDataHandles.push_back(modelDatas.Add(std::move(md)));
+    ModelDataHandle suzanneHandle = modelDataHandles[0];
+
     auto boxPath = std::filesystem::path("../assets/BoxTextured.glb");
-    LoadModelIntoBuffers(boxPath, modelDatas[1]);
-    //LoadModelIntoBuffers(suzannePath, modelDatas[3]);
+    LoadModelIntoBuffers(boxPath, md);
+    modelDataHandles.push_back(modelDatas.Add(std::move(md)));
+    ModelDataHandle boxHandle = modelDataHandles[1];
+
     auto riggedFigurePath = std::filesystem::path("../assets/RiggedFigure.glb");
-    LoadModelIntoBuffers(riggedFigurePath, modelDatas[2]);
+    LoadModelIntoBuffers(riggedFigurePath, md);
+    modelDataHandles.push_back(modelDatas.Add(std::move(md)));
+    ModelDataHandle figureHandle = modelDataHandles[2];
 
-    // 3x3 on X+Y axis (model index 0->8)
+    auto structurePath = std::filesystem::path("../assets/structure.glb");
+    LoadModelIntoBuffers(structurePath, md);
+    modelDataHandles.push_back(modelDatas.Add(std::move(md)));
+    ModelDataHandle structureHandle = modelDataHandles[3];
+
+    runtimeMeshes.reserve(100);
+
+
     for (int y = 0; y < 3; ++y) {
         for (int x = 0; x < 3; ++x) {
-            glm::mat4 boxPosition = glm::translate(glm::mat4(1.0f), glm::vec3(x * 2.0f, y * 2.0f, 0.0f));
-            boxPosition = glm::rotate(boxPosition, glm::radians(180.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-
-            Model m{
-                .modelMatrix = boxPosition,
-                .prevModelMatrix = boxPosition,
-                .flags = {1.0f, 1.0f, 1.0f, 1.0f}
+            Transform boxTransform{
+                glm::vec3(x * 2.0f, y * 2.0f, 0.0f),
+                glm::angleAxis(glm::radians(180.0f), glm::vec3(0.0f, 1.0f, 0.0f)),
+                glm::vec3(1.0f, 1.0f, 1.0f)
             };
 
-            size_t offset = (y * 3 + x) * sizeof(Model);
-            memcpy(static_cast<char*>(modelBuffer.allocationInfo.pMappedData) + offset, &m, sizeof(Model));
+            RuntimeMesh a = GenerateModel(suzanneHandle, *modelDatas.Get(suzanneHandle), boxTransform);
+            runtimeMeshes.push_back(std::move(a));
         }
     }
 
-    // 3x3 on X+Y axis, 5 Z forward (model index 9->17)
     for (int y = 0; y < 3; ++y) {
         for (int x = 0; x < 3; ++x) {
-            glm::mat4 boxPosition = glm::translate(glm::mat4(1.0f), glm::vec3(x * 2.0f, y * 2.0f, 5.0f));
-            boxPosition = glm::rotate(boxPosition, glm::radians(45.0f), glm::vec3(0.0f, 1.0f, 5.0f));
-
-            Model m{
-                .modelMatrix = boxPosition,
-                .prevModelMatrix = boxPosition,
-                .flags = {1.0f, 1.0f, 1.0f, 1.0f}
+            Transform boxTransform{
+                glm::vec3(x * 2.0f, y * 2.0f, 5.0f),
+                glm::angleAxis(glm::radians(0.0f), glm::vec3(0.0f, 1.0f, 5.0f)),
+                glm::vec3(1.0f, 1.0f, 1.0f)
             };
 
-            size_t offset = (y * 3 + x + 9) * sizeof(Model);
-            memcpy(static_cast<char*>(modelBuffer.allocationInfo.pMappedData) + offset, &m, sizeof(Model));
+            RuntimeMesh a = GenerateModel(boxHandle, *modelDatas.Get(boxHandle), boxTransform);
+            runtimeMeshes.push_back(std::move(a));
         }
     }
 
-    ModelData& suzanne = modelDatas[0];
-    ModelData& suzanne2 = modelDatas[0];
-    ModelData& box = modelDatas[1];
+    RuntimeMesh a = GenerateModel(boxHandle, *modelDatas.Get(structureHandle), Transform::Identity);
+    runtimeMeshes.push_back(std::move(a));
 
-    for (const MeshInformation& mesh : suzanne.meshes) {
-        for (auto primitiveIndex : mesh.primitiveIndices) {
-            instances.emplace_back(primitiveIndex, 0, 1);
-            instances.emplace_back(primitiveIndex, 1, 1);
-            instances.emplace_back(primitiveIndex, 2, 1);
-            instances.emplace_back(primitiveIndex, 3, 1);
-            instances.emplace_back(primitiveIndex, 4, 1);
-            instances.emplace_back(primitiveIndex, 5, 1);
+    for (RuntimeMesh& runtimeMesh : runtimeMeshes) {
+        for (auto& node : runtimeMesh.nodes) {
+            if (node.modelMatrixHandle != ModelMatrixHandle::Invalid) {
+                for (int32_t i = 0; i < swapchain->imageCount; ++i) {
+                    memcpy(static_cast<char*>(modelBuffers[i].allocationInfo.pMappedData) + node.modelMatrixHandle.index * sizeof(Model), &node.cachedWorldTransform, sizeof(Model));
+                }
+
+                if (ModelData* modelData = modelDatas.Get(node.modelDataHandle)) {
+                    for (uint32_t primitiveIndex : modelData->meshes[node.meshIndex].primitiveIndices) {
+                        InstanceEntryHandle instanceEntry = instanceEntryAllocator.Add();
+                        node.instanceEntryHandles.push_back(instanceEntry);
+
+                        if ((instanceEntry.index + 1) > highestInstanceIndex) {
+                            highestInstanceIndex = instanceEntry.index + 1;
+                        }
+
+                        Instance inst;
+                        inst.modelIndex = node.modelMatrixHandle.index;
+                        inst.primitiveIndex = primitiveIndex;
+                        inst.bIsAllocated = 1;
+                        for (int32_t i = 0; i < swapchain->imageCount; ++i) {
+                            memcpy(static_cast<char*>(instanceBuffers[i].allocationInfo.pMappedData) + sizeof(Instance) * instanceEntry.index, &inst, sizeof(Instance));
+                        }
+                    }
+                }
+            }
         }
     }
-    for (const MeshInformation& mesh : suzanne2.meshes) {
-        for (auto primitiveIndex : mesh.primitiveIndices) {
-            instances.emplace_back(primitiveIndex, 6, 1);
-            instances.emplace_back(primitiveIndex, 7, 1);
-            instances.emplace_back(primitiveIndex, 8, 1);
-        }
-    }
-
-
-    for (const MeshInformation& mesh : box.meshes) {
-        for (auto primitiveIndex : mesh.primitiveIndices) {
-            instances.emplace_back(primitiveIndex, 9, 1);
-            instances.emplace_back(primitiveIndex, 10, 1);
-            instances.emplace_back(primitiveIndex, 11, 1);
-            instances.emplace_back(primitiveIndex, 12, 1);
-            instances.emplace_back(primitiveIndex, 13, 1);
-            instances.emplace_back(primitiveIndex, 14, 1);
-            instances.emplace_back(primitiveIndex, 15, 1);
-            instances.emplace_back(primitiveIndex, 16, 1);
-            instances.emplace_back(primitiveIndex, 17, 1);
-        }
-    }
-    memcpy(instanceBuffer.allocationInfo.pMappedData, instances.data(), sizeof(Instance) * instances.size());
-    highestInstanceIndex = instances.size();
 }
 
 void ModelLoading::Initialize()
@@ -511,8 +515,8 @@ void ModelLoading::Render()
                 BindlessIndirectPushConstant pushData{
                     proj * view,
                     primitiveBuffer.address,
-                    modelBuffer.address,
-                    instanceBuffer.address,
+                    modelBuffers[currentFrameInFlight].address,
+                    instanceBuffers[currentFrameInFlight].address,
                     opaqueIndexedIndirectBuffers[currentFrameInFlight].address,
                     indirectCountBuffers[currentFrameInFlight].address,
                 };
@@ -593,8 +597,8 @@ void ModelLoading::Render()
                 proj * view,
                 materialBuffer.address,
                 primitiveBuffer.address,
-                modelBuffer.address,
-                instanceBuffer.address,
+                modelBuffers[currentFrameInFlight].address,
+                instanceBuffers[currentFrameInFlight].address,
             };
 
             vkCmdPushConstants(cmd, renderPipelineLayout.handle, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(BindlessAddressPushConstant), &pushData);
@@ -802,6 +806,8 @@ bool ModelLoading::LoadModelIntoBuffers(const std::filesystem::path& modelPath, 
         RemapIndices(material.textureSamplerIndices2, materialToBufferMap);
     }
 
+    modelData.samplerIndexToDescriptorBufferIndexMap = std::move(materialToBufferMap);
+
     // Textures
     materialToBufferMap.clear();
     materialToBufferMap[-1] = -1;
@@ -817,6 +823,8 @@ bool ModelLoading::LoadModelIntoBuffers(const std::filesystem::path& modelPath, 
         RemapIndices(material.textureImageIndices, materialToBufferMap);
         RemapIndices(material.textureImageIndices2, materialToBufferMap);
     }
+
+    modelData.textureIndexToDescriptorBufferIndexMap = std::move(materialToBufferMap);
 
     // Materials
     size_t sizeMaterials = model.materials.size() * sizeof(MaterialProperties);
@@ -849,6 +857,36 @@ bool ModelLoading::LoadModelIntoBuffers(const std::filesystem::path& modelPath, 
 
     modelData.samplers = std::move(model.samplers);
     modelData.images = std::move(model.images);
+    modelData.nodes = std::move(model.nodes);
     return true;
+}
+
+RuntimeMesh ModelLoading::GenerateModel(ModelDataHandle modelDataHandle, const ModelData& modelData, const Transform& topLevelTransform)
+{
+    RuntimeMesh rm;
+    rm.transform = topLevelTransform;
+    rm.nodes.reserve(modelData.nodes.size());
+    for (const Node& n : modelData.nodes) {
+        rm.nodes.emplace_back(n);
+        RuntimeNode& rn = rm.nodes.back();
+        rn.modelDataHandle = modelDataHandle;
+        if (rn.meshIndex != ~0u) {
+            rn.modelMatrixHandle = modelMatrixAllocator.Add();
+        }
+    }
+
+    glm::mat4 baseTopLevel = topLevelTransform.GetMatrix();
+    for (RuntimeNode& rn : rm.nodes) {
+        glm::mat4 worldTransform = rn.transform.GetMatrix();
+        uint32_t currentParent = rn.parent;
+        while (currentParent != ~0u) {
+            worldTransform = rm.nodes[currentParent].transform.GetMatrix() * worldTransform;
+            currentParent = rm.nodes[currentParent].parent;
+        }
+
+        rn.cachedWorldTransform = baseTopLevel * worldTransform;
+    }
+
+    return rm;
 }
 }

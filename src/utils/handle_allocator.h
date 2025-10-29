@@ -13,18 +13,17 @@
 template<typename T, size_t MaxSize>
 class HandleAllocator
 {
-    std::array<uint32_t, MaxSize> generations;
-
+    std::vector<uint32_t> generations;
     std::vector<uint32_t> freeIndices;
     uint32_t count = 0;
 
 public:
     HandleAllocator()
     {
+        generations.resize(MaxSize);
         freeIndices.reserve(MaxSize);
         for (uint32_t i = 0; i < MaxSize; ++i) {
             freeIndices.push_back(MaxSize - 1 - i);
-            generations[i] = 1;
         }
     }
 
@@ -44,14 +43,14 @@ public:
 
     bool Remove(Handle<T> handle)
     {
-        if (auto* item = Get(handle)) {
-            ++generations[handle.index];
-            freeIndices.push_back(handle.index);
-            --count;
-            return true;
+        if (!IsValid(handle)) {  // Changed from Get(handle)
+            return false;
         }
 
-        return false;
+        ++generations[handle.index];
+        freeIndices.push_back(handle.index);
+        --count;
+        return true;
     }
 
     void Clear()

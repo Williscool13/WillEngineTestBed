@@ -7,6 +7,7 @@ add_executable(model-loading
 target_link_libraries(model-loading PRIVATE
         engine-common
         crash-handling
+        core-lib
         render-lib
         input-lib
 )

@@ -286,7 +286,6 @@ ExtractedModel ModelLoader::LoadGltf(const std::filesystem::path& path)
             }
             , node.transform
         );
-
         model.nodes.push_back(node_);
     }
 
@@ -296,11 +295,21 @@ ExtractedModel ModelLoader::LoadGltf(const std::filesystem::path& path)
         }
     }
 
-    for (int i = 0; i < model.nodes.size(); i++) {
-        if (model.nodes[i].parent == ~0u) {
-            model.topNodes.push_back(i);
+    for (size_t i = 0; i < model.nodes.size(); ++i) {
+        uint32_t depth = 0;
+        uint32_t currentParent = model.nodes[i].parent;
+
+        while (currentParent != ~0u) {
+            depth++;
+            currentParent = model.nodes[currentParent].parent;
         }
+
+        model.nodes[i].depth = depth;
     }
+
+    std::ranges::sort(model.nodes, [](const Node& a, const Node& b) {
+        return a.depth < b.depth;
+    });
 
     // todo: gltf.skins
 

@@ -22,6 +22,7 @@ add_subdirectory(extern/OffsetAllocator)
 
 # My Libs
 add_subdirectory(src/crash-handling)
+add_subdirectory(src/core)
 add_subdirectory(src/physics)
 add_subdirectory(src/render)
 add_subdirectory(src/audio)

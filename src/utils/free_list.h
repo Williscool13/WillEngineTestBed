@@ -8,8 +8,8 @@
 #include <vector>
 
 
-inline static uint32_t INVALID_HANDLE_INDEX = 0;
-inline static uint32_t INVALID_HANDLE_GENERATION = 0;
+inline static uint32_t INVALID_HANDLE_INDEX = 0xFFFFFF;
+inline static uint32_t INVALID_HANDLE_GENERATION = 0xFF;
 
 template<typename T>
 struct Handle
@@ -25,6 +25,15 @@ struct Handle
         if (index != other.index) return index < other.index;
         return generation < other.generation;
     }
+
+    static const Handle Invalid;
+};
+
+
+template<typename T>
+inline const Handle<T> Handle<T>::Invalid{
+    INVALID_HANDLE_INDEX,
+    INVALID_HANDLE_GENERATION
 };
 
 /**
@@ -35,8 +44,8 @@ struct Handle
 template<typename T, size_t MaxSize>
 class FreeList
 {
-    std::array<T, MaxSize> slots;
-    std::array<uint32_t, MaxSize> generations;
+    std::vector<T> slots;
+    std::vector<uint32_t> generations;
 
     std::vector<uint32_t> freeIndices;
     uint32_t count = 0;
@@ -44,14 +53,15 @@ class FreeList
 public:
     FreeList()
     {
+        slots.resize(MaxSize);
+        generations.resize(MaxSize);
         freeIndices.reserve(MaxSize);
         for (uint32_t i = 0; i < MaxSize; ++i) {
             freeIndices.push_back(MaxSize - 1 - i);
-            generations[i] = 1;
         }
     }
 
-    Handle<T> Add()
+    Handle<T> Add(T data)
     {
         if (freeIndices.empty()) {
             return Handle<T>(INVALID_HANDLE_INDEX, INVALID_HANDLE_GENERATION);
@@ -59,6 +69,8 @@ public:
         uint32_t index = freeIndices.back();
         freeIndices.pop_back();
         ++count;
+
+        slots[index] = std::move(data);
 
         return {index, generations[index]};
     }
@@ -73,6 +85,8 @@ public:
     bool Remove(Handle<T> handle)
     {
         if (auto* item = Get(handle)) {
+            *item = T{};
+
             ++generations[handle.index];
             freeIndices.push_back(handle.index);
             --count;

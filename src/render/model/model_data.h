@@ -12,8 +12,10 @@
 #include <volk/volk.h>
 #include <OffsetAllocator/offsetAllocator.hpp>
 
+#include "core/types/transform.h"
 #include "render/vk_resources.h"
 #include "render/vk_types.h"
+#include "utils/free_list.h"
 
 namespace Renderer
 {
@@ -43,7 +45,7 @@ struct Instance
     uint32_t primitiveIndex{INT32_MAX};
     uint32_t modelIndex{INT32_MAX};
     uint32_t bIsAllocated{false};
-    uint32_t padding;
+    uint32_t padding{};
 };
 
 struct Model
@@ -57,7 +59,8 @@ struct Node
 {
     std::string name{};
     uint32_t parent{~0u};
-    uint32_t meshIndex{};
+    uint32_t meshIndex{~0u};
+    uint32_t depth{};
 
     glm::vec3 localTranslation{};
     glm::quat localRotation{};
@@ -82,7 +85,6 @@ struct ExtractedModel
 
     std::vector<MeshInformation> meshes{};
     std::vector<Node> nodes{};
-    std::vector<int32_t> topNodes{};
 };
 
 struct ModelData
@@ -91,7 +93,9 @@ struct ModelData
     std::filesystem::path path{};
 
     std::vector<MeshInformation> meshes{};
+    std::vector<Node> nodes{};
 
+    // todo: move to render/resource thread data
     std::vector<AllocatedImage> images{};
     std::vector<Sampler> samplers{};
 
@@ -103,6 +107,55 @@ struct ModelData
     OffsetAllocator::Allocation indexAllocation{};
     OffsetAllocator::Allocation materialAllocation{};
     OffsetAllocator::Allocation primitiveAllocation{};
+
+    ModelData() = default;
+
+    ModelData(const ModelData&) = delete;
+
+    ModelData& operator=(const ModelData&) = delete;
+
+    ModelData(ModelData&&) noexcept = default;
+
+    ModelData& operator=(ModelData&&) noexcept = default;
+};
+
+using ModelDataHandle = Handle<ModelData>;
+
+struct ModelMatrix
+{};
+
+using ModelMatrixHandle = Handle<ModelMatrix>;
+
+struct InstanceEntry
+{};
+
+using InstanceEntryHandle = Handle<InstanceEntry>;
+
+struct RuntimeNode
+{
+    uint32_t parent{~0u};
+    uint32_t depth{~0u};
+
+    ModelDataHandle modelDataHandle{ModelDataHandle::Invalid};
+    uint32_t meshIndex{~0u};
+
+    ModelMatrixHandle modelMatrixHandle{ModelMatrixHandle::Invalid};
+    std::vector<InstanceEntryHandle> instanceEntryHandles{};
+
+    Transform transform = Transform::Identity;
+    // populated when iterated upon at end of game frame
+    glm::mat4 cachedWorldTransform{1.0f};
+
+    explicit RuntimeNode(const Node& n);
+};
+
+struct RuntimeMesh
+{
+    // sorted when generated
+    std::vector<RuntimeNode> nodes;
+
+    Transform transform;
+    bool dirty{false};
 };
 } // Renderer
 
