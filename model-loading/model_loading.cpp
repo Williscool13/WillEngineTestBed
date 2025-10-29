@@ -284,7 +284,7 @@ void ModelLoading::CreateModels()
         }
     }
 
-    RuntimeMesh a = GenerateModel(boxHandle, *modelDatas.Get(structureHandle), Transform::Identity);
+    RuntimeMesh a = GenerateModel(structureHandle, *modelDatas.Get(structureHandle), Transform::Identity);
     runtimeMeshes.push_back(std::move(a));
 
     for (RuntimeMesh& runtimeMesh : runtimeMeshes) {

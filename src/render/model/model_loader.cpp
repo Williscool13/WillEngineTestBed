@@ -307,10 +307,6 @@ ExtractedModel ModelLoader::LoadGltf(const std::filesystem::path& path)
         model.nodes[i].depth = depth;
     }
 
-    std::ranges::sort(model.nodes, [](const Node& a, const Node& b) {
-        return a.depth < b.depth;
-    });
-
     // todo: gltf.skins
 
     return model;
