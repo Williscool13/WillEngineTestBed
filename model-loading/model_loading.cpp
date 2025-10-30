@@ -900,7 +900,7 @@ bool ModelLoading::LoadModelIntoBuffers(const std::filesystem::path& modelPath, 
 
     size_t jointMatrixCount = model.inverseBindMatrices.size();
     modelData.jointMatrixAllocation = jointMatrixAllocator.allocate(jointMatrixCount * sizeof(Model));
-    modelData.jointMatrixOffset = modelData.indexAllocation.offset / sizeof(uint32_t);
+    modelData.jointMatrixOffset = modelData.jointMatrixAllocation.offset / sizeof(uint32_t);
     modelData.inverseBindMatrices = std::move(model.inverseBindMatrices);
 
     return true;
