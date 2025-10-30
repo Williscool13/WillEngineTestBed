@@ -64,6 +64,42 @@ public struct MaterialProperties
     public float4 physicalProperties; // x: IOR, y: dispersion, z: normal scale, w: occlusion strength
 };
 
+public struct Scene
+{
+    public float4x4 view;
+    public float4x4 proj;
+    public float4x4 viewProj;
+
+    public float4x4 invView;
+    public float4x4 invProj;
+    public float4x4 invViewProj;
+
+    float4x4 viewProjCameraLookDirection;
+
+    public float4x4 prevView;
+    public float4x4 prevProj;
+    public float4x4 prevViewProj;
+
+    public float4x4 prevInvView;
+    public float4x4 prevInvProj;
+    public float4x4 prevInvViewProj;
+
+    float4x4 prevViewProjCameraLookDirection;
+
+    public float4 cameraWorldPos;
+    public float4 prevCameraWorldPos;
+
+    public float2 renderTargetSize;
+    float2 texelSize;
+
+    float2 cameraPlanes;
+
+    public float deltaTime;
+};
+
+public struct SceneData {
+    public Scene data;
+}
 
 public struct MaterialData {
     public MaterialProperties[] materials;

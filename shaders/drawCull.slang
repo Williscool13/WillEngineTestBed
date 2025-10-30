@@ -1,7 +1,7 @@
 import common;
 
 struct PushConsts {
-    float4x4 viewProj;
+    SceneData* sceneData;
 
     PrimitiveData* primitiveBuffer;
     ModelData* modelBuffer;

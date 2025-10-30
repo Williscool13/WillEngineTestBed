@@ -348,6 +348,19 @@ void ModelLoading::Initialize()
 
     modelLoader = std::make_unique<ModelLoader>(vulkanContext.get());
 
+    for (int32_t i = 0; i < swapchain->imageCount; ++i) {
+        VkBufferCreateInfo bufferInfo = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+        bufferInfo.pNext = nullptr;
+        VmaAllocationCreateInfo vmaAllocInfo = {};
+        vmaAllocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+        vmaAllocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+        bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
+        bufferInfo.size = sizeof(SceneData);
+        sceneDataBuffers.push_back(VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo));
+    }
+
+
     CreateResources();
 
     CreateModels();
@@ -417,6 +430,7 @@ void ModelLoading::Render()
 {
     std::array<uint32_t, 2> scaledRenderExtent = renderContext->GetScaledRenderExtent();
     Input& input = Input::Input::Get();
+    const float deltaTime = Time::Get().GetDeltaTime();
 
     const uint32_t currentFrameInFlight = frameNumber % swapchain->imageCount;
     const FrameData& currentFrameData = frameSynchronization[currentFrameInFlight];
@@ -474,6 +488,22 @@ void ModelLoading::Render()
         1000.0f,
         0.1f);
 
+    sceneData.prevView = sceneData.view;
+    sceneData.prevProj = sceneData.proj;
+    sceneData.prevViewProj = sceneData.viewProj;
+    sceneData.view = view;
+    sceneData.proj = proj;
+    sceneData.viewProj = proj * view;
+    sceneData.renderTargetSize.x = scaledRenderExtent[0];
+    sceneData.renderTargetSize.y = scaledRenderExtent[1];
+
+    sceneData.deltaTime = deltaTime;
+
+    AllocatedBuffer& currentSceneDataBuffer = sceneDataBuffers[currentFrameInFlight];
+    SceneData* currentSceneData = static_cast<SceneData*>(currentSceneDataBuffer.allocationInfo.pMappedData);
+    *currentSceneData = sceneData;
+
+
 
     // RuntimeMesh& runtimeMesh = runtimeMeshes[18];
     // // Update on CPU
@@ -522,7 +552,7 @@ void ModelLoading::Render()
 
                 vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, drawCullPipeline.handle);
                 BindlessIndirectPushConstant pushData{
-                    proj * view,
+                    currentSceneDataBuffer.address,
                     primitiveBuffer.address,
                     modelBuffers[currentFrameInFlight].address,
                     instanceBuffers[currentFrameInFlight].address,
@@ -603,7 +633,7 @@ void ModelLoading::Render()
             vkCmdSetScissor(cmd, 0, 1, &scissor);
 
             BindlessAddressPushConstant pushData{
-                proj * view,
+                currentSceneDataBuffer.address,
                 materialBuffer.address,
                 primitiveBuffer.address,
                 modelBuffers[currentFrameInFlight].address,

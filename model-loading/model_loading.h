@@ -105,6 +105,9 @@ private:
     OffsetAllocator::Allocator jointMatrixAllocator{sizeof(Model) * BINDLESS_MODEL_MATRIX_COUNT};
     std::vector<AllocatedBuffer> jointMatrixBuffers;
 
+    SceneData sceneData{};
+    std::vector<AllocatedBuffer> sceneDataBuffers;
+
     uint32_t highestInstanceIndex{0};
     std::vector<AllocatedBuffer> opaqueIndexedIndirectBuffers;
     std::vector<AllocatedBuffer> indirectCountBuffers; // size = FIF
@@ -113,6 +116,7 @@ private:
     Pipeline drawCullPipeline;
     PipelineLayout renderPipelineLayout;
     Pipeline renderPipeline;
+
 
 
     float cameraPos[3]{0.0f, 0.0f, -2.0f};
