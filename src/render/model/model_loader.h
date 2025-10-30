@@ -38,6 +38,8 @@ private:
 
     AllocatedImage RecordCreateImageFromData(VkCommandBuffer cmd, size_t offset, unsigned char* data, size_t size, VkExtent3D imageExtent, VkFormat format, VkImageUsageFlagBits usage, bool mipmapped);
 
+    void TopologicalSortNodes(std::vector<Node>& nodes);
+
 private:
     VulkanContext* context{};
 
@@ -47,6 +49,10 @@ private:
 
     AllocatedBuffer imageStagingBuffer{};
     OffsetAllocator::Allocator imageStagingAllocator{IMAGE_UPLOAD_STAGING_SIZE};
+
+    std::vector<Node> sortedNodes;
+    std::vector<uint32_t> oldToNew;
+    std::vector<bool> visited;
 };
 } // Renderer
 

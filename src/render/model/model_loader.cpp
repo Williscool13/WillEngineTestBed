@@ -295,6 +295,8 @@ ExtractedModel ModelLoader::LoadGltf(const std::filesystem::path& path)
         }
     }
 
+    TopologicalSortNodes(model.nodes);
+
     for (size_t i = 0; i < model.nodes.size(); ++i) {
         uint32_t depth = 0;
         uint32_t currentParent = model.nodes[i].parent;
@@ -768,5 +770,42 @@ AllocatedImage ModelLoader::RecordCreateImageFromData(VkCommandBuffer cmd, size_
     newImage.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     return newImage;
+}
+
+void ModelLoader::TopologicalSortNodes(std::vector<Node>& nodes)
+{
+    oldToNew.clear();
+    oldToNew.resize(nodes.size());
+
+    sortedNodes.clear();
+    sortedNodes.reserve(nodes.size());
+
+    visited.clear();
+    visited.resize(nodes.size(), false);
+
+    // Topological sort
+    std::function<void(uint32_t)> visit = [&](uint32_t idx) {
+        if (visited[idx]) return;
+        visited[idx] = true;
+
+        if (nodes[idx].parent != ~0u) {
+            visit(nodes[idx].parent);
+        }
+
+        oldToNew[idx] = sortedNodes.size();
+        sortedNodes.push_back(nodes[idx]);
+    };
+
+    for (uint32_t i = 0; i < nodes.size(); ++i) {
+        visit(i);
+    }
+
+    for (auto& node : sortedNodes) {
+        if (node.parent != ~0u) {
+            node.parent = oldToNew[node.parent];
+        }
+    }
+
+    nodes = std::move(sortedNodes);
 }
 } // Renderer

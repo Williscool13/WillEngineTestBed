@@ -61,6 +61,18 @@ public:
         }
     }
 
+    Handle<T> Add()
+    {
+        if (freeIndices.empty()) {
+            return Handle<T>(INVALID_HANDLE_INDEX, INVALID_HANDLE_GENERATION);
+        }
+        uint32_t index = freeIndices.back();
+        freeIndices.pop_back();
+        ++count;
+
+        return {index, generations[index]};
+    }
+
     Handle<T> Add(T data)
     {
         if (freeIndices.empty()) {

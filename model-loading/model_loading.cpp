@@ -231,29 +231,31 @@ void ModelLoading::CreateModels()
 
 
     // Suzanne Model
-
-
-    ModelData md;
+    ModelData* md;
 
     auto suzannePath = std::filesystem::path("../assets/Suzanne/glTF/Suzanne.gltf");
-    LoadModelIntoBuffers(suzannePath, md);
-    modelDataHandles.push_back(modelDatas.Add(std::move(md)));
-    ModelDataHandle suzanneHandle = modelDataHandles[0];
+    ModelDataHandle suzanneHandle = modelDatas.Add();
+    modelDataHandles.push_back(suzanneHandle);
+    md = modelDatas.Get(suzanneHandle);
+    LoadModelIntoBuffers(suzannePath, *md);
 
     auto boxPath = std::filesystem::path("../assets/BoxTextured.glb");
-    LoadModelIntoBuffers(boxPath, md);
-    modelDataHandles.push_back(modelDatas.Add(std::move(md)));
-    ModelDataHandle boxHandle = modelDataHandles[1];
+    ModelDataHandle boxHandle = modelDatas.Add();
+    modelDataHandles.push_back(boxHandle);
+    md = modelDatas.Get(boxHandle);
+    LoadModelIntoBuffers(boxPath, *md);
 
     auto riggedFigurePath = std::filesystem::path("../assets/RiggedFigure.glb");
-    LoadModelIntoBuffers(riggedFigurePath, md);
-    modelDataHandles.push_back(modelDatas.Add(std::move(md)));
-    ModelDataHandle figureHandle = modelDataHandles[2];
+    ModelDataHandle figureHandle = modelDatas.Add();
+    modelDataHandles.push_back(figureHandle);
+    md = modelDatas.Get(figureHandle);
+    LoadModelIntoBuffers(riggedFigurePath, *md);
 
     auto structurePath = std::filesystem::path("../assets/structure.glb");
-    LoadModelIntoBuffers(structurePath, md);
-    modelDataHandles.push_back(modelDatas.Add(std::move(md)));
-    ModelDataHandle structureHandle = modelDataHandles[3];
+    ModelDataHandle structureHandle = modelDatas.Add();
+    modelDataHandles.push_back(structureHandle);
+    md = modelDatas.Get(structureHandle);
+    LoadModelIntoBuffers(structurePath, *md);
 
     runtimeMeshes.reserve(100);
 
@@ -266,7 +268,8 @@ void ModelLoading::CreateModels()
                 glm::vec3(1.0f, 1.0f, 1.0f)
             };
 
-            RuntimeMesh a = GenerateModel(suzanneHandle, *modelDatas.Get(suzanneHandle), boxTransform);
+            RuntimeMesh a = GenerateModel(suzanneHandle, boxTransform);
+            UpdateTransforms(a);
             runtimeMeshes.push_back(std::move(a));
         }
     }
@@ -279,41 +282,18 @@ void ModelLoading::CreateModels()
                 glm::vec3(1.0f, 1.0f, 1.0f)
             };
 
-            RuntimeMesh a = GenerateModel(boxHandle, *modelDatas.Get(boxHandle), boxTransform);
+            RuntimeMesh a = GenerateModel(boxHandle, boxTransform);
+            UpdateTransforms(a);
             runtimeMeshes.push_back(std::move(a));
         }
     }
 
-    RuntimeMesh a = GenerateModel(structureHandle, *modelDatas.Get(structureHandle), Transform::Identity);
+    RuntimeMesh a = GenerateModel(structureHandle, Transform::Identity);
+    UpdateTransforms(a);
     runtimeMeshes.push_back(std::move(a));
 
     for (RuntimeMesh& runtimeMesh : runtimeMeshes) {
-        for (auto& node : runtimeMesh.nodes) {
-            if (node.modelMatrixHandle != ModelMatrixHandle::Invalid) {
-                for (int32_t i = 0; i < swapchain->imageCount; ++i) {
-                    memcpy(static_cast<char*>(modelBuffers[i].allocationInfo.pMappedData) + node.modelMatrixHandle.index * sizeof(Model), &node.cachedWorldTransform, sizeof(Model));
-                }
-
-                if (ModelData* modelData = modelDatas.Get(node.modelDataHandle)) {
-                    for (uint32_t primitiveIndex : modelData->meshes[node.meshIndex].primitiveIndices) {
-                        InstanceEntryHandle instanceEntry = instanceEntryAllocator.Add();
-                        node.instanceEntryHandles.push_back(instanceEntry);
-
-                        if ((instanceEntry.index + 1) > highestInstanceIndex) {
-                            highestInstanceIndex = instanceEntry.index + 1;
-                        }
-
-                        Instance inst;
-                        inst.modelIndex = node.modelMatrixHandle.index;
-                        inst.primitiveIndex = primitiveIndex;
-                        inst.bIsAllocated = 1;
-                        for (int32_t i = 0; i < swapchain->imageCount; ++i) {
-                            memcpy(static_cast<char*>(instanceBuffers[i].allocationInfo.pMappedData) + sizeof(Instance) * instanceEntry.index, &inst, sizeof(Instance));
-                        }
-                    }
-                }
-            }
-        }
+        InitialUploadRuntimeMesh(runtimeMesh);
     }
 }
 
@@ -861,32 +841,68 @@ bool ModelLoading::LoadModelIntoBuffers(const std::filesystem::path& modelPath, 
     return true;
 }
 
-RuntimeMesh ModelLoading::GenerateModel(ModelDataHandle modelDataHandle, const ModelData& modelData, const Transform& topLevelTransform)
+RuntimeMesh ModelLoading::GenerateModel(ModelDataHandle modelDataHandle, const Transform& topLevelTransform)
 {
-    RuntimeMesh rm;
+    RuntimeMesh rm{};
+
+    const ModelData* modelData = modelDatas.Get(modelDataHandle);
+    if (!modelData) { return rm; }
+
     rm.transform = topLevelTransform;
-    rm.nodes.reserve(modelData.nodes.size());
-    for (const Node& n : modelData.nodes) {
+    rm.nodes.reserve(modelData->nodes.size());
+    for (const Node& n : modelData->nodes) {
         rm.nodes.emplace_back(n);
         RuntimeNode& rn = rm.nodes.back();
         rn.modelDataHandle = modelDataHandle;
-        if (rn.meshIndex != ~0u) {
-            rn.modelMatrixHandle = modelMatrixAllocator.Add();
-        }
     }
 
-    glm::mat4 baseTopLevel = topLevelTransform.GetMatrix();
-    for (RuntimeNode& rn : rm.nodes) {
+    return rm;
+}
+
+void ModelLoading::UpdateTransforms(RuntimeMesh& runtimeMesh)
+{
+    glm::mat4 baseTopLevel = runtimeMesh.transform.GetMatrix();
+    for (RuntimeNode& rn : runtimeMesh.nodes) {
         glm::mat4 worldTransform = rn.transform.GetMatrix();
         uint32_t currentParent = rn.parent;
         while (currentParent != ~0u) {
-            worldTransform = rm.nodes[currentParent].transform.GetMatrix() * worldTransform;
-            currentParent = rm.nodes[currentParent].parent;
+            worldTransform = runtimeMesh.nodes[currentParent].transform.GetMatrix() * worldTransform;
+            currentParent = runtimeMesh.nodes[currentParent].parent;
         }
 
         rn.cachedWorldTransform = baseTopLevel * worldTransform;
     }
+}
 
-    return rm;
+void ModelLoading::InitialUploadRuntimeMesh(RuntimeMesh& runtimeMesh)
+{
+    for (auto& node : runtimeMesh.nodes) {
+        if (node.meshIndex != ~0u) {
+            node.modelMatrixHandle = modelMatrixAllocator.Add();
+
+            for (int32_t i = 0; i < swapchain->imageCount; ++i) {
+                memcpy(static_cast<char*>(modelBuffers[i].allocationInfo.pMappedData) + node.modelMatrixHandle.index * sizeof(Model), &node.cachedWorldTransform, sizeof(Model));
+            }
+
+            if (ModelData* modelData = modelDatas.Get(node.modelDataHandle)) {
+                for (uint32_t primitiveIndex : modelData->meshes[node.meshIndex].primitiveIndices) {
+                    InstanceEntryHandle instanceEntry = instanceEntryAllocator.Add();
+                    node.instanceEntryHandles.push_back(instanceEntry);
+
+                    if ((instanceEntry.index + 1) > highestInstanceIndex) {
+                        highestInstanceIndex = instanceEntry.index + 1;
+                    }
+
+                    Instance inst;
+                    inst.modelIndex = node.modelMatrixHandle.index;
+                    inst.primitiveIndex = primitiveIndex;
+                    inst.bIsAllocated = 1;
+                    for (int32_t i = 0; i < swapchain->imageCount; ++i) {
+                        memcpy(static_cast<char*>(instanceBuffers[i].allocationInfo.pMappedData) + sizeof(Instance) * instanceEntry.index, &inst, sizeof(Instance));
+                    }
+                }
+            }
+        }
+    }
 }
 }

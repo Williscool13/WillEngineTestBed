@@ -52,7 +52,16 @@ public:
 private:
     bool LoadModelIntoBuffers(const std::filesystem::path& modelPath, ModelData& modelData);
 
-    RuntimeMesh GenerateModel(ModelDataHandle modelDataHandle, const ModelData& modelData, const Transform& topLevelTransform);
+    RuntimeMesh GenerateModel(ModelDataHandle modelDataHandle, const Transform& topLevelTransform);
+
+    void UpdateTransforms(RuntimeMesh& runtimeMesh);
+
+    /**
+     * Uploads runtime mesh properties to model and instance buffers. \n
+     * Uploads to all at once. Will cause synchronization problems if run during render loop (without waiting for device idle).
+     * @param runtimeMesh
+     */
+    void InitialUploadRuntimeMesh(RuntimeMesh& runtimeMesh);
 
 private:
     SDL_Window* window{nullptr};
