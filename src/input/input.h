@@ -10,7 +10,7 @@
 #include <glm/glm.hpp>
 
 
-namespace Input
+namespace Core
 {
 enum class Key : uint32_t
 {
@@ -259,4 +259,8 @@ private:
     static void UpdateInputState(InputStateData& inputButton, bool isPressed);
 };
 }
+
+using Input = Core::Input;
+using Key = Core::Key;
+using MouseButton = Core::MouseButton;
 #endif //INPUT_H

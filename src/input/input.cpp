@@ -7,7 +7,7 @@
 #include <ranges>
 #include <fmt/format.h>
 
-namespace Input
+namespace Core
 {
 void Input::Init(SDL_Window* window, const uint32_t w, const uint32_t h)
 {

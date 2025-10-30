@@ -63,6 +63,8 @@ private:
      */
     void InitialUploadRuntimeMesh(RuntimeMesh& runtimeMesh);
 
+    void UpdateRuntimeMesh(RuntimeMesh& runtimeMesh, const AllocatedBuffer& modelBuffer);
+
 private:
     SDL_Window* window{nullptr};
     std::unique_ptr<VulkanContext> vulkanContext{};
@@ -113,6 +115,7 @@ private:
     float cameraPos[3]{0.0f, 0.0f, -2.0f};
     float cameraLook[3]{0.0f, 0.0f, 0.0f};
     float boxPos[3]{0.0f, 0.0f, 0.0f};
+    ModelDataHandle structureHandle;
 
     bool bShouldExit{false};
 

@@ -29,6 +29,7 @@
 
 #include "input/input.h"
 #include "../src/render/model/model_loader.h"
+#include "core/time.h"
 #include "render/render_targets.h"
 #include "utils/utils.h"
 #include "utils/world_constants.h"
@@ -252,7 +253,7 @@ void ModelLoading::CreateModels()
     LoadModelIntoBuffers(riggedFigurePath, *md);
 
     auto structurePath = std::filesystem::path("../assets/structure.glb");
-    ModelDataHandle structureHandle = modelDatas.Add();
+    structureHandle = modelDatas.Add();
     modelDataHandles.push_back(structureHandle);
     md = modelDatas.Get(structureHandle);
     LoadModelIntoBuffers(structurePath, *md);
@@ -340,7 +341,8 @@ void ModelLoading::Initialize()
 
 void ModelLoading::Run()
 {
-    Input::Input& input = Input::Input::Get();
+    Input& input = Input::Input::Get();
+    Core::Time& time = Time::Get();
     SDL_Event e;
     bool exit = false;
     while (true) {
@@ -354,6 +356,7 @@ void ModelLoading::Run()
             }
         }
         input.UpdateFocus(SDL_GetWindowFlags(window));
+        time.Update();
 
         if (bSwapchainOutdated) {
             vkDeviceWaitIdle(vulkanContext->device);
@@ -399,7 +402,7 @@ void ModelLoading::Run()
 void ModelLoading::Render()
 {
     std::array<uint32_t, 2> scaledRenderExtent = renderContext->GetScaledRenderExtent();
-    Input::Input& input = Input::Input::Get();
+    Input& input = Input::Input::Get();
 
     const uint32_t currentFrameInFlight = frameNumber % swapchain->imageCount;
     const FrameData& currentFrameData = frameSynchronization[currentFrameInFlight];
@@ -434,12 +437,6 @@ void ModelLoading::Render()
         ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
 
-        if (input.IsKeyPressed(Input::Key::G)) {
-            LOG_INFO("G is pressed");
-        }
-        if (input.IsKeyReleased(Input::Key::G)) {
-            LOG_INFO("G is released");
-        }
         if (ImGui::Begin("Main")) {
             ImGui::Text("Hello!");
             ImGui::DragFloat3("Position", cameraPos);
@@ -462,6 +459,24 @@ void ModelLoading::Render()
         static_cast<float>(scaledRenderExtent[0]) / static_cast<float>(scaledRenderExtent[1]),
         1000.0f,
         0.1f);
+
+
+    RuntimeMesh& runtimeMesh = runtimeMeshes[18];
+    // Update on CPU
+    {
+        const float deltaTime = Time::Get().GetDeltaTime();
+        static float time = 0.0f;
+        time += deltaTime;
+        float yOffset = 5.0f * sinf(time * 0.5f);
+        runtimeMesh.transform.translation.y = yOffset;
+        UpdateTransforms(runtimeMesh);
+    }
+
+    // GPU only needs to know all:
+    //  - model matrix index
+    //  - mat4 model matrix
+    //  - model matrix used for this FIF
+    UpdateRuntimeMesh(runtimeMesh, modelBuffers[currentFrameInFlight]);
 
     //
     {
@@ -876,7 +891,7 @@ void ModelLoading::UpdateTransforms(RuntimeMesh& runtimeMesh)
 
 void ModelLoading::InitialUploadRuntimeMesh(RuntimeMesh& runtimeMesh)
 {
-    for (auto& node : runtimeMesh.nodes) {
+    for (RuntimeNode& node : runtimeMesh.nodes) {
         if (node.meshIndex != ~0u) {
             node.modelMatrixHandle = modelMatrixAllocator.Add();
 
@@ -902,6 +917,15 @@ void ModelLoading::InitialUploadRuntimeMesh(RuntimeMesh& runtimeMesh)
                     }
                 }
             }
+        }
+    }
+}
+
+void ModelLoading::UpdateRuntimeMesh(RuntimeMesh& runtimeMesh, const AllocatedBuffer& modelBuffer)
+{
+    for (RuntimeNode& node : runtimeMesh.nodes) {
+        if (node.modelMatrixHandle.IsValid()) {
+            memcpy(static_cast<char*>(modelBuffer.allocationInfo.pMappedData) + node.modelMatrixHandle.index * sizeof(Model) + offsetof(Model, modelMatrix), &node.cachedWorldTransform, sizeof(node.cachedWorldTransform));
         }
     }
 }
