@@ -22,4 +22,6 @@ compile_shaders(model-loading
         ${CMAKE_SOURCE_DIR}/shaders/indirectDraw.slang vertex vertexMain
         ${CMAKE_SOURCE_DIR}/shaders/indirectDraw.slang fragment fragmentMain
         ${CMAKE_SOURCE_DIR}/shaders/drawCull.slang compute computeMain
+        ${CMAKE_SOURCE_DIR}/shaders/skeletalIndirectDraw.slang vertex vertexMain
+        ${CMAKE_SOURCE_DIR}/shaders/skeletalIndirectDraw.slang fragment fragmentMain
 )

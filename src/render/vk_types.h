@@ -59,8 +59,12 @@ struct BindlessIndirectPushConstant
     VkDeviceAddress primitiveBuffer;
     VkDeviceAddress modelBuffer;
     VkDeviceAddress instanceBuffer;
+
     VkDeviceAddress indirectBuffer;
     VkDeviceAddress indirectCountBuffer;
+
+    VkDeviceAddress skeletalIndirectBuffer;
+    VkDeviceAddress skeletalIndirectCountBuffer;
 };
 
 struct BindlessAddressPushConstant

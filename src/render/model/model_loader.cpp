@@ -339,6 +339,10 @@ ExtractedModel ModelLoader::LoadGltf(const std::filesystem::path& path)
         model.nodes[i].depth = depth;
     }
 
+    for (auto anim : gltf.animations) {
+
+    }
+
     return model;
 }
 

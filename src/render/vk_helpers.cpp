@@ -34,6 +34,31 @@ VkImageMemoryBarrier2 VkHelpers::ImageMemoryBarrier(
     };
 }
 
+VkBufferMemoryBarrier2 VkHelpers::BufferMemoryBarrier(
+    VkBuffer buffer,
+    const VkDeviceSize offset,
+    const VkDeviceSize size,
+    const VkPipelineStageFlagBits2 srcStageMask,
+    const VkAccessFlagBits2 srcAccessMask,
+    const VkPipelineStageFlagBits2 dstStageMask,
+    const VkAccessFlagBits2 dstAccessMask
+)
+{
+    return {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
+        .pNext = nullptr,
+        .srcStageMask = srcStageMask,
+        .srcAccessMask = srcAccessMask,
+        .dstStageMask = dstStageMask,
+        .dstAccessMask = dstAccessMask,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .buffer = buffer,
+        .offset = offset,
+        .size = size,
+    };
+}
+
 VkImageSubresourceRange VkHelpers::SubresourceRange(const VkImageAspectFlags aspectMask, const uint32_t levelCount, const uint32_t layerCount)
 {
     return {

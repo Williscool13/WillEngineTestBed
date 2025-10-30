@@ -15,6 +15,10 @@ VkImageMemoryBarrier2 ImageMemoryBarrier(VkImage image, const VkImageSubresource
                                          VkPipelineStageFlagBits2 srcStageMask, VkAccessFlagBits2 srcAccessMask, VkImageLayout oldLayout,
                                          VkPipelineStageFlagBits2 dstStageMask, VkAccessFlagBits2 dstAccessMask, VkImageLayout newLayout);
 
+VkBufferMemoryBarrier2 BufferMemoryBarrier(VkBuffer buffer, VkDeviceSize offset, VkDeviceSize size,
+                                                      VkPipelineStageFlagBits2 srcStageMask, VkAccessFlagBits2 srcAccessMask,
+                                                      VkPipelineStageFlagBits2 dstStageMask, VkAccessFlagBits2 dstAccessMask);
+
 VkImageSubresourceRange SubresourceRange(VkImageAspectFlags aspectMask, uint32_t levelCount = VK_REMAINING_MIP_LEVELS, uint32_t layerCount = VK_REMAINING_ARRAY_LAYERS);
 
 VkDependencyInfo DependencyInfo(VkImageMemoryBarrier2* imageBarrier);
@@ -56,6 +60,7 @@ VkRenderingAttachmentInfo RenderingAttachmentInfo(VkImageView view, const VkClea
 VkRenderingInfo RenderingInfo(VkExtent2D renderExtent, const VkRenderingAttachmentInfo* colorAttachment, const VkRenderingAttachmentInfo* depthAttachment);
 
 VkViewport GenerateViewport(uint32_t width, uint32_t height);
+
 VkRect2D GenerateScissor(uint32_t width, uint32_t height);
 
 template<typename T>

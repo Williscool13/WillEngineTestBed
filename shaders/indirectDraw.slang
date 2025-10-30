@@ -36,7 +36,7 @@ VertexOutput vertexMain(Vertex vertex, uniform PushConsts pushConstants, uint st
     float4x4 modelMatrix = m.modelMatrix;
 
     output.position = mul(modelMatrix, float4(vertex.position, 1.0f));
-    output.position = mul((*pushConstants.sceneData).data.viewProj, output.position);
+    output.position = mul(pushConstants.sceneData->viewProj, output.position);
 
     output.uv = vertex.uv;
 

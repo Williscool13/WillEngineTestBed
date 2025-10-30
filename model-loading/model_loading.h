@@ -109,8 +109,10 @@ private:
     std::vector<AllocatedBuffer> sceneDataBuffers;
 
     uint32_t highestInstanceIndex{0};
-    std::vector<AllocatedBuffer> opaqueIndexedIndirectBuffers;
-    std::vector<AllocatedBuffer> indirectCountBuffers; // size = FIF
+    AllocatedBuffer opaqueIndexedIndirectBuffer;
+    std::vector<AllocatedBuffer> indirectCountBuffers;
+    AllocatedBuffer opaqueSkeletalIndexedIndirectBuffer;
+    std::vector<AllocatedBuffer> skeletalIndirectCountBuffers;
 
     PipelineLayout drawCullPipelineLayout;
     Pipeline drawCullPipeline;

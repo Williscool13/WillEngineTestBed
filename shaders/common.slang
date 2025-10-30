@@ -7,6 +7,8 @@ public struct Vertex
     public float4 tangent;
     public float4 color;
     public float2 uv;
+    public uint4 joints;
+    public float4 weights;
 };
 
 public struct Model
@@ -23,7 +25,7 @@ public struct Primitive
     public int32_t vertexOffset;
     public uint32_t bHasTransparent;
     public uint32_t materialIndex;
-    uint32_t padding;
+    public uint32_t bHasSkinning;
     uint32_t padding1;
     uint32_t padding2;
     // {3} center, {1} radius
@@ -35,7 +37,7 @@ public struct Instance
 {
     public uint32_t primitiveIndex;
     public uint32_t modelIndex;
-    public uint32_t padding;
+    public uint32_t jointMatrixOffset;
     public uint32_t bIsAllocated;
 };
 
@@ -64,7 +66,7 @@ public struct MaterialProperties
     public float4 physicalProperties; // x: IOR, y: dispersion, z: normal scale, w: occlusion strength
 };
 
-public struct Scene
+public struct SceneData
 {
     public float4x4 view;
     public float4x4 proj;
@@ -96,10 +98,6 @@ public struct Scene
 
     public float deltaTime;
 };
-
-public struct SceneData {
-    public Scene data;
-}
 
 public struct MaterialData {
     public MaterialProperties[] materials;

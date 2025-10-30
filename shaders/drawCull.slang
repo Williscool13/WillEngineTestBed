@@ -6,8 +6,12 @@ struct PushConsts {
     PrimitiveData* primitiveBuffer;
     ModelData* modelBuffer;
     InstanceData* instanceBuffer;
+
     IndexedIndirectBuffer* indirectBuffer;
     IndirectCount* indirectCount;
+
+    IndexedIndirectBuffer* skeletalIndirectBuffer;
+    IndirectCount* skeletalIndirectCount;
 };
 
 [shader("compute")]
@@ -27,7 +31,15 @@ void computeMain(uniform PushConsts pushConstants, uint3 threadId : SV_DispatchT
     cmd.instanceCount = 1;
     cmd.firstInstance = invocationId;
 
-    uint outputIndex;
-    InterlockedAdd((*pushConstants.indirectCount).opaqueCount, 1, outputIndex);
-    pushConstants.indirectBuffer.instances[outputIndex] = cmd;
+
+    if (p.bHasSkinning == 1) {
+        uint outputIndex;
+        InterlockedAdd(pushConstants.skeletalIndirectCount->opaqueCount, 1, outputIndex);
+        pushConstants.skeletalIndirectBuffer->instances[outputIndex] = cmd;
+    } else {
+        uint outputIndex;
+        InterlockedAdd(pushConstants.indirectCount->opaqueCount, 1, outputIndex);
+        pushConstants.indirectBuffer->instances[outputIndex] = cmd;
+    }
+
 }

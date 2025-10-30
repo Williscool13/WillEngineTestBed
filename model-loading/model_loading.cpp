@@ -210,16 +210,24 @@ void ModelLoading::CreateModels()
     bufferInfo.size = sizeof(Primitive) * MEGA_PRIMITIVE_BUFFER_COUNT;
     primitiveBuffer = VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
 
+    bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT;
+    bufferInfo.size = sizeof(VkDrawIndexedIndirectCommand) * BINDLESS_INSTANCE_COUNT;
+    opaqueIndexedIndirectBuffer = VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
+
+    bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT;
+    bufferInfo.size = sizeof(VkDrawIndexedIndirectCommand) * BINDLESS_INSTANCE_COUNT;
+    opaqueSkeletalIndexedIndirectBuffer = VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
+
     indirectCountBuffers.reserve(swapchain->imageCount);
-    opaqueIndexedIndirectBuffers.reserve(swapchain->imageCount);
+    skeletalIndirectCountBuffers.reserve(swapchain->imageCount);
     for (int32_t i = 0; i < swapchain->imageCount; ++i) {
         bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
         bufferInfo.size = sizeof(IndirectCount);
         indirectCountBuffers.push_back(VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo));
 
-        bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT;
-        bufferInfo.size = sizeof(VkDrawIndexedIndirectCommand) * BINDLESS_INSTANCE_COUNT;
-        opaqueIndexedIndirectBuffers.push_back(VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo));
+        bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+        bufferInfo.size = sizeof(IndirectCount);
+        skeletalIndirectCountBuffers.push_back(VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo));
 
         bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
         bufferInfo.size = sizeof(Model) * BINDLESS_MODEL_MATRIX_COUNT;
@@ -504,7 +512,6 @@ void ModelLoading::Render()
     *currentSceneData = sceneData;
 
 
-
     // RuntimeMesh& runtimeMesh = runtimeMeshes[18];
     // // Update on CPU
     // {
@@ -528,24 +535,22 @@ void ModelLoading::Render()
         {
             {
                 vkCmdFillBuffer(cmd, indirectCountBuffers[currentFrameInFlight].handle,offsetof(IndirectCount, opaqueCount), sizeof(uint32_t), 0);
-                VkBufferMemoryBarrier2 bufferBarrier[1];
-                bufferBarrier[0].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
-                bufferBarrier[0].pNext = nullptr;
-                bufferBarrier[0].buffer = indirectCountBuffers[currentFrameInFlight].handle;
-                bufferBarrier[0].srcStageMask = VK_PIPELINE_STAGE_2_CLEAR_BIT;
-                bufferBarrier[0].srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-                bufferBarrier[0].dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-                bufferBarrier[0].dstAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
-                bufferBarrier[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                bufferBarrier[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                bufferBarrier[0].offset = 0;
-                bufferBarrier[0].size = VK_WHOLE_SIZE;
+                vkCmdFillBuffer(cmd, skeletalIndirectCountBuffers[currentFrameInFlight].handle,offsetof(IndirectCount, opaqueCount), sizeof(uint32_t), 0);
+                VkBufferMemoryBarrier2 bufferBarrier[2];
+                bufferBarrier[0] = VkHelpers::BufferMemoryBarrier(
+                    indirectCountBuffers[currentFrameInFlight].handle, 0, VK_WHOLE_SIZE,
+                    VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+                    VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT);
+                bufferBarrier[1] = VkHelpers::BufferMemoryBarrier(
+                    skeletalIndirectCountBuffers[currentFrameInFlight].handle, 0, VK_WHOLE_SIZE,
+                    VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+                    VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT);
 
                 VkDependencyInfo depInfo{};
                 depInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
                 depInfo.pNext = nullptr;
                 depInfo.dependencyFlags = 0;
-                depInfo.bufferMemoryBarrierCount = 1;
+                depInfo.bufferMemoryBarrierCount = 2;
                 depInfo.pBufferMemoryBarriers = bufferBarrier;
 
                 vkCmdPipelineBarrier2(cmd, &depInfo);
@@ -556,8 +561,10 @@ void ModelLoading::Render()
                     primitiveBuffer.address,
                     modelBuffers[currentFrameInFlight].address,
                     instanceBuffers[currentFrameInFlight].address,
-                    opaqueIndexedIndirectBuffers[currentFrameInFlight].address,
+                    opaqueIndexedIndirectBuffer.address,
                     indirectCountBuffers[currentFrameInFlight].address,
+                    opaqueSkeletalIndexedIndirectBuffer.address,
+                    skeletalIndirectCountBuffers[currentFrameInFlight].address,
                 };
 
                 vkCmdPushConstants(cmd, drawCullPipelineLayout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(BindlessIndirectPushConstant), &pushData);
@@ -567,35 +574,29 @@ void ModelLoading::Render()
 
             //
             {
-                VkBufferMemoryBarrier2 bufferBarrier[2];
-                bufferBarrier[0].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
-                bufferBarrier[0].pNext = nullptr;
-                bufferBarrier[0].buffer = opaqueIndexedIndirectBuffers[currentFrameInFlight].handle;
-                bufferBarrier[0].srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-                bufferBarrier[0].srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
-                bufferBarrier[0].dstStageMask = VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT;
-                bufferBarrier[0].dstAccessMask = VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT;
-                bufferBarrier[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                bufferBarrier[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                bufferBarrier[0].offset = 0;
-                bufferBarrier[0].size = VK_WHOLE_SIZE;
-                bufferBarrier[1].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
-                bufferBarrier[1].pNext = nullptr;
-                bufferBarrier[1].buffer = indirectCountBuffers[currentFrameInFlight].handle;
-                bufferBarrier[1].srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-                bufferBarrier[1].srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
-                bufferBarrier[1].dstStageMask = VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT;
-                bufferBarrier[1].dstAccessMask = VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT;
-                bufferBarrier[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                bufferBarrier[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                bufferBarrier[1].offset = 0;
-                bufferBarrier[1].size = VK_WHOLE_SIZE;
+                VkBufferMemoryBarrier2 bufferBarrier[4];
+                bufferBarrier[0] = VkHelpers::BufferMemoryBarrier(
+                    opaqueIndexedIndirectBuffer.handle, 0, VK_WHOLE_SIZE,
+                    VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT,
+                    VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT, VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT);
+                bufferBarrier[1] = VkHelpers::BufferMemoryBarrier(
+                    indirectCountBuffers[currentFrameInFlight].handle, 0, VK_WHOLE_SIZE,
+                    VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT,
+                    VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT, VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT);
+                bufferBarrier[2] = VkHelpers::BufferMemoryBarrier(
+                    opaqueSkeletalIndexedIndirectBuffer.handle, 0, VK_WHOLE_SIZE,
+                    VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT,
+                    VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT, VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT);
+                bufferBarrier[3] = VkHelpers::BufferMemoryBarrier(
+                    skeletalIndirectCountBuffers[currentFrameInFlight].handle, 0, VK_WHOLE_SIZE,
+                    VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT,
+                    VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT, VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT);
 
                 VkDependencyInfo depInfo{};
                 depInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
                 depInfo.pNext = nullptr;
                 depInfo.dependencyFlags = 0;
-                depInfo.bufferMemoryBarrierCount = 2;
+                depInfo.bufferMemoryBarrierCount = 4;
                 depInfo.pBufferMemoryBarriers = bufferBarrier;
 
                 vkCmdPipelineBarrier2(cmd, &depInfo);
@@ -655,8 +656,12 @@ void ModelLoading::Render()
             vkCmdBindVertexBuffers(cmd, 0, 2, vertexBuffers, vertexOffsets);
             vkCmdBindIndexBuffer(cmd, megaIndexBuffer.handle, 0, VK_INDEX_TYPE_UINT32);
             vkCmdDrawIndexedIndirectCount(cmd,
-                                          opaqueIndexedIndirectBuffers[currentFrameInFlight].handle, 0,
+                                          opaqueIndexedIndirectBuffer.handle, 0,
                                           indirectCountBuffers[currentFrameInFlight].handle, offsetof(IndirectCount, opaqueCount),
+                                          highestInstanceIndex, sizeof(VkDrawIndexedIndirectCommand));
+            vkCmdDrawIndexedIndirectCount(cmd,
+                                          opaqueSkeletalIndexedIndirectBuffer.handle, 0,
+                                          skeletalIndirectCountBuffers[currentFrameInFlight].handle, offsetof(IndirectCount, opaqueCount),
                                           highestInstanceIndex, sizeof(VkDrawIndexedIndirectCommand));
 
             vkCmdEndRendering(cmd);
