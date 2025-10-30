@@ -63,7 +63,7 @@ private:
      */
     void InitialUploadRuntimeMesh(RuntimeMesh& runtimeMesh);
 
-    void UpdateRuntimeMesh(RuntimeMesh& runtimeMesh, const AllocatedBuffer& modelBuffer);
+    void UpdateRuntimeMesh(RuntimeMesh& runtimeMesh, const AllocatedBuffer& modelBuffer, const AllocatedBuffer& jointMatrixBuffer);
 
 private:
     SDL_Window* window{nullptr};
@@ -101,6 +101,9 @@ private:
     std::vector<AllocatedBuffer> modelBuffers;
     HandleAllocator<InstanceEntry, BINDLESS_INSTANCE_COUNT> instanceEntryAllocator;
     std::vector<AllocatedBuffer> instanceBuffers;
+    // Joint matrices need to be contiguous because indices are coded in vertices. We could modify vertex properties but...
+    OffsetAllocator::Allocator jointMatrixAllocator{sizeof(Model) * BINDLESS_MODEL_MATRIX_COUNT};
+    std::vector<AllocatedBuffer> jointMatrixBuffers;
 
     uint32_t highestInstanceIndex{0};
     std::vector<AllocatedBuffer> opaqueIndexedIndirectBuffers;

@@ -228,6 +228,10 @@ void ModelLoading::CreateModels()
         bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
         bufferInfo.size = sizeof(Instance) * BINDLESS_INSTANCE_COUNT;
         instanceBuffers.push_back(VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo));
+
+        bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
+        bufferInfo.size = sizeof(Model) * BINDLESS_MODEL_MATRIX_COUNT;
+        jointMatrixBuffers.push_back(VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo));
     }
 
 
@@ -258,22 +262,28 @@ void ModelLoading::CreateModels()
     md = modelDatas.Get(structureHandle);
     LoadModelIntoBuffers(structurePath, *md);
 
+    auto simpleSkin = std::filesystem::path("../assets/simpleSkin/SimpleSkin.gltf");
+    auto simpleSkinHandle = modelDatas.Add();
+    modelDataHandles.push_back(simpleSkinHandle);
+    md = modelDatas.Get(simpleSkinHandle);
+    LoadModelIntoBuffers(simpleSkin, *md);
+
     runtimeMeshes.reserve(100);
 
 
-    for (int y = 0; y < 3; ++y) {
-        for (int x = 0; x < 3; ++x) {
-            Transform boxTransform{
-                glm::vec3(x * 2.0f, y * 2.0f, 0.0f),
-                glm::angleAxis(glm::radians(180.0f), glm::vec3(0.0f, 1.0f, 0.0f)),
-                glm::vec3(1.0f, 1.0f, 1.0f)
-            };
-
-            RuntimeMesh a = GenerateModel(suzanneHandle, boxTransform);
-            UpdateTransforms(a);
-            runtimeMeshes.push_back(std::move(a));
-        }
-    }
+    // for (int y = 0; y < 3; ++y) {
+    //     for (int x = 0; x < 3; ++x) {
+    //         Transform boxTransform{
+    //             glm::vec3(x * 2.0f, y * 2.0f, 0.0f),
+    //             glm::angleAxis(glm::radians(180.0f), glm::vec3(0.0f, 1.0f, 0.0f)),
+    //             glm::vec3(1.0f, 1.0f, 1.0f)
+    //         };
+    //
+    //         RuntimeMesh a = GenerateModel(suzanneHandle, boxTransform);
+    //         UpdateTransforms(a);
+    //         runtimeMeshes.push_back(std::move(a));
+    //     }
+    // }
 
     for (int y = 0; y < 3; ++y) {
         for (int x = 0; x < 3; ++x) {
@@ -289,7 +299,11 @@ void ModelLoading::CreateModels()
         }
     }
 
-    RuntimeMesh a = GenerateModel(structureHandle, Transform::Identity);
+    // RuntimeMesh a = GenerateModel(structureHandle, Transform::Identity);
+    // UpdateTransforms(a);
+    // runtimeMeshes.push_back(std::move(a));
+
+    RuntimeMesh a = GenerateModel(simpleSkinHandle, Transform::Identity);
     UpdateTransforms(a);
     runtimeMeshes.push_back(std::move(a));
 
@@ -461,22 +475,22 @@ void ModelLoading::Render()
         0.1f);
 
 
-    RuntimeMesh& runtimeMesh = runtimeMeshes[18];
-    // Update on CPU
-    {
-        const float deltaTime = Time::Get().GetDeltaTime();
-        static float time = 0.0f;
-        time += deltaTime;
-        float yOffset = 5.0f * sinf(time * 0.5f);
-        runtimeMesh.transform.translation.y = yOffset;
-        UpdateTransforms(runtimeMesh);
-    }
-
-    // GPU only needs to know all:
-    //  - model matrix index
-    //  - mat4 model matrix
-    //  - model matrix used for this FIF
-    UpdateRuntimeMesh(runtimeMesh, modelBuffers[currentFrameInFlight]);
+    // RuntimeMesh& runtimeMesh = runtimeMeshes[18];
+    // // Update on CPU
+    // {
+    //     const float deltaTime = Time::Get().GetDeltaTime();
+    //     static float time = 0.0f;
+    //     time += deltaTime;
+    //     float yOffset = 5.0f * sinf(time * 0.5f);
+    //     runtimeMesh.transform.translation.y = yOffset;
+    //     UpdateTransforms(runtimeMesh);
+    // }
+    //
+    // // GPU only needs to know all:
+    // //  - model matrix index
+    // //  - mat4 model matrix
+    // //  - model matrix used for this FIF
+    // UpdateRuntimeMesh(runtimeMesh, modelBuffers[currentFrameInFlight]);
 
     //
     {
@@ -853,6 +867,12 @@ bool ModelLoading::LoadModelIntoBuffers(const std::filesystem::path& modelPath, 
     modelData.samplers = std::move(model.samplers);
     modelData.images = std::move(model.images);
     modelData.nodes = std::move(model.nodes);
+
+    size_t jointMatrixCount = model.inverseBindMatrices.size();
+    modelData.jointMatrixAllocation = jointMatrixAllocator.allocate(jointMatrixCount * sizeof(Model));
+    modelData.jointMatrixOffset = modelData.indexAllocation.offset / sizeof(uint32_t);
+    modelData.inverseBindMatrices = std::move(model.inverseBindMatrices);
+
     return true;
 }
 
@@ -869,6 +889,10 @@ RuntimeMesh ModelLoading::GenerateModel(ModelDataHandle modelDataHandle, const T
         rm.nodes.emplace_back(n);
         RuntimeNode& rn = rm.nodes.back();
         rn.modelDataHandle = modelDataHandle;
+        if (n.inverseBindIndex != ~0u) {
+            rn.jointMatrixOffset = modelData->jointMatrixOffset;
+            rn.inverseBindMatrix = modelData->inverseBindMatrices[n.inverseBindIndex];
+        }
     }
 
     return rm;
@@ -911,6 +935,7 @@ void ModelLoading::InitialUploadRuntimeMesh(RuntimeMesh& runtimeMesh)
                     Instance inst;
                     inst.modelIndex = node.modelMatrixHandle.index;
                     inst.primitiveIndex = primitiveIndex;
+                    inst.jointMatrixOffset = node.jointMatrixOffset;
                     inst.bIsAllocated = 1;
                     for (int32_t i = 0; i < swapchain->imageCount; ++i) {
                         memcpy(static_cast<char*>(instanceBuffers[i].allocationInfo.pMappedData) + sizeof(Instance) * instanceEntry.index, &inst, sizeof(Instance));
@@ -918,14 +943,29 @@ void ModelLoading::InitialUploadRuntimeMesh(RuntimeMesh& runtimeMesh)
                 }
             }
         }
+
+        if (node.jointMatrixIndex != ~0u) {
+            glm::mat4 jointMatrix = node.cachedWorldTransform * node.inverseBindMatrix;
+            const uint32_t jointMatrixFinalIndex = node.jointMatrixIndex + node.jointMatrixOffset;
+            for (int32_t i = 0; i < swapchain->imageCount; ++i) {
+                memcpy(static_cast<char*>(jointMatrixBuffers[i].allocationInfo.pMappedData) + jointMatrixFinalIndex * sizeof(Model), &jointMatrix, sizeof(Model));
+            }
+        }
     }
 }
 
-void ModelLoading::UpdateRuntimeMesh(RuntimeMesh& runtimeMesh, const AllocatedBuffer& modelBuffer)
+void ModelLoading::UpdateRuntimeMesh(RuntimeMesh& runtimeMesh, const AllocatedBuffer& modelBuffer, const AllocatedBuffer& jointMatrixBuffer)
 {
     for (RuntimeNode& node : runtimeMesh.nodes) {
         if (node.modelMatrixHandle.IsValid()) {
-            memcpy(static_cast<char*>(modelBuffer.allocationInfo.pMappedData) + node.modelMatrixHandle.index * sizeof(Model) + offsetof(Model, modelMatrix), &node.cachedWorldTransform, sizeof(node.cachedWorldTransform));
+            char* ptr = static_cast<char*>(modelBuffer.allocationInfo.pMappedData) + node.modelMatrixHandle.index * sizeof(Model) + offsetof(Model, modelMatrix);
+            memcpy(ptr, &node.cachedWorldTransform, sizeof(node.cachedWorldTransform));
+        }
+
+        if (node.jointMatrixIndex != ~0u) {
+            glm::mat4 jointMatrix = node.cachedWorldTransform * node.inverseBindMatrix;
+            uint32_t jointMatrixFinalIndex = node.jointMatrixIndex + node.jointMatrixOffset;
+            memcpy(static_cast<char*>(jointMatrixBuffer.allocationInfo.pMappedData) + jointMatrixFinalIndex * sizeof(Model), &jointMatrix, sizeof(Model));
         }
     }
 }

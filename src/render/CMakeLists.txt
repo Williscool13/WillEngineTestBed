@@ -59,14 +59,11 @@ target_link_libraries(render-lib PUBLIC
 
 find_program(SLANGC slangc REQUIRED)
 
-set(COMMON_SHADER_INCLUDES
-        ${CMAKE_CURRENT_SOURCE_DIR}/shaders/common.slang
-)
 
 function(compile_shader TARGET SHADER_SOURCE STAGE ENTRY)
     get_filename_component(SHADER_NAME ${SHADER_SOURCE} NAME_WE)
     set(SHADER_OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/shaders/${SHADER_NAME}_${STAGE}.spv)
-
+    set(COMMON_SHADER_INCLUDES ${CMAKE_SOURCE_DIR}/shaders/common.slang)
     add_custom_command(
             OUTPUT ${SHADER_OUTPUT}
             COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/shaders

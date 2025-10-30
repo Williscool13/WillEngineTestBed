@@ -32,7 +32,7 @@ struct Primitive
     int32_t vertexOffset{0};
     uint32_t bHasTransparent{0};
     uint32_t materialIndex{0};
-    uint32_t padding{0};
+    uint32_t bHasSkinning{0};
     uint32_t padding1{0};
     uint32_t padding2{0};
     // {3} center, {1} radius
@@ -44,8 +44,8 @@ struct Instance
 {
     uint32_t primitiveIndex{INT32_MAX};
     uint32_t modelIndex{INT32_MAX};
+    uint32_t jointMatrixOffset{};
     uint32_t bIsAllocated{false};
-    uint32_t padding{};
 };
 
 struct Model
@@ -61,6 +61,8 @@ struct Node
     uint32_t parent{~0u};
     uint32_t meshIndex{~0u};
     uint32_t depth{};
+
+    uint32_t inverseBindIndex{~0u};
 
     glm::vec3 localTranslation{};
     glm::quat localRotation{};
@@ -85,6 +87,8 @@ struct ExtractedModel
 
     std::vector<MeshInformation> meshes{};
     std::vector<Node> nodes{};
+
+    std::vector<glm::mat4> inverseBindMatrices{};
 };
 
 struct ModelData
@@ -94,6 +98,7 @@ struct ModelData
 
     std::vector<MeshInformation> meshes{};
     std::vector<Node> nodes{};
+    std::vector<glm::mat4> inverseBindMatrices{};
 
     // todo: move to render/resource thread data
     std::vector<AllocatedImage> images{};
@@ -107,6 +112,9 @@ struct ModelData
     OffsetAllocator::Allocation indexAllocation{};
     OffsetAllocator::Allocation materialAllocation{};
     OffsetAllocator::Allocation primitiveAllocation{};
+
+    OffsetAllocator::Allocation jointMatrixAllocation{};
+    uint32_t jointMatrixOffset{0};
 
     ModelData() = default;
 
@@ -136,8 +144,15 @@ struct RuntimeNode
     uint32_t parent{~0u};
     uint32_t depth{~0u};
 
+    // Rigidbody
     ModelDataHandle modelDataHandle{ModelDataHandle::Invalid};
     uint32_t meshIndex{~0u};
+    // Skeletal mesh
+    // Data duplication here, but this way we don't need to look up the model data every time we update the transforms
+    uint32_t jointMatrixOffset{0};
+    uint32_t jointMatrixIndex{0};
+    glm::mat4 inverseBindMatrix{1.0f};
+
 
     ModelMatrixHandle modelMatrixHandle{ModelMatrixHandle::Invalid};
     std::vector<InstanceEntryHandle> instanceEntryHandles{};
@@ -155,7 +170,6 @@ struct RuntimeMesh
     std::vector<RuntimeNode> nodes;
 
     Transform transform;
-    bool dirty{false};
 };
 } // Renderer
 

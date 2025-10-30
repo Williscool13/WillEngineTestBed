@@ -35,8 +35,8 @@ public struct Instance
 {
     public uint32_t primitiveIndex;
     public uint32_t modelIndex;
+    public uint32_t padding;
     public uint32_t bIsAllocated;
-    uint32_t padding;
 };
 
 public struct MaterialProperties

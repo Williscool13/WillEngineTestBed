@@ -175,6 +175,8 @@ ExtractedModel ModelLoader::LoadGltf(const std::filesystem::path& path)
                 });
             }
 
+            primitiveData.bHasSkinning = joints0 != p.attributes.end() && weights0 != p.attributes.end();
+
             // UV
             const fastgltf::Attribute* uvs = p.findAttribute("TEXCOORD_0");
             if (uvs != p.attributes.end()) {
@@ -229,7 +231,7 @@ ExtractedModel ModelLoader::LoadGltf(const std::filesystem::path& path)
             // VERTEX COLOR
             const fastgltf::Attribute* colors = p.findAttribute("COLOR_0");
             if (colors != p.attributes.end()) {
-                fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec4>(gltf, gltf.accessors[colors->accessorIndex], [&](fastgltf::math::fvec4 color, const size_t index) {
+                fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec4>(gltf, gltf.accessors[colors->accessorIndex], [&](const fastgltf::math::fvec4& color, const size_t index) {
                     primitiveVertices[index].color = {
                         color.x(), color.y(), color.z(), color.w()
                     };
@@ -295,6 +297,34 @@ ExtractedModel ModelLoader::LoadGltf(const std::filesystem::path& path)
         }
     }
 
+    // only import first skin
+    if (gltf.skins.size() > 0) {
+        fastgltf::Skin& skins = gltf.skins[0];
+
+        if (gltf.skins.size() > 1) {
+            LOG_WARN("Model has {} skins but only loading first skin", gltf.skins.size());
+        }
+
+        if (skins.inverseBindMatrices.has_value()) {
+            const fastgltf::Accessor& inverseBindAccessor = gltf.accessors[skins.inverseBindMatrices.value()];
+            model.inverseBindMatrices.resize(inverseBindAccessor.count);
+            fastgltf::iterateAccessorWithIndex<fastgltf::math::fmat4x4>(gltf, inverseBindAccessor, [&](const fastgltf::math::fmat4x4& m, const size_t index) {
+                glm::mat4 glmMatrix;
+                for (int col = 0; col < 4; ++col) {
+                    for (int row = 0; row < 4; ++row) {
+                        glmMatrix[col][row] = m[col][row];
+                    }
+                }
+                model.inverseBindMatrices[index] = glmMatrix;
+            });
+
+            for (int32_t i = 0; i < skins.joints.size(); ++i) {
+                model.nodes[skins.joints[i]].inverseBindIndex = i;
+            }
+        }
+    }
+
+
     TopologicalSortNodes(model.nodes);
 
     for (size_t i = 0; i < model.nodes.size(); ++i) {
@@ -308,8 +338,6 @@ ExtractedModel ModelLoader::LoadGltf(const std::filesystem::path& path)
 
         model.nodes[i].depth = depth;
     }
-
-    // todo: gltf.skins
 
     return model;
 }
