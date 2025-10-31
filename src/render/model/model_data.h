@@ -101,8 +101,10 @@ struct ModelData
 
     std::vector<MeshInformation> meshes{};
     std::vector<Node> nodes{};
-    std::vector<glm::mat4> inverseBindMatrices{};
     std::vector<Animation> animations{};
+
+    // if size > 0, means this model has skinning
+    std::vector<glm::mat4> inverseBindMatrices{};
 
     // todo: move to render/resource thread data
     std::vector<AllocatedImage> images{};
@@ -117,8 +119,7 @@ struct ModelData
     OffsetAllocator::Allocation materialAllocation{};
     OffsetAllocator::Allocation primitiveAllocation{};
 
-    OffsetAllocator::Allocation jointMatrixAllocation{};
-    uint32_t jointMatrixOffset{0};
+
 
     ModelData() = default;
 
@@ -154,7 +155,6 @@ struct RuntimeNode
     uint32_t meshIndex{~0u};
     // Skeletal mesh
     // Data duplication here, but this way we don't need to look up the model data every time we update the transforms
-    uint32_t jointMatrixOffset{0};
     uint32_t jointMatrixIndex{0};
     glm::mat4 inverseBindMatrix{1.0f};
 
@@ -175,6 +175,8 @@ struct RuntimeMesh
     std::vector<RuntimeNode> nodes;
 
     Transform transform;
+    OffsetAllocator::Allocation jointMatrixAllocation{};
+    uint32_t jointMatrixOffset{0};
 };
 } // Renderer
 

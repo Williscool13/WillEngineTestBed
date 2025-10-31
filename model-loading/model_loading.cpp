@@ -314,6 +314,7 @@ void ModelLoading::CreateModels()
     RuntimeMesh a = GenerateModel(simpleSkinHandle, Transform::Identity);
     UpdateTransforms(a);
     runtimeMeshes.push_back(std::move(a));
+    simpleRiggedRuntimeMesh = &runtimeMeshes.back();
 
     for (RuntimeMesh& runtimeMesh : runtimeMeshes) {
         InitialUploadRuntimeMesh(runtimeMesh);
@@ -528,6 +529,7 @@ void ModelLoading::Render()
     // //  - mat4 model matrix
     // //  - model matrix used for this FIF
     // UpdateRuntimeMesh(runtimeMesh, modelBuffers[currentFrameInFlight]);
+
 
     //
     {
@@ -903,9 +905,6 @@ bool ModelLoading::LoadModelIntoBuffers(const std::filesystem::path& modelPath, 
     modelData.images = std::move(model.images);
     modelData.nodes = std::move(model.nodes);
 
-    size_t jointMatrixCount = model.inverseBindMatrices.size();
-    modelData.jointMatrixAllocation = jointMatrixAllocator.allocate(jointMatrixCount * sizeof(Model));
-    modelData.jointMatrixOffset = modelData.jointMatrixAllocation.offset / sizeof(uint32_t);
     modelData.inverseBindMatrices = std::move(model.inverseBindMatrices);
     modelData.animations = std::move(model.animations);
 
@@ -921,15 +920,24 @@ RuntimeMesh ModelLoading::GenerateModel(ModelDataHandle modelDataHandle, const T
 
     rm.transform = topLevelTransform;
     rm.nodes.reserve(modelData->nodes.size());
+
+    size_t jointMatrixCount = modelData->inverseBindMatrices.size();
+    bool bHasSkinning = jointMatrixCount > 0;
+    if (bHasSkinning) {
+        rm.jointMatrixAllocation = jointMatrixAllocator.allocate(jointMatrixCount * sizeof(Model));
+        rm.jointMatrixOffset = rm.jointMatrixAllocation.offset / sizeof(uint32_t);
+    }
+
+
     for (const Node& n : modelData->nodes) {
         rm.nodes.emplace_back(n);
         RuntimeNode& rn = rm.nodes.back();
         rn.modelDataHandle = modelDataHandle;
         if (n.inverseBindIndex != ~0u) {
-            rn.jointMatrixOffset = modelData->jointMatrixOffset;
             rn.inverseBindMatrix = modelData->inverseBindMatrices[n.inverseBindIndex];
         }
     }
+
 
     return rm;
 }
@@ -971,7 +979,7 @@ void ModelLoading::InitialUploadRuntimeMesh(RuntimeMesh& runtimeMesh)
                     Instance inst;
                     inst.modelIndex = node.modelMatrixHandle.index;
                     inst.primitiveIndex = primitiveIndex;
-                    inst.jointMatrixOffset = node.jointMatrixOffset;
+                    inst.jointMatrixOffset = runtimeMesh.jointMatrixOffset;
                     inst.bIsAllocated = 1;
                     for (int32_t i = 0; i < swapchain->imageCount; ++i) {
                         memcpy(static_cast<char*>(instanceBuffers[i].allocationInfo.pMappedData) + sizeof(Instance) * instanceEntry.index, &inst, sizeof(Instance));
@@ -982,7 +990,7 @@ void ModelLoading::InitialUploadRuntimeMesh(RuntimeMesh& runtimeMesh)
 
         if (node.jointMatrixIndex != ~0u) {
             glm::mat4 jointMatrix = node.cachedWorldTransform * node.inverseBindMatrix;
-            const uint32_t jointMatrixFinalIndex = node.jointMatrixIndex + node.jointMatrixOffset;
+            const uint32_t jointMatrixFinalIndex = node.jointMatrixIndex + runtimeMesh.jointMatrixOffset;
             for (int32_t i = 0; i < swapchain->imageCount; ++i) {
                 memcpy(static_cast<char*>(jointMatrixBuffers[i].allocationInfo.pMappedData) + jointMatrixFinalIndex * sizeof(Model), &jointMatrix, sizeof(Model));
             }
@@ -1000,7 +1008,7 @@ void ModelLoading::UpdateRuntimeMesh(RuntimeMesh& runtimeMesh, const AllocatedBu
 
         if (node.jointMatrixIndex != ~0u) {
             glm::mat4 jointMatrix = node.cachedWorldTransform * node.inverseBindMatrix;
-            uint32_t jointMatrixFinalIndex = node.jointMatrixIndex + node.jointMatrixOffset;
+            uint32_t jointMatrixFinalIndex = node.jointMatrixIndex + runtimeMesh.jointMatrixOffset;
             memcpy(static_cast<char*>(jointMatrixBuffer.allocationInfo.pMappedData) + jointMatrixFinalIndex * sizeof(Model), &jointMatrix, sizeof(Model));
         }
     }

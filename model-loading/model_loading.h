@@ -86,6 +86,7 @@ private:
     FreeList<ModelData, MAX_LOADED_MODELS> modelDatas{};
     std::vector<ModelDataHandle> modelDataHandles;
     std::vector<RuntimeMesh> runtimeMeshes{};
+    RuntimeMesh* simpleRiggedRuntimeMesh{};
 
     AllocatedBuffer megaVertexBuffer;
     OffsetAllocator::Allocator vertexBufferAllocator{sizeof(Vertex) * MEGA_VERTEX_BUFFER_COUNT};
