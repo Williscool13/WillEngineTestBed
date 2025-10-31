@@ -48,7 +48,7 @@ VertexOutput vertexMain(Vertex vertex, uniform PushConsts pushConstants, uint st
     output.colorSamplerIndex = mt.textureSamplerIndices.x;
     output.colorTextureIndex = mt.textureImageIndices.x;
 
-    output.color = vertex.color.xyz;
+    output.color = vertex.normal.xyz * 0.5f + 0.5f;
 
     return output;
 }

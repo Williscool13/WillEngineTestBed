@@ -88,8 +88,14 @@ private:
     std::vector<ModelDataHandle> modelDataHandles;
     std::vector<RuntimeMesh> runtimeMeshes{};
     ModelDataHandle simpleSkinHandle{};
+    ModelDataHandle riggedFigureHandle{};
+
+    RuntimeMesh* structureRuntimeMesh{};
     RuntimeMesh* simpleRiggedRuntimeMesh{};
+    RuntimeMesh* riggedFigureRuntimeMesh{};
+
     AnimationPlayer animationPlayer{};
+    AnimationPlayer animationPlayer2{};
 
     AllocatedBuffer megaVertexBuffer;
     OffsetAllocator::Allocator vertexBufferAllocator{sizeof(Vertex) * MEGA_VERTEX_BUFFER_COUNT};

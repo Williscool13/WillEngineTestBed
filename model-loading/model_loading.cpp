@@ -305,9 +305,9 @@ void ModelLoading::CreateModels()
     LoadModelIntoBuffers(boxPath, *md);
 
     auto riggedFigurePath = std::filesystem::path("../assets/RiggedFigure.glb");
-    ModelDataHandle figureHandle = modelDatas.Add();
-    modelDataHandles.push_back(figureHandle);
-    md = modelDatas.Get(figureHandle);
+    riggedFigureHandle = modelDatas.Add();
+    modelDataHandles.push_back(riggedFigureHandle);
+    md = modelDatas.Get(riggedFigureHandle);
     LoadModelIntoBuffers(riggedFigurePath, *md);
 
     auto structurePath = std::filesystem::path("../assets/structure.glb");
@@ -353,14 +353,22 @@ void ModelLoading::CreateModels()
         }
     }
 
-    // RuntimeMesh a = GenerateModel(structureHandle, Transform::Identity);
-    // UpdateTransforms(a);
-    // runtimeMeshes.push_back(std::move(a));
+    RuntimeMesh c = GenerateModel(structureHandle, Transform::Identity);
+    UpdateTransforms(c);
+    runtimeMeshes.push_back(std::move(c));
+    structureRuntimeMesh = &runtimeMeshes.back();
 
-    RuntimeMesh a = GenerateModel(simpleSkinHandle, Transform::Identity);
+    Transform skinT{Transform::Identity};
+    skinT.translation = {3.0f, 0.0f, 0.0f};
+    RuntimeMesh a = GenerateModel(simpleSkinHandle, skinT);
     UpdateTransforms(a);
     runtimeMeshes.push_back(std::move(a));
     simpleRiggedRuntimeMesh = &runtimeMeshes.back();
+
+    RuntimeMesh b = GenerateModel(riggedFigureHandle, Transform::Identity);
+    UpdateTransforms(b);
+    runtimeMeshes.push_back(std::move(b));
+    riggedFigureRuntimeMesh = &runtimeMeshes.back();
 
     for (RuntimeMesh& runtimeMesh : runtimeMeshes) {
         InitialUploadRuntimeMesh(runtimeMesh);
@@ -427,6 +435,7 @@ void ModelLoading::Run()
     Core::Time& time = Time::Get();
 
     animationPlayer.Play(modelDatas.Get(simpleSkinHandle)->animations[0], true);
+    animationPlayer2.Play(modelDatas.Get(riggedFigureHandle)->animations[0], true);
 
     SDL_Event e;
     bool exit = false;
@@ -562,26 +571,28 @@ void ModelLoading::Render()
     *currentSceneData = sceneData;
 
 
-    // RuntimeMesh& runtimeMesh = runtimeMeshes[18];
-    // // Update on CPU
-    // {
-    //     const float deltaTime = Time::Get().GetDeltaTime();
-    //     static float time = 0.0f;
-    //     time += deltaTime;
-    //     float yOffset = 5.0f * sinf(time * 0.5f);
-    //     runtimeMesh.transform.translation.y = yOffset;
-    //     UpdateTransforms(runtimeMesh);
-    // }
+    // Update on CPU
+    {
+        static float time = 0.0f;
+        time += deltaTime;
+        float yOffset = 5.0f * sinf(time * 0.5f);
+        structureRuntimeMesh->transform.translation.y = yOffset;
+        UpdateTransforms(*structureRuntimeMesh);
+    }
+
+    // GPU only needs to know all:
+    //  - model matrix index
+    //  - mat4 model matrix
+    //  - model matrix buffer used for this FIF
+    UpdateRuntimeMesh(*structureRuntimeMesh, modelBuffers[currentFrameInFlight], jointMatrixBuffers[currentFrameInFlight]);
 
     animationPlayer.Update(deltaTime, simpleRiggedRuntimeMesh->nodes, simpleRiggedRuntimeMesh->nodeRemap);
     UpdateTransforms(*simpleRiggedRuntimeMesh);
     UpdateRuntimeMesh(*simpleRiggedRuntimeMesh, modelBuffers[currentFrameInFlight], jointMatrixBuffers[currentFrameInFlight]);
-    //
-    // // GPU only needs to know all:
-    // //  - model matrix index
-    // //  - mat4 model matrix
-    // //  - model matrix used for this FIF
-    // UpdateRuntimeMesh(runtimeMesh, modelBuffers[currentFrameInFlight]);
+    animationPlayer2.Update(deltaTime, riggedFigureRuntimeMesh->nodes, riggedFigureRuntimeMesh->nodeRemap);
+    UpdateTransforms(*riggedFigureRuntimeMesh);
+    UpdateRuntimeMesh(*riggedFigureRuntimeMesh, modelBuffers[currentFrameInFlight], jointMatrixBuffers[currentFrameInFlight]);
+
 
 
     //
@@ -1011,15 +1022,17 @@ RuntimeMesh ModelLoading::GenerateModel(ModelDataHandle modelDataHandle, const T
 void ModelLoading::UpdateTransforms(RuntimeMesh& runtimeMesh)
 {
     glm::mat4 baseTopLevel = runtimeMesh.transform.GetMatrix();
-    for (RuntimeNode& rn : runtimeMesh.nodes) {
-        glm::mat4 worldTransform = rn.transform.GetMatrix();
-        uint32_t currentParent = rn.parent;
-        while (currentParent != ~0u) {
-            worldTransform = runtimeMesh.nodes[currentParent].transform.GetMatrix() * worldTransform;
-            currentParent = runtimeMesh.nodes[currentParent].parent;
-        }
 
-        rn.cachedWorldTransform = baseTopLevel * worldTransform;
+    // Nodes are sorted
+    for (RuntimeNode& rn : runtimeMesh.nodes) {
+        glm::mat4 localTransform = rn.transform.GetMatrix();
+
+        if (rn.parent == ~0u) {
+            rn.cachedWorldTransform = baseTopLevel * localTransform;
+        }
+        else {
+            rn.cachedWorldTransform = runtimeMesh.nodes[rn.parent].cachedWorldTransform * localTransform;
+        }
     }
 }
 
@@ -1033,7 +1046,7 @@ void ModelLoading::InitialUploadRuntimeMesh(RuntimeMesh& runtimeMesh)
                 memcpy(
                     static_cast<char*>(modelBuffers[i].allocationInfo.pMappedData) + node.modelMatrixHandle.index * sizeof(Model) + offsetof(Model, modelMatrix),
                     &node.cachedWorldTransform,
-                       sizeof(node.cachedWorldTransform));
+                    sizeof(node.cachedWorldTransform));
             }
 
             if (ModelData* modelData = modelDatas.Get(runtimeMesh.modelDataHandle)) {
