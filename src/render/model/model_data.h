@@ -60,7 +60,6 @@ struct Node
 {
     std::string name{};
     uint32_t parent{~0u};
-    uint32_t originalNodeIndex{0};
     uint32_t meshIndex{~0u};
     uint32_t depth{};
 
@@ -89,6 +88,24 @@ struct ExtractedModel
 
     std::vector<MeshInformation> meshes{};
     std::vector<Node> nodes{};
+    /**
+     * Maps flattened node indices back to original glTF node indices.
+     *
+     * Index: Position in the flattened `nodes` vector
+     * Value: Original glTF node index
+     *
+     * Example:
+     *   nodeRemap[5] = 12  means nodes[5] corresponds to gltf.nodes[12]
+     *
+     * This mapping is essential for animations, as animation channels reference nodes
+     * by their original glTF indices. During animation playback, we lookup:
+     *   uint32_t flatIndex = nodeRemap[channel.targetNodeIndex]
+     *   nodes[flatIndex].transform = animated value
+     *
+     * Must be updated whenever nodes are sorted, filtered, or otherwise rearranged
+     * from their original glTF ordering.
+     */
+    std::vector<uint32_t> nodeRemap{};
 
     std::vector<Animation> animations;
     std::vector<glm::mat4> inverseBindMatrices{};
@@ -101,6 +118,7 @@ struct ModelData
 
     std::vector<MeshInformation> meshes{};
     std::vector<Node> nodes{};
+    std::vector<uint32_t> nodeRemap{};
     std::vector<Animation> animations{};
 
     // if size > 0, means this model has skinning
@@ -118,7 +136,6 @@ struct ModelData
     OffsetAllocator::Allocation indexAllocation{};
     OffsetAllocator::Allocation materialAllocation{};
     OffsetAllocator::Allocation primitiveAllocation{};
-
 
 
     ModelData() = default;
@@ -151,7 +168,6 @@ struct RuntimeNode
     uint32_t depth{~0u};
 
     // Rigidbody
-    ModelDataHandle modelDataHandle{ModelDataHandle::Invalid};
     uint32_t meshIndex{~0u};
     // Skeletal mesh
     // Data duplication here, but this way we don't need to look up the model data every time we update the transforms
@@ -171,8 +187,11 @@ struct RuntimeNode
 
 struct RuntimeMesh
 {
+    ModelDataHandle modelDataHandle{ModelDataHandle::Invalid};
     // sorted when generated
     std::vector<RuntimeNode> nodes;
+
+    std::vector<uint32_t> nodeRemap{};
 
     Transform transform;
     OffsetAllocator::Allocation jointMatrixAllocation{};

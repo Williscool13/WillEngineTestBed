@@ -163,7 +163,7 @@ ExtractedModel ModelLoader::LoadGltf(const std::filesystem::path& path)
             // JOINTS_0
             const fastgltf::Attribute* joints0 = p.findAttribute("JOINTS_0");
             if (joints0 != p.attributes.end()) {
-                fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec4>(gltf, gltf.accessors[joints0->accessorIndex], [&](fastgltf::math::fvec4 j, const size_t index) {
+                fastgltf::iterateAccessorWithIndex<fastgltf::math::uvec4>(gltf, gltf.accessors[joints0->accessorIndex], [&](fastgltf::math::uvec4 j, const size_t index) {
                     primitiveVertices[index].joints = {j.x(), j.y(), j.z(), j.w()};
                 });
             }
@@ -298,10 +298,6 @@ ExtractedModel ModelLoader::LoadGltf(const std::filesystem::path& path)
         }
     }
 
-    for (int32_t i = 0; i < model.nodes.size(); ++i) {
-        model.nodes[i].originalNodeIndex = i;
-    }
-
     // only import first skin
     if (gltf.skins.size() > 0) {
         fastgltf::Skin& skins = gltf.skins[0];
@@ -330,7 +326,7 @@ ExtractedModel ModelLoader::LoadGltf(const std::filesystem::path& path)
     }
 
 
-    TopologicalSortNodes(model.nodes);
+    TopologicalSortNodes(model.nodes, model.nodeRemap);
 
     for (size_t i = 0; i < model.nodes.size(); ++i) {
         uint32_t depth = 0;
@@ -362,24 +358,29 @@ ExtractedModel ModelLoader::LoadGltf(const std::filesystem::path& path)
             const fastgltf::Accessor& outputAccessor = gltf.accessors[animSampler.outputAccessor];
             sampler.values.resize(outputAccessor.count * fastgltf::getNumComponents(outputAccessor.type));
             if (outputAccessor.type == fastgltf::AccessorType::Vec3) {
-                fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec3>(gltf, outputAccessor, [&](const fastgltf::math::fvec3& value, size_t idx) {
-                    sampler.values[idx] = value.x();
-                    sampler.values[idx + 1] = value.y();
-                    sampler.values[idx + 2] = value.z();
-                });
+                fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec3>(gltf, outputAccessor,
+                    [&](const fastgltf::math::fvec3& value, size_t idx) {
+                        size_t baseIdx = idx * 3;  // Calculate flat base index
+                        sampler.values[baseIdx + 0] = value.x();
+                        sampler.values[baseIdx + 1] = value.y();
+                        sampler.values[baseIdx + 2] = value.z();
+                    });
             }
             else if (outputAccessor.type == fastgltf::AccessorType::Vec4) {
-                fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec4>(gltf, outputAccessor, [&](const fastgltf::math::fvec4& value, size_t idx) {
-                    sampler.values[idx] = value.x();
-                    sampler.values[idx + 1] = value.y();
-                    sampler.values[idx + 2] = value.z();
-                    sampler.values[idx + 3] = value.w();
-                });
+                fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec4>(gltf, outputAccessor,
+                    [&](const fastgltf::math::fvec4& value, size_t idx) {
+                        size_t baseIdx = idx * 4;  // Calculate flat base index
+                        sampler.values[baseIdx + 0] = value.x();
+                        sampler.values[baseIdx + 1] = value.y();
+                        sampler.values[baseIdx + 2] = value.z();
+                        sampler.values[baseIdx + 3] = value.w();
+                    });
             }
             else if (outputAccessor.type == fastgltf::AccessorType::Scalar) {
-                fastgltf::iterateAccessorWithIndex<float>(gltf, outputAccessor, [&](float value, size_t idx) {
-                    sampler.values[idx] = value;
-                });
+                fastgltf::iterateAccessorWithIndex<float>(gltf, outputAccessor,
+                    [&](float value, size_t idx) {
+                        sampler.values[idx] = value;  // This one is fine since it's 1 component
+                    });
             }
 
             switch (animSampler.interpolation) {
@@ -892,9 +893,8 @@ AllocatedImage ModelLoader::RecordCreateImageFromData(VkCommandBuffer cmd, size_
     return newImage;
 }
 
-void ModelLoader::TopologicalSortNodes(std::vector<Node>& nodes)
+void ModelLoader::TopologicalSortNodes(std::vector<Node>& nodes, std::vector<uint32_t>& oldToNew)
 {
-    oldToNew.clear();
     oldToNew.resize(nodes.size());
 
     sortedNodes.clear();

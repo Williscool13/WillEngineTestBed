@@ -76,6 +76,18 @@ struct BindlessAddressPushConstant
     VkDeviceAddress instanceBuffer;
 };
 
+struct BindlessAddressSkeletalPushConstant
+{
+    VkDeviceAddress sceneData;
+
+    VkDeviceAddress materialBuffer;
+    VkDeviceAddress primitiveBuffer;
+    VkDeviceAddress modelBuffer;
+    VkDeviceAddress instanceBuffer;
+
+    VkDeviceAddress jointMatrixBuffer;
+};
+
 struct IndirectCount
 {
     uint32_t opaqueCount;

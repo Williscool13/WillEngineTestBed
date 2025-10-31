@@ -13,6 +13,5 @@ RuntimeNode::RuntimeNode(const Node& n)
     meshIndex = n.meshIndex;
     transform = {n.localTranslation, n.localRotation, n.localScale};
     jointMatrixIndex = n.inverseBindIndex;
-    originalNodeIndex = n.originalNodeIndex;
 }
 } // Renderer

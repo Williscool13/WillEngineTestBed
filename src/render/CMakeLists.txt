@@ -45,6 +45,8 @@ add_library(render-lib STATIC
         descriptor_buffer/descriptor_buffer_bindless_resources.h
         animation/animation_types.cpp
         animation/animation_types.h
+        animation/animation_player.cpp
+        animation/animation_player.h
 )
 
 target_link_libraries(render-lib PUBLIC

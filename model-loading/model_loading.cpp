@@ -168,6 +168,19 @@ void ModelLoading::CreateResources()
                 .binding = 1,
                 .format = VK_FORMAT_R32G32_SFLOAT,
                 .offset = offsetof(Vertex, uv),
+            },
+            // todo: different vertex input attribute for normal vs skeletal pipelines
+            {
+                .location = 5,
+                .binding = 1,
+                .format = VK_FORMAT_R32G32B32A32_UINT,
+                .offset = offsetof(Vertex, joints),
+            },
+            {
+                .location = 6,
+                .binding = 1,
+                .format = VK_FORMAT_R32G32B32A32_SFLOAT,
+                .offset = offsetof(Vertex, weights),
             }
         };
 
@@ -182,6 +195,39 @@ void ModelLoading::CreateResources()
         renderPipelineBuilder.setupPipelineLayout(renderPipelineLayout.handle);
         VkGraphicsPipelineCreateInfo pipelineCreateInfo = renderPipelineBuilder.generatePipelineCreateInfo();
         renderPipeline = VkResources::CreateGraphicsPipeline(vulkanContext.get(), pipelineCreateInfo);
+
+        vkDestroyShaderModule(vulkanContext->device, vertShader, nullptr);
+        vkDestroyShaderModule(vulkanContext->device, fragShader, nullptr);
+
+
+        VkPushConstantRange skeletalPushConstantRange{};
+        skeletalPushConstantRange.offset = 0;
+        skeletalPushConstantRange.size = sizeof(BindlessAddressSkeletalPushConstant);
+        skeletalPushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+
+        VkPipelineLayoutCreateInfo skeletalPipelineLayoutCreateInfo{};
+        skeletalPipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        skeletalPipelineLayoutCreateInfo.pSetLayouts = &bindlessResourcesDescriptorBuffer.descriptorSetLayout.handle;
+        skeletalPipelineLayoutCreateInfo.setLayoutCount = 1;
+        //renderPipelineLayoutCreateInfo.pSetLayouts = nullptr;
+        //renderPipelineLayoutCreateInfo.setLayoutCount = 0;
+        skeletalPipelineLayoutCreateInfo.pPushConstantRanges = &skeletalPushConstantRange;
+        skeletalPipelineLayoutCreateInfo.pushConstantRangeCount = 1;
+
+        skeletalPipelineLayout = VkResources::CreatePipelineLayout(vulkanContext.get(), skeletalPipelineLayoutCreateInfo);
+
+        if (!VkHelpers::LoadShaderModule("shaders\\skeletalIndirectDraw_vertex.spv", vulkanContext->device, &vertShader)) {
+            throw std::runtime_error("Error when building the vertex shader (skeletalIndirectDraw_vertex.spv)");
+        }
+        if (!VkHelpers::LoadShaderModule("shaders\\skeletalIndirectDraw_fragment.spv", vulkanContext->device, &fragShader)) {
+            throw std::runtime_error("Error when building the fragment shader (skeletalIndirectDraw_fragment.spv)");
+        }
+
+        renderPipelineBuilder.setShaders(vertShader, fragShader);
+        renderPipelineBuilder.setupPipelineLayout(skeletalPipelineLayout.handle);
+        pipelineCreateInfo = renderPipelineBuilder.generatePipelineCreateInfo();
+        skeletalPipeline = VkResources::CreateGraphicsPipeline(vulkanContext.get(), pipelineCreateInfo);
+
 
         vkDestroyShaderModule(vulkanContext->device, vertShader, nullptr);
         vkDestroyShaderModule(vulkanContext->device, fragShader, nullptr);
@@ -271,7 +317,7 @@ void ModelLoading::CreateModels()
     LoadModelIntoBuffers(structurePath, *md);
 
     auto simpleSkin = std::filesystem::path("../assets/simpleSkin/SimpleSkin.gltf");
-    auto simpleSkinHandle = modelDatas.Add();
+    simpleSkinHandle = modelDatas.Add();
     modelDataHandles.push_back(simpleSkinHandle);
     md = modelDatas.Get(simpleSkinHandle);
     LoadModelIntoBuffers(simpleSkin, *md);
@@ -379,6 +425,9 @@ void ModelLoading::Run()
 {
     Input& input = Input::Input::Get();
     Core::Time& time = Time::Get();
+
+    animationPlayer.Play(modelDatas.Get(simpleSkinHandle)->animations[0], true);
+
     SDL_Event e;
     bool exit = false;
     while (true) {
@@ -523,6 +572,10 @@ void ModelLoading::Render()
     //     runtimeMesh.transform.translation.y = yOffset;
     //     UpdateTransforms(runtimeMesh);
     // }
+
+    animationPlayer.Update(deltaTime, simpleRiggedRuntimeMesh->nodes, simpleRiggedRuntimeMesh->nodeRemap);
+    UpdateTransforms(*simpleRiggedRuntimeMesh);
+    UpdateRuntimeMesh(*simpleRiggedRuntimeMesh, modelBuffers[currentFrameInFlight], jointMatrixBuffers[currentFrameInFlight]);
     //
     // // GPU only needs to know all:
     // //  - model matrix index
@@ -661,6 +714,18 @@ void ModelLoading::Render()
                                           opaqueIndexedIndirectBuffer.handle, 0,
                                           indirectCountBuffers[currentFrameInFlight].handle, offsetof(IndirectCount, opaqueCount),
                                           highestInstanceIndex, sizeof(VkDrawIndexedIndirectCommand));
+
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, skeletalPipeline.handle);
+            BindlessAddressSkeletalPushConstant skeletalPushData{
+                currentSceneDataBuffer.address,
+                materialBuffer.address,
+                primitiveBuffer.address,
+                modelBuffers[currentFrameInFlight].address,
+                instanceBuffers[currentFrameInFlight].address,
+                jointMatrixBuffers[currentFrameInFlight].address,
+            };
+            vkCmdPushConstants(cmd, skeletalPipelineLayout.handle, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(BindlessAddressSkeletalPushConstant), &skeletalPushData);
+
             vkCmdDrawIndexedIndirectCount(cmd,
                                           opaqueSkeletalIndexedIndirectBuffer.handle, 0,
                                           skeletalIndirectCountBuffers[currentFrameInFlight].handle, offsetof(IndirectCount, opaqueCount),
@@ -907,6 +972,7 @@ bool ModelLoading::LoadModelIntoBuffers(const std::filesystem::path& modelPath, 
 
     modelData.inverseBindMatrices = std::move(model.inverseBindMatrices);
     modelData.animations = std::move(model.animations);
+    modelData.nodeRemap = std::move(model.nodeRemap);
 
     return true;
 }
@@ -920,6 +986,7 @@ RuntimeMesh ModelLoading::GenerateModel(ModelDataHandle modelDataHandle, const T
 
     rm.transform = topLevelTransform;
     rm.nodes.reserve(modelData->nodes.size());
+    rm.nodeRemap = modelData->nodeRemap;
 
     size_t jointMatrixCount = modelData->inverseBindMatrices.size();
     bool bHasSkinning = jointMatrixCount > 0;
@@ -928,11 +995,10 @@ RuntimeMesh ModelLoading::GenerateModel(ModelDataHandle modelDataHandle, const T
         rm.jointMatrixOffset = rm.jointMatrixAllocation.offset / sizeof(uint32_t);
     }
 
-
+    rm.modelDataHandle = modelDataHandle;
     for (const Node& n : modelData->nodes) {
         rm.nodes.emplace_back(n);
         RuntimeNode& rn = rm.nodes.back();
-        rn.modelDataHandle = modelDataHandle;
         if (n.inverseBindIndex != ~0u) {
             rn.inverseBindMatrix = modelData->inverseBindMatrices[n.inverseBindIndex];
         }
@@ -964,10 +1030,13 @@ void ModelLoading::InitialUploadRuntimeMesh(RuntimeMesh& runtimeMesh)
             node.modelMatrixHandle = modelMatrixAllocator.Add();
 
             for (int32_t i = 0; i < swapchain->imageCount; ++i) {
-                memcpy(static_cast<char*>(modelBuffers[i].allocationInfo.pMappedData) + node.modelMatrixHandle.index * sizeof(Model), &node.cachedWorldTransform, sizeof(Model));
+                memcpy(
+                    static_cast<char*>(modelBuffers[i].allocationInfo.pMappedData) + node.modelMatrixHandle.index * sizeof(Model) + offsetof(Model, modelMatrix),
+                    &node.cachedWorldTransform,
+                       sizeof(node.cachedWorldTransform));
             }
 
-            if (ModelData* modelData = modelDatas.Get(node.modelDataHandle)) {
+            if (ModelData* modelData = modelDatas.Get(runtimeMesh.modelDataHandle)) {
                 for (uint32_t primitiveIndex : modelData->meshes[node.meshIndex].primitiveIndices) {
                     InstanceEntryHandle instanceEntry = instanceEntryAllocator.Add();
                     node.instanceEntryHandles.push_back(instanceEntry);
@@ -1009,7 +1078,7 @@ void ModelLoading::UpdateRuntimeMesh(RuntimeMesh& runtimeMesh, const AllocatedBu
         if (node.jointMatrixIndex != ~0u) {
             glm::mat4 jointMatrix = node.cachedWorldTransform * node.inverseBindMatrix;
             uint32_t jointMatrixFinalIndex = node.jointMatrixIndex + runtimeMesh.jointMatrixOffset;
-            memcpy(static_cast<char*>(jointMatrixBuffer.allocationInfo.pMappedData) + jointMatrixFinalIndex * sizeof(Model), &jointMatrix, sizeof(Model));
+            memcpy(static_cast<char*>(jointMatrixBuffer.allocationInfo.pMappedData) + jointMatrixFinalIndex * sizeof(Model) + offsetof(Model, modelMatrix), &jointMatrix, sizeof(jointMatrix));
         }
     }
 }

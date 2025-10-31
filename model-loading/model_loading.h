@@ -13,6 +13,7 @@
 #include "render/render_context.h"
 #include "render/vk_synchronization.h"
 #include "render/vk_resources.h"
+#include "render/animation/animation_player.h"
 #include "render/descriptor_buffer/descriptor_buffer_bindless_resources.h"
 #include "render/descriptor_buffer/descriptor_buffer_storage_image.h"
 #include "render/model/model_data.h"
@@ -86,7 +87,9 @@ private:
     FreeList<ModelData, MAX_LOADED_MODELS> modelDatas{};
     std::vector<ModelDataHandle> modelDataHandles;
     std::vector<RuntimeMesh> runtimeMeshes{};
+    ModelDataHandle simpleSkinHandle{};
     RuntimeMesh* simpleRiggedRuntimeMesh{};
+    AnimationPlayer animationPlayer{};
 
     AllocatedBuffer megaVertexBuffer;
     OffsetAllocator::Allocator vertexBufferAllocator{sizeof(Vertex) * MEGA_VERTEX_BUFFER_COUNT};
@@ -119,6 +122,8 @@ private:
     Pipeline drawCullPipeline;
     PipelineLayout renderPipelineLayout;
     Pipeline renderPipeline;
+    PipelineLayout skeletalPipelineLayout;
+    Pipeline skeletalPipeline;
 
 
 
