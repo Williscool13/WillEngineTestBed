@@ -14,6 +14,7 @@
 #include "../vk_helpers.h"
 #include "crash-handling/crash_handler.h"
 #include "glm/gtc/quaternion.hpp"
+#include "render/animation/animation_types.h"
 #include "stb/stb_image.h"
 #include "utils/utils.h"
 
@@ -297,6 +298,10 @@ ExtractedModel ModelLoader::LoadGltf(const std::filesystem::path& path)
         }
     }
 
+    for (int32_t i = 0; i < model.nodes.size(); ++i) {
+        model.nodes[i].originalNodeIndex = i;
+    }
+
     // only import first skin
     if (gltf.skins.size() > 0) {
         fastgltf::Skin& skins = gltf.skins[0];
@@ -339,8 +344,91 @@ ExtractedModel ModelLoader::LoadGltf(const std::filesystem::path& path)
         model.nodes[i].depth = depth;
     }
 
-    for (auto anim : gltf.animations) {
 
+    model.animations.reserve(gltf.animations.size());
+    for (fastgltf::Animation& gltfAnim : gltf.animations) {
+        Animation anim{};
+        anim.name = gltfAnim.name;
+
+        for (fastgltf::AnimationSampler& animSampler : gltfAnim.samplers) {
+            AnimationSampler sampler;
+
+            const fastgltf::Accessor& inputAccessor = gltf.accessors[animSampler.inputAccessor];
+            sampler.timestamps.resize(inputAccessor.count);
+            fastgltf::iterateAccessorWithIndex<float>(gltf, inputAccessor, [&](float value, size_t idx) {
+                sampler.timestamps[idx] = value;
+            });
+
+            const fastgltf::Accessor& outputAccessor = gltf.accessors[animSampler.outputAccessor];
+            sampler.values.resize(outputAccessor.count * fastgltf::getNumComponents(outputAccessor.type));
+            if (outputAccessor.type == fastgltf::AccessorType::Vec3) {
+                fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec3>(gltf, outputAccessor, [&](const fastgltf::math::fvec3& value, size_t idx) {
+                    sampler.values[idx] = value.x();
+                    sampler.values[idx + 1] = value.y();
+                    sampler.values[idx + 2] = value.z();
+                });
+            }
+            else if (outputAccessor.type == fastgltf::AccessorType::Vec4) {
+                fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec4>(gltf, outputAccessor, [&](const fastgltf::math::fvec4& value, size_t idx) {
+                    sampler.values[idx] = value.x();
+                    sampler.values[idx + 1] = value.y();
+                    sampler.values[idx + 2] = value.z();
+                    sampler.values[idx + 3] = value.w();
+                });
+            }
+            else if (outputAccessor.type == fastgltf::AccessorType::Scalar) {
+                fastgltf::iterateAccessorWithIndex<float>(gltf, outputAccessor, [&](float value, size_t idx) {
+                    sampler.values[idx] = value;
+                });
+            }
+
+            switch (animSampler.interpolation) {
+                case fastgltf::AnimationInterpolation::Linear:
+                    sampler.interpolation = AnimationSampler::Interpolation::Linear;
+                    break;
+                case fastgltf::AnimationInterpolation::Step:
+                    sampler.interpolation = AnimationSampler::Interpolation::Step;
+                    break;
+                case fastgltf::AnimationInterpolation::CubicSpline:
+                    sampler.interpolation = AnimationSampler::Interpolation::CubicSpline;
+                    break;
+            }
+
+            anim.samplers.push_back(std::move(sampler));
+        }
+
+        anim.channels.reserve(gltfAnim.channels.size());
+        for (auto& gltfChannel : gltfAnim.channels) {
+            AnimationChannel channel{};
+            channel.samplerIndex = gltfChannel.samplerIndex;
+            channel.targetNodeIndex = gltfChannel.nodeIndex.value();
+
+            switch (gltfChannel.path) {
+                case fastgltf::AnimationPath::Translation:
+                    channel.targetPath = AnimationChannel::TargetPath::Translation;
+                    break;
+                case fastgltf::AnimationPath::Rotation:
+                    channel.targetPath = AnimationChannel::TargetPath::Rotation;
+                    break;
+                case fastgltf::AnimationPath::Scale:
+                    channel.targetPath = AnimationChannel::TargetPath::Scale;
+                    break;
+                case fastgltf::AnimationPath::Weights:
+                    channel.targetPath = AnimationChannel::TargetPath::Weights;
+                    break;
+            }
+
+            anim.channels.push_back(channel);
+        }
+
+        anim.duration = 0.0f;
+        for (const auto& sampler : anim.samplers) {
+            if (!sampler.timestamps.empty()) {
+                anim.duration = std::max(anim.duration, sampler.timestamps.back());
+            }
+        }
+
+        model.animations.push_back(std::move(anim));
     }
 
     return model;

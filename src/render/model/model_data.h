@@ -15,6 +15,7 @@
 #include "core/types/transform.h"
 #include "render/vk_resources.h"
 #include "render/vk_types.h"
+#include "render/animation/animation_types.h"
 #include "utils/free_list.h"
 
 namespace Renderer
@@ -59,6 +60,7 @@ struct Node
 {
     std::string name{};
     uint32_t parent{~0u};
+    uint32_t originalNodeIndex{0};
     uint32_t meshIndex{~0u};
     uint32_t depth{};
 
@@ -88,6 +90,7 @@ struct ExtractedModel
     std::vector<MeshInformation> meshes{};
     std::vector<Node> nodes{};
 
+    std::vector<Animation> animations;
     std::vector<glm::mat4> inverseBindMatrices{};
 };
 
@@ -99,6 +102,7 @@ struct ModelData
     std::vector<MeshInformation> meshes{};
     std::vector<Node> nodes{};
     std::vector<glm::mat4> inverseBindMatrices{};
+    std::vector<Animation> animations{};
 
     // todo: move to render/resource thread data
     std::vector<AllocatedImage> images{};
@@ -142,6 +146,7 @@ using InstanceEntryHandle = Handle<InstanceEntry>;
 struct RuntimeNode
 {
     uint32_t parent{~0u};
+    uint32_t originalNodeIndex{0};
     uint32_t depth{~0u};
 
     // Rigidbody

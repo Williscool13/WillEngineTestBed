@@ -907,6 +907,7 @@ bool ModelLoading::LoadModelIntoBuffers(const std::filesystem::path& modelPath, 
     modelData.jointMatrixAllocation = jointMatrixAllocator.allocate(jointMatrixCount * sizeof(Model));
     modelData.jointMatrixOffset = modelData.jointMatrixAllocation.offset / sizeof(uint32_t);
     modelData.inverseBindMatrices = std::move(model.inverseBindMatrices);
+    modelData.animations = std::move(model.animations);
 
     return true;
 }
@@ -992,7 +993,7 @@ void ModelLoading::InitialUploadRuntimeMesh(RuntimeMesh& runtimeMesh)
 void ModelLoading::UpdateRuntimeMesh(RuntimeMesh& runtimeMesh, const AllocatedBuffer& modelBuffer, const AllocatedBuffer& jointMatrixBuffer)
 {
     for (RuntimeNode& node : runtimeMesh.nodes) {
-        if (node.modelMatrixHandle.IsValid()) {
+        if (node.meshIndex != ~0u) {
             char* ptr = static_cast<char*>(modelBuffer.allocationInfo.pMappedData) + node.modelMatrixHandle.index * sizeof(Model) + offsetof(Model, modelMatrix);
             memcpy(ptr, &node.cachedWorldTransform, sizeof(node.cachedWorldTransform));
         }
