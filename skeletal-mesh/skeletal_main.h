@@ -44,7 +44,7 @@ private:
     std::unique_ptr<ImguiWrapper> imgui{};
 
     uint64_t frameNumber{0};
-    std::vector<FrameData> frameSynchronization;
+    std::vector<FrameSynchronization> frameSynchronization;
     int32_t renderFramesInFlight{0};
 
     // Probably want separate descriptor buffers/layouts for:

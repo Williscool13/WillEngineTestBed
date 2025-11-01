@@ -4,6 +4,8 @@
 
 #ifndef WILLENGINETESTBED_UTILS_H
 #define WILLENGINETESTBED_UTILS_H
+#include <windows.h>
+
 #include <chrono>
 #include <string>
 
@@ -28,6 +30,13 @@ private:
     std::string name;
     std::chrono::high_resolution_clock::time_point start;
 };
+
+inline void SetThreadName(const char* name) {
+    // Wide string conversion
+    wchar_t wideName[256];
+    MultiByteToWideChar(CP_UTF8, 0, name, -1, wideName, 256);
+    SetThreadDescription(GetCurrentThread(), wideName);
+}
 } // Utils
 
 #endif //WILLENGINETESTBED_UTILS_H

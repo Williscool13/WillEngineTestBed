@@ -4,11 +4,11 @@
 
 #include "multithreading.h"
 
-#include "utils.h"
 #include "SDL3/SDL.h"
 #include "src/crash-handling/crash_handler.h"
 
 #include "src/crash-handling/logger.h"
+#include "utils/utils.h"
 
 void Multithreading::Initialize()
 {
@@ -35,7 +35,7 @@ void Multithreading::Initialize()
 
 void Multithreading::RenderThread()
 {
-    SetThreadName("Render Thread");
+    Utils::SetThreadName("Render Thread");
     int32_t operatingIndex = -1;
     while (!bShouldExit.load()) {
         frameReady.acquire();
@@ -70,7 +70,7 @@ void Multithreading::RenderThread()
 
 void Multithreading::WatchdogThread()
 {
-    SetThreadName("Watchdog Thread");
+    Utils::SetThreadName("Watchdog Thread");
     while (!bShouldExit.load()) {
         uint32_t gameSnapshot = lastGameFrame.load();
         uint32_t renderSnapshot = lastRenderFrame.load();
@@ -96,7 +96,7 @@ void Multithreading::WatchdogThread()
 
 void Multithreading::Run()
 {
-    SetThreadName("GameThread");
+    Utils::SetThreadName("GameThread");
     renderThread = std::jthread(&Multithreading::RenderThread, this);
     watchdogThread = std::jthread(&Multithreading::WatchdogThread, this);
 

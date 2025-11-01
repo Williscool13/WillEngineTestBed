@@ -71,8 +71,6 @@ add_library(engine-common INTERFACE
         src/utils/world_constants.h
         src/utils/free_list.cpp
         src/utils/free_list.h
-        src/utils/constants.cpp
-        src/utils/constants.h
         src/utils/handle_allocator.cpp
         src/utils/handle_allocator.h
         src/core/asset_loading_thread.cpp
@@ -102,3 +100,4 @@ add_subdirectory(physics)
 add_subdirectory(audio)
 add_subdirectory(skeletal-mesh)
 add_subdirectory(model-loading)
+add_subdirectory(engine-multithreading)

@@ -3,6 +3,8 @@ add_library(core-lib STATIC
         types/transform.h
         time.cpp
         time.h
+        constants.cpp
+        constants.h
 )
 
 target_include_directories(core-lib INTERFACE

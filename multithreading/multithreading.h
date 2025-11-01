@@ -34,7 +34,7 @@ private:
     static constexpr int32_t bufferCount = 2;
     std::vector<FrameData> frameBuffers{bufferCount};
     std::counting_semaphore<bufferCount> availableBuffers{bufferCount};
-    std::binary_semaphore frameReady{0};
+    std::counting_semaphore<bufferCount> frameReady{0};
 
 
     std::jthread renderThread;

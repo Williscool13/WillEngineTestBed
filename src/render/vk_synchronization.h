@@ -11,7 +11,7 @@ namespace Renderer
 {
 struct VulkanContext;
 
-struct FrameData
+struct FrameSynchronization
 {
     VulkanContext* context{};
 
@@ -21,15 +21,15 @@ struct FrameData
     VkSemaphore swapchainSemaphore{};
     VkSemaphore renderSemaphore{};
 
-    FrameData() = default;
-    explicit FrameData(VulkanContext* context);
-    ~FrameData();
+    FrameSynchronization() = default;
+    explicit FrameSynchronization(VulkanContext* context);
+    ~FrameSynchronization();
 
-    FrameData(const FrameData&) = delete;
-    FrameData& operator=(const FrameData&) = delete;
+    FrameSynchronization(const FrameSynchronization&) = delete;
+    FrameSynchronization& operator=(const FrameSynchronization&) = delete;
 
-    FrameData(FrameData&& other) noexcept;
-    FrameData& operator=(FrameData&& other) noexcept;
+    FrameSynchronization(FrameSynchronization&& other) noexcept;
+    FrameSynchronization& operator=(FrameSynchronization&& other) noexcept;
 
     void Initialize();
 };

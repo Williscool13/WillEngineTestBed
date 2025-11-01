@@ -432,7 +432,7 @@ void ModelLoading::Initialize()
 void ModelLoading::Run()
 {
     Input& input = Input::Input::Get();
-    Core::Time& time = Time::Get();
+    Time& time = Time::Get();
 
     animationPlayer.Play(modelDatas.Get(simpleSkinHandle)->animations[0], true);
     animationPlayer2.Play(modelDatas.Get(riggedFigureHandle)->animations[0], true);
@@ -500,7 +500,7 @@ void ModelLoading::Render()
     const float deltaTime = Time::Get().GetDeltaTime();
 
     const uint32_t currentFrameInFlight = frameNumber % swapchain->imageCount;
-    const FrameData& currentFrameData = frameSynchronization[currentFrameInFlight];
+    const FrameSynchronization& currentFrameData = frameSynchronization[currentFrameInFlight];
 
     // Wait for the GPU to finish the last frame that used this frame-in-flight's resources (N - imageCount).
     VK_CHECK(vkWaitForFences(vulkanContext->device, 1, &currentFrameData.renderFence, true, 1000000000));

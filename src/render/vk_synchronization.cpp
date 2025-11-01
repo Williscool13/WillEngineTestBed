@@ -10,11 +10,11 @@
 
 namespace Renderer
 {
-FrameData::FrameData(VulkanContext* context)
+FrameSynchronization::FrameSynchronization(VulkanContext* context)
     : context(context)
 {}
 
-FrameData::~FrameData()
+FrameSynchronization::~FrameSynchronization()
 {
     if (context && commandPool != VK_NULL_HANDLE) {
         // Command buffer is freed when pool is destroyed.
@@ -25,7 +25,7 @@ FrameData::~FrameData()
     }
 }
 
-FrameData::FrameData(FrameData&& other) noexcept
+FrameSynchronization::FrameSynchronization(FrameSynchronization&& other) noexcept
 {
     context = other.context;
     commandPool = other.commandPool;
@@ -42,7 +42,7 @@ FrameData::FrameData(FrameData&& other) noexcept
     other.renderSemaphore = VK_NULL_HANDLE;
 }
 
-FrameData& FrameData::operator=(FrameData&& other) noexcept
+FrameSynchronization& FrameSynchronization::operator=(FrameSynchronization&& other) noexcept
 {
     if (this != &other) {
         if (context && commandPool != VK_NULL_HANDLE) {
@@ -69,7 +69,7 @@ FrameData& FrameData::operator=(FrameData&& other) noexcept
     return *this;
 }
 
-void FrameData::Initialize()
+void FrameSynchronization::Initialize()
 {
     VkCommandPoolCreateInfo commandPoolCreateInfo = VkHelpers::CommandPoolCreateInfo(context->graphicsQueueFamily);
     VkCommandBufferAllocateInfo commandBufferAllocateInfo = VkHelpers::CommandBufferAllocateInfo(1);

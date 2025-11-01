@@ -313,7 +313,7 @@ void SkeletalMain::Render()
     Input::Input& input = Input::Input::Get();
 
     const uint32_t currentFrameInFlight = frameNumber % swapchain->imageCount;
-    const FrameData& currentFrameData = frameSynchronization[currentFrameInFlight];
+    const FrameSynchronization& currentFrameData = frameSynchronization[currentFrameInFlight];
 
     // Wait for the GPU to finish the last frame that used this frame-in-flight's resources (N - imageCount).
     VK_CHECK(vkWaitForFences(vulkanContext->device, 1, &currentFrameData.renderFence, true, 1000000000));
@@ -627,7 +627,7 @@ void SkeletalMain::Cleanup()
     depthImage.Cleanup(vulkanContext.get());
     depthImageView.Cleanup(vulkanContext.get());
 
-    for (FrameData& frameData : frameSynchronization) {
+    for (FrameSynchronization& frameData : frameSynchronization) {
         frameData.Cleanup(vulkanContext.get());
     }
 
