@@ -47,6 +47,10 @@ add_library(render-lib STATIC
         animation/animation_types.h
         animation/animation_player.cpp
         animation/animation_player.h
+        pipelines/draw_cull_compute_pipeline.cpp
+        pipelines/draw_cull_compute_pipeline.h
+        pipelines/gradient_compute_pipeline.cpp
+        pipelines/gradient_compute_pipeline.h
 )
 
 target_link_libraries(render-lib PUBLIC

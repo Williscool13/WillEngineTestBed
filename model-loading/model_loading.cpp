@@ -64,36 +64,7 @@ void ModelLoading::CreateResources()
 
     bindlessResourcesDescriptorBuffer = DescriptorBufferBindlessResources(vulkanContext.get());
 
-    //
-    {
-        VkPipelineLayoutCreateInfo computePipelineLayoutCreateInfo{};
-        computePipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        computePipelineLayoutCreateInfo.pNext = nullptr;
-        computePipelineLayoutCreateInfo.pSetLayouts = nullptr;
-        computePipelineLayoutCreateInfo.setLayoutCount = 0;
-
-        VkPushConstantRange pushConstant{};
-        pushConstant.offset = 0;
-        pushConstant.size = sizeof(BindlessIndirectPushConstant);
-        pushConstant.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-        computePipelineLayoutCreateInfo.pPushConstantRanges = &pushConstant;
-        computePipelineLayoutCreateInfo.pushConstantRangeCount = 1;
-
-        drawCullPipelineLayout = VkResources::CreatePipelineLayout(vulkanContext.get(), computePipelineLayoutCreateInfo);
-
-        VkShaderModule computeShader;
-        if (!VkHelpers::LoadShaderModule("shaders\\drawCull_compute.spv", vulkanContext->device, &computeShader)) {
-            throw std::runtime_error("Error when building the compute shader (drawCull_compute.spv)");
-        }
-
-        VkPipelineShaderStageCreateInfo pipelineShaderStageCreateInfo = VkHelpers::PipelineShaderStageCreateInfo(computeShader, VK_SHADER_STAGE_COMPUTE_BIT);
-        VkComputePipelineCreateInfo computePipelineCreateInfo = VkHelpers::ComputePipelineCreateInfo(drawCullPipelineLayout.handle, pipelineShaderStageCreateInfo);
-        drawCullPipeline = VkResources::CreateComputePipeline(vulkanContext.get(), computePipelineCreateInfo);
-
-        // Cleanup
-        vkDestroyShaderModule(vulkanContext->device, computeShader, nullptr);
-    }
-
+    drawCullComputePipeline = DrawCullComputePipeline(vulkanContext.get());
 
     //
     {
@@ -621,7 +592,7 @@ void ModelLoading::Render()
 
                 vkCmdPipelineBarrier2(cmd, &depInfo);
 
-                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, drawCullPipeline.handle);
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, drawCullComputePipeline.drawCullPipeline.handle);
                 BindlessIndirectPushConstant pushData{
                     currentSceneDataBuffer.address,
                     primitiveBuffer.address,
@@ -633,7 +604,7 @@ void ModelLoading::Render()
                     skeletalIndirectCountBuffers[currentFrameInFlight].address,
                 };
 
-                vkCmdPushConstants(cmd, drawCullPipelineLayout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(BindlessIndirectPushConstant), &pushData);
+                vkCmdPushConstants(cmd, drawCullComputePipeline.drawCullPipelineLayout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(BindlessIndirectPushConstant), &pushData);
                 uint32_t groupsX = (highestInstanceIndex + 63) / 64;
                 vkCmdDispatch(cmd, groupsX, 1, 1);
             }

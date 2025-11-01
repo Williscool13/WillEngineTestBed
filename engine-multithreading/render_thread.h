@@ -16,6 +16,10 @@
 #include "render/vk_resources.h"
 #include "render/vk_synchronization.h"
 #include "render/vk_types.h"
+#include "render/descriptor_buffer/descriptor_buffer_bindless_resources.h"
+#include "render/descriptor_buffer/descriptor_buffer_storage_image.h"
+#include "render/pipelines/gradient_compute_pipeline.h"
+#include "utils/utils.h"
 
 class EngineMultithreading;
 
@@ -38,6 +42,8 @@ public:
     ~RenderThread();
 
     void Initialize(EngineMultithreading* engineMultithreading_, SDL_Window* window_, uint32_t w, uint32_t h);
+
+    void InitializeResources();
 
     void Start();
 
@@ -74,21 +80,22 @@ private:
     SceneData sceneData{};
     std::array<AllocatedBuffer, Core::FRAMES_IN_FLIGHT> sceneDataBuffers;
 
+private:
+    DescriptorSetLayout renderTargetSetLayout{};
+    DescriptorBufferStorageImage renderTargetDescriptors{};
+
+    DescriptorBufferBindlessResources bindlessResourcesDescriptorBuffer{};
+
+    GradientComputePipeline gradientComputePipeline{};
+
 private: // Thread Sync
     std::jthread thread;
     std::atomic<bool> bShouldExit{false};
 
 private: // Performance Tracking
-    static inline std::chrono::time_point<std::chrono::steady_clock> lastFrameTime;
-
-    static constexpr size_t FRAME_TIME_HISTORY_SIZE = 100;
-    std::array<float, FRAME_TIME_HISTORY_SIZE> frameTimeHistory{};
-    size_t frameTimeHistoryIndex{0};
-    size_t frameTimeHistoryCount{0};
-    float rollingAverageFrameTime{0.0f};
+    Utils::FrameTimeTracker frameTimeTracker{100, 1.5f};
 
     void UpdateFrameTimeStats(float frameTimeMs);
-    float GetRollingAverageFrameTime() const { return rollingAverageFrameTime; }
 };
 } // Renderer
 

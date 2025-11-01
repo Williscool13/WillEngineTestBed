@@ -7,5 +7,7 @@
 namespace FileUtils
 {
 std::string GetAudioExtension(const std::string& string)
-{}
+{
+    return ".wav";
+}
 }

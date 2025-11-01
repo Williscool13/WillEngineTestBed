@@ -31,7 +31,7 @@
 #include "render/descriptor_buffer/descriptor_buffer_uniform.h"
 
 #include "input/input.h"
-#include "../src/render/model/model_loader.h"
+#include "render/model/model_loader.h"
 #include "core/time.h"
 #include "render/render_targets.h"
 #include "utils/utils.h"
@@ -51,40 +51,71 @@ RenderThread::~RenderThread()
 
 void RenderThread::Initialize(EngineMultithreading* engineMultithreading_, SDL_Window* window_, uint32_t w, uint32_t h)
 {
-    Utils::ScopedTimer timer{"[Render Thread] Render thread initialization"};
-
     engineMultithreading = engineMultithreading_;
-    window = window_;
+    window = window_; {
+        Utils::ScopedTimer timer{"[Render Thread] Render Context"};
+        renderContext = std::make_unique<RenderContext>(w, h, DEFAULT_RENDER_SCALE);
+        std::array<uint32_t, 2> renderExtent = renderContext->GetRenderExtent();
 
-    renderContext = std::make_unique<RenderContext>(w, h, DEFAULT_RENDER_SCALE);
-    std::array<uint32_t, 2> renderExtent = renderContext->GetRenderExtent();
+        vulkanContext = std::make_unique<VulkanContext>(window);
+        swapchain = std::make_unique<Swapchain>(vulkanContext.get(), renderExtent[0], renderExtent[1]);
+        // Imgui multithreaded needs a lot more attention, see
+        // https://github.com/ocornut/imgui/issues/1860#issuecomment-1927630727
+        imgui = std::make_unique<ImguiWrapper>(vulkanContext.get(), window, swapchain->imageCount, swapchain->format);
+        renderTargets = std::make_unique<RenderTargets>(vulkanContext.get(), w, h);
+        Input::Input::Get().Init(window, swapchain->extent.width, swapchain->extent.height);
 
-    vulkanContext = std::make_unique<VulkanContext>(window);
-    swapchain = std::make_unique<Swapchain>(vulkanContext.get(), renderExtent[0], renderExtent[1]);
-    // Imgui multithreaded needs a lot more attention, see
-    // https://github.com/ocornut/imgui/issues/1860#issuecomment-1927630727
-    imgui = std::make_unique<ImguiWrapper>(vulkanContext.get(), window, swapchain->imageCount, swapchain->format);
-    renderTargets = std::make_unique<RenderTargets>(vulkanContext.get(), w, h);
-    Input::Input::Get().Init(window, swapchain->extent.width, swapchain->extent.height);
+        for (FrameSynchronization& frameSync : frameSynchronization) {
+            frameSync = FrameSynchronization(vulkanContext.get());
+            frameSync.Initialize();
+        }
 
-    for (FrameSynchronization& frameSync : frameSynchronization) {
-        frameSync = FrameSynchronization(vulkanContext.get());
-        frameSync.Initialize();
+        //modelLoader = std::make_unique<ModelLoader>(vulkanContext.get());
+
+        for (AllocatedBuffer& sceneBuffer : sceneDataBuffers) {
+            VkBufferCreateInfo bufferInfo = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+            bufferInfo.pNext = nullptr;
+            VmaAllocationCreateInfo vmaAllocInfo = {};
+            vmaAllocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+            vmaAllocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+            bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
+            bufferInfo.size = sizeof(SceneData);
+            sceneBuffer = VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
+        }
     }
 
-    //modelLoader = std::make_unique<ModelLoader>(vulkanContext.get());
 
-    for (AllocatedBuffer& sceneBuffer : sceneDataBuffers) {
-        VkBufferCreateInfo bufferInfo = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
-        bufferInfo.pNext = nullptr;
-        VmaAllocationCreateInfo vmaAllocInfo = {};
-        vmaAllocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
-        vmaAllocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+    InitializeResources();
+}
 
-        bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
-        bufferInfo.size = sizeof(SceneData);
-        sceneBuffer = VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
+void RenderThread::InitializeResources()
+{
+    Utils::ScopedTimer timer{"[Render Thread] Resource Initialization"};
+
+    DescriptorLayoutBuilder layoutBuilder{2};
+    //
+    {
+        layoutBuilder.AddBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1); // Draw Image
+        layoutBuilder.AddBinding(1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1); // Depth Image
+        // Add render targets as needed
+        VkDescriptorSetLayoutCreateInfo layoutCreateInfo = layoutBuilder.Build(
+            static_cast<VkShaderStageFlagBits>(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT),
+            VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT
+        );
+        renderTargetSetLayout = VkResources::CreateDescriptorSetLayout(vulkanContext.get(), layoutCreateInfo);
+        renderTargetDescriptors = DescriptorBufferStorageImage(vulkanContext.get(), renderTargetSetLayout.handle, 1);
+        renderTargetDescriptors.AllocateDescriptorSet();
     }
+
+    VkDescriptorImageInfo drawDescriptorInfo;
+    drawDescriptorInfo.imageView = renderTargets->drawImageView.handle;
+    drawDescriptorInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+    renderTargetDescriptors.UpdateDescriptor(drawDescriptorInfo, 0, 0, 0);
+
+    bindlessResourcesDescriptorBuffer = DescriptorBufferBindlessResources(vulkanContext.get());
+
+    gradientComputePipeline = GradientComputePipeline(vulkanContext.get(), renderTargetSetLayout.handle);
 }
 
 void RenderThread::Start()
@@ -130,10 +161,10 @@ void RenderThread::ThreadMain()
             renderTargets->Recreate(newExtents[0], newExtents[1]);
 
             // // Upload to descriptor buffer
-            // VkDescriptorImageInfo drawDescriptorInfo;
-            // drawDescriptorInfo.imageView = renderTargets->drawImageView.handle;
-            // drawDescriptorInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-            // renderTargetDescriptors.UpdateDescriptor(drawDescriptorInfo, 0, 0, 0);
+            VkDescriptorImageInfo drawDescriptorInfo;
+            drawDescriptorInfo.imageView = renderTargets->drawImageView.handle;
+            drawDescriptorInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+            renderTargetDescriptors.UpdateDescriptor(drawDescriptorInfo, 0, 0, 0);
         }
 
         engineMultithreading->renderFrames.acquire();
@@ -186,8 +217,6 @@ RenderThread::RenderResponse RenderThread::Render(uint32_t currentFrameInFlight,
     VkImage currentSwapchainImage = swapchain->swapchainImages[swapchainImageIndex];
     VkImageView currentSwapchainImageView = swapchain->swapchainImageViews[swapchainImageIndex];
 
-
-    // Do rendering stuff
     VkCommandBuffer cmd = currentFrameData.commandBuffer;
     VK_CHECK(vkResetCommandBuffer(cmd, 0));
     VkCommandBufferBeginInfo commandBufferBeginInfo = VkHelpers::CommandBufferBeginInfo();
@@ -221,18 +250,93 @@ RenderThread::RenderResponse RenderThread::Render(uint32_t currentFrameInFlight,
     auto* currentSceneData = static_cast<SceneData*>(currentSceneDataBuffer.allocationInfo.pMappedData);
     *currentSceneData = sceneData;
 
+    // Transition 1 - Prepare for compute draw
+    {
+        auto subresource = VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT);
+        auto barrier = VkHelpers::ImageMemoryBarrier(
+            renderTargets->drawImage.handle,
+            subresource,
+            VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
+            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_GENERAL
+        );
+        auto dependencyInfo = VkHelpers::DependencyInfo(&barrier);
+        vkCmdPipelineBarrier2(cmd, &dependencyInfo);
+    }
+
+    // Draw compute
+    {
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, gradientComputePipeline.gradientPipeline.handle);
+        // Push Constants
+        vkCmdPushConstants(cmd, gradientComputePipeline.gradientPipelineLayout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(uint32_t) * 2, scaledRenderExtent.data());
+        VkDescriptorBufferBindingInfoEXT descriptorBufferBindingInfo[1]{};
+        descriptorBufferBindingInfo[0] = renderTargetDescriptors.GetBindingInfo();
+        vkCmdBindDescriptorBuffersEXT(cmd, 1, descriptorBufferBindingInfo);
+
+        uint32_t bufferIndexImage = 0;
+        VkDeviceSize bufferOffset = 0;
+        vkCmdSetDescriptorBufferOffsetsEXT(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, gradientComputePipeline.gradientPipelineLayout.handle, 0, 1, &bufferIndexImage, &bufferOffset);
+        uint32_t groupsX = (scaledRenderExtent[0] + 15) / 16;
+        uint32_t groupsY = (scaledRenderExtent[1] + 15) / 16;
+        vkCmdDispatch(cmd, groupsX, groupsY, 1);
+    }
+
+    // Transition 2 - Prepare for copy
+    {
+        VkImageMemoryBarrier2 barriers[2];
+        barriers[0] = VkHelpers::ImageMemoryBarrier(
+            renderTargets->drawImage.handle,
+            VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT),
+            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_GENERAL,
+            VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
+        );
+        barriers[1] = VkHelpers::ImageMemoryBarrier(
+            currentSwapchainImage,
+            VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT),
+            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_UNDEFINED,
+            VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
+        );
+        VkDependencyInfo depInfo{.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+        depInfo.imageMemoryBarrierCount = 2;
+        depInfo.pImageMemoryBarriers = barriers;
+        vkCmdPipelineBarrier2(cmd, &depInfo);
+    }
+
+    // Copy
+    {
+        VkOffset3D renderOffset = {static_cast<int32_t>(scaledRenderExtent[0]), static_cast<int32_t>(scaledRenderExtent[1]), 1};
+        VkOffset3D swapchainOffset = {static_cast<int32_t>(swapchain->extent.width), static_cast<int32_t>(swapchain->extent.height), 1};
+        VkImageBlit2 blitRegion{};
+        blitRegion.sType = VK_STRUCTURE_TYPE_IMAGE_BLIT_2;
+        blitRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        blitRegion.srcSubresource.layerCount = 1;
+        blitRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        blitRegion.dstSubresource.layerCount = 1;
+        blitRegion.srcOffsets[0] = {0, 0, 0};
+        blitRegion.srcOffsets[1] = renderOffset;
+        blitRegion.dstOffsets[0] = {0, 0, 0};
+        blitRegion.dstOffsets[1] = swapchainOffset;
+
+        VkBlitImageInfo2 blitInfo{};
+        blitInfo.sType = VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2;
+        blitInfo.srcImage = renderTargets->drawImage.handle;
+        blitInfo.srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        blitInfo.dstImage = currentSwapchainImage;
+        blitInfo.dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        blitInfo.regionCount = 1;
+        blitInfo.pRegions = &blitRegion;
+        blitInfo.filter = VK_FILTER_LINEAR;
+
+        vkCmdBlitImage2(cmd, &blitInfo);
+    }
+
     // Final transition
     {
         auto subresource = VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT);
         auto barrier = VkHelpers::ImageMemoryBarrier(
             currentSwapchainImage,
             subresource,
-            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-            VK_ACCESS_2_NONE,
-            VK_IMAGE_LAYOUT_UNDEFINED,
-            VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT,
-            VK_ACCESS_2_NONE,
-            VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
+            VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
         );
         auto dependencyInfo = VkHelpers::DependencyInfo(&barrier);
         vkCmdPipelineBarrier2(cmd, &dependencyInfo);
@@ -264,33 +368,21 @@ RenderThread::RenderResponse RenderThread::Render(uint32_t currentFrameInFlight,
 
 void RenderThread::UpdateFrameTimeStats(float frameTimeMs)
 {
-    frameTimeHistory[frameTimeHistoryIndex] = frameTimeMs;
-    frameTimeHistoryIndex = (frameTimeHistoryIndex + 1) % FRAME_TIME_HISTORY_SIZE;
+    frameTimeTracker.RecordFrameTime(frameTimeMs);
 
-    if (frameTimeHistoryCount < FRAME_TIME_HISTORY_SIZE) {
-        frameTimeHistoryCount++;
-    }
-
-    float sum = 0.0f;
-    for (size_t i = 0; i < frameTimeHistoryCount; i++) {
-        sum += frameTimeHistory[i];
-    }
-    rollingAverageFrameTime = sum / static_cast<float>(frameTimeHistoryCount);
-
-
-    if (frameTimeHistoryCount >= 10) {
-        constexpr float SPIKE_THRESHOLD = 1.5f;
-
-        if (frameTimeMs > rollingAverageFrameTime * SPIKE_THRESHOLD) {
-            float percentIncrease = ((frameTimeMs / rollingAverageFrameTime) - 1.0f) * 100.0f;
+    if (frameTimeTracker.GetSampleCount() >= 10) {
+        float avg = frameTimeTracker.GetRollingAverage();
+        if (frameTimeMs > avg * frameTimeTracker.GetSpikeThreshold()) {
+            float percentIncrease = ((frameTimeMs / avg) - 1.0f) * 100.0f;
             LOG_WARN("[Render Thread] Frame {} spike detected: {:.2f}ms (avg: {:.2f}ms, +{:.1f}%)",
-                     frameNumber, frameTimeMs, rollingAverageFrameTime, percentIncrease);
+                     frameNumber, frameTimeMs, avg, percentIncrease);
         }
     }
 
     if (frameNumber % 100 == 0 && frameNumber > 0) {
+        float avg = frameTimeTracker.GetRollingAverage();
         LOG_INFO("[Render Thread] Rolling average frame time (last {} frames): {:.2f}ms ({:.1f} FPS)",
-                 frameTimeHistoryCount, rollingAverageFrameTime, 1000.0f / rollingAverageFrameTime);
+                 frameTimeTracker.GetSampleCount(), avg, 1000.0f / avg);
     }
 }
 } // Renderer

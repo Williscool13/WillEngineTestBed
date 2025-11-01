@@ -147,34 +147,8 @@ void Renderer::CreateResources()
     renderTargetDescriptors.UpdateDescriptor(drawDescriptorInfo, 0, 0, 0);
 
     // Compute Pipeline
-    {
-        VkPipelineLayoutCreateInfo computePipelineLayoutCreateInfo{};
-        computePipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        computePipelineLayoutCreateInfo.pNext = nullptr;
-        computePipelineLayoutCreateInfo.pSetLayouts = &bindlessStorageImageSetLayout.handle;
-        computePipelineLayoutCreateInfo.setLayoutCount = 1;
+    gradientComputePipeline = GradientComputePipeline(vulkanContext.get(), renderTargetSetLayout.handle);
 
-        VkPushConstantRange pushConstant{};
-        pushConstant.offset = 0;
-        pushConstant.size = sizeof(int32_t) * 2;
-        pushConstant.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-        computePipelineLayoutCreateInfo.pPushConstantRanges = &pushConstant;
-        computePipelineLayoutCreateInfo.pushConstantRangeCount = 1;
-
-        computePipelineLayout = VkResources::CreatePipelineLayout(vulkanContext.get(), computePipelineLayoutCreateInfo);
-
-        VkShaderModule computeShader;
-        if (!VkHelpers::LoadShaderModule("shaders\\compute_compute.spv", vulkanContext->device, &computeShader)) {
-            throw std::runtime_error("Error when building the compute shader (compute_compute.spv)");
-        }
-
-        VkPipelineShaderStageCreateInfo pipelineShaderStageCreateInfo = VkHelpers::PipelineShaderStageCreateInfo(computeShader, VK_SHADER_STAGE_COMPUTE_BIT);
-        VkComputePipelineCreateInfo computePipelineCreateInfo = VkHelpers::ComputePipelineCreateInfo(computePipelineLayout.handle, pipelineShaderStageCreateInfo);
-        computePipeline = VkResources::CreateComputePipeline(vulkanContext.get(), computePipelineCreateInfo);
-
-        // Cleanup
-        vkDestroyShaderModule(vulkanContext->device, computeShader, nullptr);
-    }
 
     // Render Pipeline
     {
@@ -258,7 +232,7 @@ void Renderer::CreateResources()
 
 void Renderer::Run()
 {
-    Input::Input& input = Input::Input::Get();
+    Input& input = Input::Input::Get();
     SDL_Event e;
     bool exit = false;
     while (true) {
@@ -304,16 +278,16 @@ void Renderer::Run()
             break;
         }
 
-        if (input.IsKeyDown(Input::Key::NUM_0)) {
+        if (input.IsKeyDown(Key::NUM_0)) {
             renderContext->UpdateRenderScale(0.1f);
         }
-        if (input.IsKeyDown(Input::Key::NUM_9)) {
+        if (input.IsKeyDown(Key::NUM_9)) {
             renderContext->UpdateRenderScale(1.0f);
         }
-        if (input.IsKeyDown(Input::Key::NUM_6)) {
+        if (input.IsKeyDown(Key::NUM_6)) {
             renderContext->RequestRenderExtentResize(120, 90);
         }
-        if (input.IsKeyDown(Input::Key::NUM_7)) {
+        if (input.IsKeyDown(Key::NUM_7)) {
             renderContext->RequestRenderExtentResize(1920, 1080);
         }
 
@@ -327,7 +301,7 @@ void Renderer::Run()
 void Renderer::Render()
 {
     std::array<uint32_t, 2> scaledRenderExtent = renderContext->GetScaledRenderExtent();
-    Input::Input& input = Input::Input::Get();
+    Input& input = Input::Input::Get();
 
     const uint32_t currentFrameInFlight = frameNumber % swapchain->imageCount;
     const FrameSynchronization& currentFrameData = frameSynchronization[currentFrameInFlight];
@@ -362,10 +336,10 @@ void Renderer::Render()
         ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
 
-        if (input.IsKeyPressed(Input::Key::G)) {
+        if (input.IsKeyPressed(Key::G)) {
             LOG_INFO("G is pressed");
         }
-        if (input.IsKeyReleased(Input::Key::G)) {
+        if (input.IsKeyReleased(Key::G)) {
             LOG_INFO("G is released");
         }
         if (ImGui::Begin("Main")) {
@@ -440,16 +414,16 @@ void Renderer::Render()
 
         // Draw compute
         {
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline.handle);
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, gradientComputePipeline.gradientPipeline.handle);
             // Push Constants
-            vkCmdPushConstants(cmd, computePipelineLayout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(uint32_t) * 2, scaledRenderExtent.data());
+            vkCmdPushConstants(cmd, gradientComputePipeline.gradientPipelineLayout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(uint32_t) * 2, scaledRenderExtent.data());
             VkDescriptorBufferBindingInfoEXT descriptorBufferBindingInfo[1]{};
             descriptorBufferBindingInfo[0] = renderTargetDescriptors.GetBindingInfo();
             vkCmdBindDescriptorBuffersEXT(cmd, 1, descriptorBufferBindingInfo);
 
             uint32_t bufferIndexImage = 0;
             VkDeviceSize bufferOffset = 0;
-            vkCmdSetDescriptorBufferOffsetsEXT(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, computePipelineLayout.handle, 0, 1, &bufferIndexImage, &bufferOffset);
+            vkCmdSetDescriptorBufferOffsetsEXT(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, gradientComputePipeline.gradientPipelineLayout.handle, 0, 1, &bufferIndexImage, &bufferOffset);
             uint32_t groupsX = (scaledRenderExtent[0] + 15) / 16;
             uint32_t groupsY = (scaledRenderExtent[1] + 15) / 16;
             vkCmdDispatch(cmd, groupsX, groupsY, 1);

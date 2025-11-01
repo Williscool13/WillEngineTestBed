@@ -4,6 +4,7 @@
 
 #ifndef WILLENGINETESTBED_UTILS_H
 #define WILLENGINETESTBED_UTILS_H
+#include <array>
 #include <windows.h>
 
 #include <chrono>
@@ -37,6 +38,35 @@ inline void SetThreadName(const char* name) {
     MultiByteToWideChar(CP_UTF8, 0, name, -1, wideName, 256);
     SetThreadDescription(GetCurrentThread(), wideName);
 }
+
+class FrameTimeTracker
+{
+public:
+    explicit FrameTimeTracker(size_t historySize = 100, float spikeThreshold = 1.5f);
+
+    void RecordFrameTime(float frameTimeMs);
+
+    float GetRollingAverage() const { return rollingAverage; }
+    float GetLatestFrameTime() const;
+    size_t GetSampleCount() const { return sampleCount; }
+
+    void SetSpikeThreshold(float threshold) { spikeThreshold = threshold; }
+    float GetSpikeThreshold() const { return spikeThreshold; }
+
+private:
+    static constexpr size_t MAX_HISTORY_SIZE = 1000;
+
+    std::array<float, MAX_HISTORY_SIZE> history{};
+    size_t historySize;
+    size_t currentIndex{0};
+    size_t sampleCount{0};
+    float rollingAverage{0.0f};
+    float spikeThreshold;
+
+    void UpdateRollingAverage();
+    bool IsSpikeDetected(float frameTimeMs) const;
+};
+
 } // Utils
 
 #endif //WILLENGINETESTBED_UTILS_H

@@ -5,6 +5,8 @@ add_executable(engine-multithreading
         engine_multithreading.h
         render_thread.cpp
         render_thread.h
+        asset_loading_thread.cpp
+        asset_loading_thread.h
 )
 
 target_link_libraries(engine-multithreading PRIVATE
@@ -27,4 +29,8 @@ compile_shaders(engine-multithreading
         ${CMAKE_SOURCE_DIR}/shaders/drawCull.slang compute computeMain
         ${CMAKE_SOURCE_DIR}/shaders/skeletalIndirectDraw.slang vertex vertexMain
         ${CMAKE_SOURCE_DIR}/shaders/skeletalIndirectDraw.slang fragment fragmentMain
+)
+
+compile_shaders(engine-multithreading
+        ${CMAKE_SOURCE_DIR}/shaders/compute.slang compute computeMain
 )

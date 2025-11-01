@@ -62,7 +62,7 @@ target_include_directories(Jolt PUBLIC
 )
 set(CMAKE_CXX_STANDARD 20) # Jolt sets cxx standard to 17
 # Common
-add_library(engine-common INTERFACE
+add_library(engine-common STATIC
         src/utils/utils.cpp
         src/utils/utils.h
         src/utils/file_utils.cpp
@@ -73,19 +73,18 @@ add_library(engine-common INTERFACE
         src/utils/free_list.h
         src/utils/handle_allocator.cpp
         src/utils/handle_allocator.h
-        src/core/asset_loading_thread.cpp
-        src/core/asset_loading_thread.h
 )
 
-target_compile_definitions(engine-common INTERFACE
+target_compile_definitions(engine-common PUBLIC
         BUILD_CONFIG_NAME="$<CONFIG>"
 )
-target_include_directories(engine-common INTERFACE
+target_include_directories(engine-common PUBLIC
         ${CMAKE_SOURCE_DIR}
         ${CMAKE_SOURCE_DIR}/src
         ${CMAKE_SOURCE_DIR}/extern
 )
-target_link_libraries(engine-common INTERFACE
+target_link_libraries(engine-common PUBLIC
+        crash-handling
         fmt::fmt
 )
 

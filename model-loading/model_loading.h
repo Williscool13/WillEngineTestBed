@@ -17,6 +17,7 @@
 #include "render/descriptor_buffer/descriptor_buffer_bindless_resources.h"
 #include "render/descriptor_buffer/descriptor_buffer_storage_image.h"
 #include "render/model/model_data.h"
+#include "render/pipelines/draw_cull_compute_pipeline.h"
 #include "utils/handle_allocator.h"
 
 namespace Renderer
@@ -124,8 +125,7 @@ private:
     AllocatedBuffer opaqueSkeletalIndexedIndirectBuffer;
     std::vector<AllocatedBuffer> skeletalIndirectCountBuffers;
 
-    PipelineLayout drawCullPipelineLayout;
-    Pipeline drawCullPipeline;
+    DrawCullComputePipeline drawCullComputePipeline;
     PipelineLayout renderPipelineLayout;
     Pipeline renderPipeline;
     PipelineLayout skeletalPipelineLayout;

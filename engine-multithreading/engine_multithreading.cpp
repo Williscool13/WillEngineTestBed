@@ -57,8 +57,8 @@ void EngineMultithreading::Run()
             if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_ESCAPE) { exit = true; }
         }
 
-        // input.UpdateFocus(SDL_GetWindowFlags(window));
-        // time.Update();
+        input.UpdateFocus(SDL_GetWindowFlags(window));
+        time.Update();
 
         if (exit)
         {

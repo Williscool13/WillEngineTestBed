@@ -15,6 +15,7 @@
 #include "render/descriptor_buffer/descriptor_buffer_combined_image_sampler.h"
 #include "render/descriptor_buffer/descriptor_buffer_storage_image.h"
 #include "render/descriptor_buffer/descriptor_buffer_uniform.h"
+#include "render/pipelines/gradient_compute_pipeline.h"
 
 
 namespace Renderer
@@ -64,8 +65,7 @@ private:
     DescriptorSetLayout bindlessStorageImageSetLayout{};
     DescriptorBufferStorageImage bindlessStorageImages{};
 
-    PipelineLayout computePipelineLayout;
-    Pipeline computePipeline;
+    GradientComputePipeline gradientComputePipeline{};
 
     PipelineLayout renderPipelineLayout;
     Pipeline renderPipeline;

@@ -8,9 +8,8 @@
 #include <functional>
 #include <thread>
 
-namespace Core
-{
-struct AssetLoadRequest
+
+/*struct AssetLoadRequest
 {
     std::filesystem::path path;
     std::function<void(ModelHandle)> onComplete;
@@ -64,7 +63,6 @@ public:
 
 private:
     AssetLoadingThread assetLoader;
-};
-} // Core
+};*/
 
 #endif //WILLENGINETESTBED_ASSET_LOADING_THREAD_H
