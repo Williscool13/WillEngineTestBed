@@ -8,36 +8,23 @@
 
 namespace Renderer
 {
-// ResourceManager::ResourceManager() = default;
-//
-// ResourceManager::~ResourceManager() = default;
-//
-// ResourceManager::ResourceManager(VulkanContext* context)
-//     : context(context)
-// {
-//     modelLoader = std::make_unique<ModelLoader>(context);
-// }
+OffsetAllocator::Allocation ResourceManager::AllocateVertices(size_t count)
+{
+    return vertexBufferAllocator.allocate(count);
+}
 
-// ModelEntryHandle ResourceManager::LoadModel(const std::filesystem::path& path)
-// {
-//     if (auto it = pathToModel.find(path); it != pathToModel.end()) {
-//         modelEntries.Get(it->second)->refCount++;
-//         return it->second;
-//     }
-//
-//     ModelEntryHandle newModelHandle = modelEntries.Add();
-//     ModelEntry* newModel = modelEntries.Get(newModelHandle);
-//     newModel->refCount = 1;
-//     //newModel->data =;
-// }
-//
-// void ResourceManager::UnloadModel(ModelEntryHandle modelEntryHandle)
-// {
-//     if (auto* entry = modelEntries.Get(modelEntryHandle)) {
-//         if (--entry->refCount == 0) {
-//             pathToModel.erase(entry->data.path);
-//             modelEntries.Remove(modelEntryHandle);
-//         }
-//     }
-// }
+OffsetAllocator::Allocation ResourceManager::AllocateIndices(size_t count)
+{
+    return indexBufferAllocator.allocate(count);
+}
+
+OffsetAllocator::Allocation ResourceManager::AllocateMaterials(size_t count)
+{
+    return materialBufferAllocator.allocate(count);
+}
+
+OffsetAllocator::Allocation ResourceManager::AllocatePrimitives(size_t count)
+{
+    return primitiveBufferAllocator.allocate(count);
+}
 } // Renderer

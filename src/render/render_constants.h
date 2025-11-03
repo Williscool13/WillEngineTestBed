@@ -38,8 +38,9 @@ inline static constexpr int32_t BINDLESS_STORAGE_IMAGE_COUNT = 1000;
 inline static constexpr int32_t BINDLESS_SAMPLER_COUNT = 64;
 inline static constexpr int32_t BINDLESS_SAMPLED_IMAGE_COUNT = 8192;
 
-inline static constexpr int32_t ASSET_LOAD_TEXTURE_STAGING_COUNT = 4;
-inline static constexpr int32_t IMAGE_UPLOAD_STAGING_SIZE = 16 * 64 * 1024 * 1024; // 16 x 64 MB (1x uncompressed 4k rgba8, or 4x 4k BC7)
+inline static constexpr int32_t ASSET_LOAD_ASYNC_COUNT = 4;
+inline static constexpr int32_t ASSET_LOAD_QUEUE_COUNT = 64;
+inline static constexpr int32_t STAGING_SIZE = 2 * 64 * 1024 * 1024; // 2 x 64 MB (1x uncompressed 4k rgba8, or 4x 4k BC7)
 
 // Swapchain / Render Context
 inline static constexpr uint32_t DEFAULT_SWAPCHAIN_WIDTH = 1700;

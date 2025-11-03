@@ -38,7 +38,7 @@ private:
     VkFence uploadFence{};
 
     AllocatedBuffer imageStagingBuffer{};
-    OffsetAllocator::Allocator imageStagingAllocator{IMAGE_UPLOAD_STAGING_SIZE};
+    OffsetAllocator::Allocator imageStagingAllocator{STAGING_SIZE};
 
     std::vector<Node> sortedNodes;
     std::vector<bool> visited;

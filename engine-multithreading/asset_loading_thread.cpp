@@ -4,14 +4,30 @@
 
 #include "asset_loading_thread.h"
 
+#include <fastgltf/core.hpp>
+#include <fastgltf/types.hpp>
+#include <fastgltf/tools.hpp>
+#include <stb/stb_image.h>
+
 #include "crash-handling/crash_handler.h"
 #include "crash-handling/logger.h"
+
 #include "render/render_utils.h"
+#include "render/resource_manager.h"
 #include "render/vk_helpers.h"
-#include "stb/stb_image.h"
+#include "render/model/model_load_utils.h"
+#include "utils/utils.h"
 
 namespace Renderer
 {
+AssetLoadingThread::AssetLoadingThread() = default;
+
+AssetLoadingThread::~AssetLoadingThread() = default;
+
+AssetLoadingThread::AssetLoadingThread(VulkanContext* context, ResourceManager* resourceManager)
+    : context(context), resourceManager(resourceManager)
+{}
+
 void AssetLoadingThread::Start()
 {
     // start thread loop
@@ -51,7 +67,452 @@ ModelEntryHandle AssetLoadingThread::LoadGltf(const std::filesystem::path& path)
     const ModelEntryHandle newModelHandle = models.Add();
     ModelEntry* newModel = models.Get(newModelHandle);
     newModel->refCount = 1;
-    //newModel->data =;
+
+    Utils::ScopedTimer timer{fmt::format("{} Load Time", path.filename().string())};
+
+    fastgltf::Parser parser{fastgltf::Extensions::KHR_texture_basisu | fastgltf::Extensions::KHR_mesh_quantization | fastgltf::Extensions::KHR_texture_transform};
+    constexpr auto gltfOptions = fastgltf::Options::DontRequireValidAssetMember
+                                 | fastgltf::Options::AllowDouble
+                                 | fastgltf::Options::LoadExternalBuffers
+                                 | fastgltf::Options::LoadExternalImages;
+
+    auto gltfFile = fastgltf::MappedGltfFile::FromPath(path);
+    if (!static_cast<bool>(gltfFile)) {
+        LOG_ERROR("Failed to open glTF file ({}): {}\n", path.filename().string(), getErrorMessage(gltfFile.error()));
+        models.Remove(newModelHandle);
+        return ModelEntryHandle::Invalid;
+    }
+
+    auto load = parser.loadGltf(gltfFile.get(), path.parent_path(), gltfOptions);
+    if (!load) {
+        LOG_ERROR("Failed to load glTF: {}\n", to_underlying(load.error()));
+        models.Remove(newModelHandle);
+        return ModelEntryHandle::Invalid;
+    }
+
+    UploadStaging& uploadStaging = GetAvailableTextureStaging();
+
+    fastgltf::Asset gltf = std::move(load.get());
+
+    //model.bSuccessfullyLoaded = true;
+    newModel->data.samplers.reserve(gltf.samplers.size());
+    for (const fastgltf::Sampler& gltfSampler : gltf.samplers) {
+        VkSamplerCreateInfo samplerInfo = {.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO, .pNext = nullptr};
+        samplerInfo.maxLod = VK_LOD_CLAMP_NONE;
+        samplerInfo.minLod = 0;
+        samplerInfo.magFilter = ModelLoadUtils::ExtractFilter(gltfSampler.magFilter.value_or(fastgltf::Filter::Nearest));
+        samplerInfo.minFilter = ModelLoadUtils::ExtractFilter(gltfSampler.minFilter.value_or(fastgltf::Filter::Nearest));
+        samplerInfo.mipmapMode = ModelLoadUtils::ExtractMipmapMode(gltfSampler.minFilter.value_or(fastgltf::Filter::Linear));
+        newModel->data.samplers.push_back(VkResources::CreateSampler(context, samplerInfo));
+    }
+
+    std::vector<MaterialProperties> materials{};
+
+    materials.reserve(gltf.materials.size());
+    for (const fastgltf::Material& gltfMaterial : gltf.materials) {
+        MaterialProperties material = ModelLoadUtils::ExtractMaterial(gltf, gltfMaterial);
+        materials.push_back(material);
+    }
+
+    std::vector<Vertex> primitiveVertices{};
+    std::vector<uint32_t> primitiveIndices{};
+    std::vector<Primitive> primitives{};
+    std::vector<Vertex> vertices{};
+    std::vector<uint32_t> indices{};
+
+    newModel->data.meshes.reserve(gltf.meshes.size());
+    for (fastgltf::Mesh& mesh : gltf.meshes) {
+        MeshInformation meshData{};
+        meshData.name = mesh.name;
+        meshData.primitiveIndices.reserve(mesh.primitives.size());
+        primitives.reserve(primitives.size() + mesh.primitives.size());
+
+        for (fastgltf::Primitive& p : mesh.primitives) {
+            Primitive primitiveData{};
+
+            if (p.materialIndex.has_value()) {
+                primitiveData.materialIndex = p.materialIndex.value();
+                primitiveData.bHasTransparent = (static_cast<MaterialType>(materials[primitiveData.materialIndex].alphaProperties.y) == MaterialType::TRANSPARENT_);
+            }
+
+            // INDICES
+            const fastgltf::Accessor& indexAccessor = gltf.accessors[p.indicesAccessor.value()];
+            primitiveIndices.clear();
+            primitiveIndices.reserve(indexAccessor.count);
+
+            fastgltf::iterateAccessor<std::uint32_t>(gltf, indexAccessor, [&](const std::uint32_t idx) {
+                primitiveIndices.push_back(idx);
+            });
+
+            // POSITION (REQUIRED)
+            const fastgltf::Attribute* positionIt = p.findAttribute("POSITION");
+            const fastgltf::Accessor& posAccessor = gltf.accessors[positionIt->accessorIndex];
+            primitiveVertices.clear();
+            primitiveVertices.resize(posAccessor.count);
+
+            fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec3>(gltf, posAccessor, [&](fastgltf::math::fvec3 v, const size_t index) {
+                primitiveVertices[index] = {};
+                primitiveVertices[index].position = {v.x(), v.y(), v.z()};
+            });
+
+
+            // NORMALS
+            const fastgltf::Attribute* normals = p.findAttribute("NORMAL");
+            if (normals != p.attributes.end()) {
+                fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec3>(gltf, gltf.accessors[normals->accessorIndex], [&](fastgltf::math::fvec3 n, const size_t index) {
+                    primitiveVertices[index].normal = {n.x(), n.y(), n.z()};
+                });
+            }
+
+            // TANGENTS
+            const fastgltf::Attribute* tangents = p.findAttribute("TANGENT");
+            if (tangents != p.attributes.end()) {
+                fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec4>(gltf, gltf.accessors[tangents->accessorIndex], [&](fastgltf::math::fvec4 t, const size_t index) {
+                    primitiveVertices[index].tangent = {t.x(), t.y(), t.z(), t.w()};
+                });
+            }
+
+            // JOINTS_0
+            const fastgltf::Attribute* joints0 = p.findAttribute("JOINTS_0");
+            if (joints0 != p.attributes.end()) {
+                fastgltf::iterateAccessorWithIndex<fastgltf::math::uvec4>(gltf, gltf.accessors[joints0->accessorIndex], [&](fastgltf::math::uvec4 j, const size_t index) {
+                    primitiveVertices[index].joints = {j.x(), j.y(), j.z(), j.w()};
+                });
+            }
+
+            // WEIGHTS_0
+            const fastgltf::Attribute* weights0 = p.findAttribute("WEIGHTS_0");
+            if (weights0 != p.attributes.end()) {
+                fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec4>(gltf, gltf.accessors[weights0->accessorIndex], [&](fastgltf::math::fvec4 w, const size_t index) {
+                    primitiveVertices[index].weights = {w.x(), w.y(), w.z(), w.w()};
+                });
+            }
+
+            primitiveData.bHasSkinning = joints0 != p.attributes.end() && weights0 != p.attributes.end();
+
+            // UV
+            const fastgltf::Attribute* uvs = p.findAttribute("TEXCOORD_0");
+            if (uvs != p.attributes.end()) {
+                const fastgltf::Accessor& uvAccessor = gltf.accessors[uvs->accessorIndex];
+
+                switch (uvAccessor.componentType) {
+                    case fastgltf::ComponentType::Byte:
+                        fastgltf::iterateAccessorWithIndex<fastgltf::math::s8vec2>(gltf, uvAccessor, [&](fastgltf::math::s8vec2 uv, const size_t index) {
+                            // f = max(c / 127.0, -1.0)
+                            float u = std::max(static_cast<float>(uv.x()) / 127.0f, -1.0f);
+                            float v = std::max(static_cast<float>(uv.y()) / 127.0f, -1.0f);
+                            primitiveVertices[index].uv = {u, v};
+                        });
+                        break;
+                    case fastgltf::ComponentType::UnsignedByte:
+                        fastgltf::iterateAccessorWithIndex<fastgltf::math::u8vec2>(gltf, uvAccessor, [&](fastgltf::math::u8vec2 uv, const size_t index) {
+                            // f = c / 255.0
+                            float u = static_cast<float>(uv.x()) / 255.0f;
+                            float v = static_cast<float>(uv.y()) / 255.0f;
+                            primitiveVertices[index].uv = {u, v};
+                        });
+                        break;
+                    case fastgltf::ComponentType::Short:
+                        fastgltf::iterateAccessorWithIndex<fastgltf::math::s16vec2>(gltf, uvAccessor, [&](fastgltf::math::s16vec2 uv, const size_t index) {
+                            // f = max(c / 32767.0, -1.0)
+                            float u = std::max(
+                                static_cast<float>(uv.x()) / 32767.0f, -1.0f);
+                            float v = std::max(
+                                static_cast<float>(uv.y()) / 32767.0f, -1.0f);
+                            primitiveVertices[index].uv = {u, v};
+                        });
+                        break;
+                    case fastgltf::ComponentType::UnsignedShort:
+                        fastgltf::iterateAccessorWithIndex<fastgltf::math::u16vec2>(gltf, uvAccessor, [&](fastgltf::math::u16vec2 uv, const size_t index) {
+                            // f = c / 65535.0
+                            float u = static_cast<float>(uv.x()) / 65535.0f;
+                            float v = static_cast<float>(uv.y()) / 65535.0f;
+                            primitiveVertices[index].uv = {u, v};
+                        });
+                        break;
+                    case fastgltf::ComponentType::Float:
+                        fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec2>(gltf, uvAccessor, [&](fastgltf::math::fvec2 uv, const size_t index) {
+                            primitiveVertices[index].uv = {uv.x(), uv.y()};
+                        });
+                        break;
+                    default:
+                        fmt::print("Unsupported UV component type: {}\n", static_cast<int>(uvAccessor.componentType));
+                        break;
+                }
+            }
+
+            // VERTEX COLOR
+            const fastgltf::Attribute* colors = p.findAttribute("COLOR_0");
+            if (colors != p.attributes.end()) {
+                fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec4>(gltf, gltf.accessors[colors->accessorIndex], [&](const fastgltf::math::fvec4& color, const size_t index) {
+                    primitiveVertices[index].color = {
+                        color.x(), color.y(), color.z(), color.w()
+                    };
+                });
+            }
+
+            primitiveData.firstIndex = static_cast<uint32_t>(indices.size());
+            primitiveData.vertexOffset = static_cast<int32_t>(vertices.size());
+            primitiveData.indexCount = static_cast<uint32_t>(primitiveIndices.size());
+            primitiveData.boundingSphere = ModelLoadUtils::GenerateBoundingSphere(primitiveVertices);
+
+            vertices.insert(vertices.end(), primitiveVertices.begin(), primitiveVertices.end());
+            indices.insert(indices.end(), primitiveIndices.begin(), primitiveIndices.end());
+
+            meshData.primitiveIndices.push_back(primitives.size());
+            primitives.push_back(primitiveData);
+        }
+
+        newModel->data.meshes.push_back(meshData);
+    }
+
+    newModel->data.nodes.reserve(gltf.nodes.size());
+    for (const fastgltf::Node& node : gltf.nodes) {
+        Node node_{};
+        node_.name = node.name;
+
+        if (node.meshIndex.has_value()) {
+            node_.meshIndex = static_cast<int>(*node.meshIndex);
+        }
+
+        std::visit(
+            fastgltf::visitor{
+                [&](fastgltf::math::fmat4x4 matrix) {
+                    glm::mat4 glmMatrix;
+                    for (int i = 0; i < 4; ++i) {
+                        for (int j = 0; j < 4; ++j) {
+                            glmMatrix[i][j] = matrix[i][j];
+                        }
+                    }
+
+                    node_.localTranslation = glm::vec3(glmMatrix[3]);
+                    node_.localRotation = glm::quat_cast(glmMatrix);
+                    node_.localScale = glm::vec3(
+                        glm::length(glm::vec3(glmMatrix[0])),
+                        glm::length(glm::vec3(glmMatrix[1])),
+                        glm::length(glm::vec3(glmMatrix[2]))
+                    );
+                },
+                [&](fastgltf::TRS transform) {
+                    node_.localTranslation = {transform.translation[0], transform.translation[1], transform.translation[2]};
+                    node_.localRotation = {transform.rotation[3], transform.rotation[0], transform.rotation[1], transform.rotation[2]};
+                    node_.localScale = {transform.scale[0], transform.scale[1], transform.scale[2]};
+                }
+            }
+            , node.transform
+        );
+        newModel->data.nodes.push_back(node_);
+    }
+
+    for (int i = 0; i < gltf.nodes.size(); i++) {
+        for (std::size_t& child : gltf.nodes[i].children) {
+            newModel->data.nodes[child].parent = i;
+        }
+    }
+
+    // only import first skin
+    if (gltf.skins.size() > 0) {
+        fastgltf::Skin& skins = gltf.skins[0];
+
+        if (gltf.skins.size() > 1) {
+            LOG_WARN("Model has {} skins but only loading first skin", gltf.skins.size());
+        }
+
+        if (skins.inverseBindMatrices.has_value()) {
+            const fastgltf::Accessor& inverseBindAccessor = gltf.accessors[skins.inverseBindMatrices.value()];
+            newModel->data.inverseBindMatrices.resize(inverseBindAccessor.count);
+            fastgltf::iterateAccessorWithIndex<fastgltf::math::fmat4x4>(gltf, inverseBindAccessor, [&](const fastgltf::math::fmat4x4& m, const size_t index) {
+                glm::mat4 glmMatrix;
+                for (int col = 0; col < 4; ++col) {
+                    for (int row = 0; row < 4; ++row) {
+                        glmMatrix[col][row] = m[col][row];
+                    }
+                }
+                newModel->data.inverseBindMatrices[index] = glmMatrix;
+            });
+
+            for (int32_t i = 0; i < skins.joints.size(); ++i) {
+                newModel->data.nodes[skins.joints[i]].inverseBindIndex = i;
+            }
+        }
+    }
+
+
+    TopologicalSortNodes(newModel->data.nodes, newModel->data.nodeRemap);
+
+    for (size_t i = 0; i < newModel->data.nodes.size(); ++i) {
+        uint32_t depth = 0;
+        uint32_t currentParent = newModel->data.nodes[i].parent;
+
+        while (currentParent != ~0u) {
+            depth++;
+            currentParent = newModel->data.nodes[currentParent].parent;
+        }
+
+        newModel->data.nodes[i].depth = depth;
+    }
+
+
+    newModel->data.animations.reserve(gltf.animations.size());
+    for (fastgltf::Animation& gltfAnim : gltf.animations) {
+        Animation anim{};
+        anim.name = gltfAnim.name;
+
+        for (fastgltf::AnimationSampler& animSampler : gltfAnim.samplers) {
+            AnimationSampler sampler;
+
+            const fastgltf::Accessor& inputAccessor = gltf.accessors[animSampler.inputAccessor];
+            sampler.timestamps.resize(inputAccessor.count);
+            fastgltf::iterateAccessorWithIndex<float>(gltf, inputAccessor, [&](float value, size_t idx) {
+                sampler.timestamps[idx] = value;
+            });
+
+            const fastgltf::Accessor& outputAccessor = gltf.accessors[animSampler.outputAccessor];
+            sampler.values.resize(outputAccessor.count * fastgltf::getNumComponents(outputAccessor.type));
+            if (outputAccessor.type == fastgltf::AccessorType::Vec3) {
+                fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec3>(gltf, outputAccessor,
+                                                                          [&](const fastgltf::math::fvec3& value, size_t idx) {
+                                                                              size_t baseIdx = idx * 3; // Calculate flat base index
+                                                                              sampler.values[baseIdx + 0] = value.x();
+                                                                              sampler.values[baseIdx + 1] = value.y();
+                                                                              sampler.values[baseIdx + 2] = value.z();
+                                                                          });
+            }
+            else if (outputAccessor.type == fastgltf::AccessorType::Vec4) {
+                fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec4>(gltf, outputAccessor,
+                                                                          [&](const fastgltf::math::fvec4& value, size_t idx) {
+                                                                              size_t baseIdx = idx * 4; // Calculate flat base index
+                                                                              sampler.values[baseIdx + 0] = value.x();
+                                                                              sampler.values[baseIdx + 1] = value.y();
+                                                                              sampler.values[baseIdx + 2] = value.z();
+                                                                              sampler.values[baseIdx + 3] = value.w();
+                                                                          });
+            }
+            else if (outputAccessor.type == fastgltf::AccessorType::Scalar) {
+                fastgltf::iterateAccessorWithIndex<float>(gltf, outputAccessor,
+                                                          [&](float value, size_t idx) {
+                                                              sampler.values[idx] = value; // This one is fine since it's 1 component
+                                                          });
+            }
+
+            switch (animSampler.interpolation) {
+                case fastgltf::AnimationInterpolation::Linear:
+                    sampler.interpolation = AnimationSampler::Interpolation::Linear;
+                    break;
+                case fastgltf::AnimationInterpolation::Step:
+                    sampler.interpolation = AnimationSampler::Interpolation::Step;
+                    break;
+                case fastgltf::AnimationInterpolation::CubicSpline:
+                    sampler.interpolation = AnimationSampler::Interpolation::CubicSpline;
+                    break;
+            }
+
+            anim.samplers.push_back(std::move(sampler));
+        }
+
+        anim.channels.reserve(gltfAnim.channels.size());
+        for (auto& gltfChannel : gltfAnim.channels) {
+            AnimationChannel channel{};
+            channel.samplerIndex = gltfChannel.samplerIndex;
+            channel.targetNodeIndex = gltfChannel.nodeIndex.value();
+
+            switch (gltfChannel.path) {
+                case fastgltf::AnimationPath::Translation:
+                    channel.targetPath = AnimationChannel::TargetPath::Translation;
+                    break;
+                case fastgltf::AnimationPath::Rotation:
+                    channel.targetPath = AnimationChannel::TargetPath::Rotation;
+                    break;
+                case fastgltf::AnimationPath::Scale:
+                    channel.targetPath = AnimationChannel::TargetPath::Scale;
+                    break;
+                case fastgltf::AnimationPath::Weights:
+                    channel.targetPath = AnimationChannel::TargetPath::Weights;
+                    break;
+            }
+
+            anim.channels.push_back(channel);
+        }
+
+        anim.duration = 0.0f;
+        for (const auto& sampler : anim.samplers) {
+            if (!sampler.timestamps.empty()) {
+                anim.duration = std::max(anim.duration, sampler.timestamps.back());
+            }
+        }
+
+        newModel->data.animations.push_back(std::move(anim));
+    }
+
+
+    newModel->data.name = path.filename().string();
+    newModel->data.path = path;
+
+    // Allocate all static stagings first. If fail no need to clear, because next time the handle is used, it is auto cleared
+    size_t sizeVertices = vertices.size() * sizeof(Vertex);
+    OffsetAllocator::Allocation vertexStagingAllocation = uploadStaging.stagingAllocator.allocate(sizeVertices);
+    newModel->data.vertexAllocation = resourceManager->AllocateVertices(sizeVertices);
+    size_t sizeIndices = indices.size() * sizeof(uint32_t);
+    OffsetAllocator::Allocation indexStagingAllocation = uploadStaging.stagingAllocator.allocate(sizeIndices);
+    newModel->data.indexAllocation = resourceManager->AllocateIndices(sizeIndices);
+    size_t sizeMaterials = materials.size() * sizeof(MaterialProperties);
+    OffsetAllocator::Allocation materialStagingAllocation = uploadStaging.stagingAllocator.allocate(sizeMaterials);
+    newModel->data.materialAllocation = resourceManager->AllocateMaterials(sizeMaterials);
+    size_t sizePrimitives = primitives.size() * sizeof(Primitive);
+    OffsetAllocator::Allocation primitiveStagingAllocation = uploadStaging.stagingAllocator.allocate(sizePrimitives);
+    newModel->data.primitiveAllocation = resourceManager->AllocatePrimitives(sizePrimitives);
+
+    if (vertexStagingAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE || indexStagingAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE ||
+        materialStagingAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE || primitiveStagingAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE ||
+        newModel->data.vertexAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE || newModel->data.indexAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE ||
+        newModel->data.materialAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE || newModel->data.primitiveAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE
+    ) {
+        LOG_WARN("[AssetLoadingThread::LoadGltf] LoadGltf could not fit all static data into resource/staging buffers");
+        models.Remove(newModelHandle);
+        return ModelEntryHandle::Invalid;
+    }
+
+    // Images after other data, so that images don't starve the staging
+    // Also so we can void vulkan resource creation if model loading is going to fail.
+    newModel->data.images.reserve(gltf.images.size());
+    LoadGltfImages(uploadStaging, gltf, path.parent_path(), newModel->data.images);
+
+    newModel->data.imageViews.reserve(gltf.images.size());
+    for (const AllocatedImage& image : newModel->data.images) {
+        VkImageViewCreateInfo imageViewCreateInfo = VkHelpers::ImageViewCreateInfo(image.handle, image.format, VK_IMAGE_ASPECT_COLOR_BIT);
+        newModel->data.imageViews.push_back(VkResources::CreateImageView(context, imageViewCreateInfo));
+        // todo: if image is vk_null_handle, replace with default white image index
+    }
+
+    // Vertices
+    if (vertexStagingAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE || newModel->data.vertexAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
+        LOG_WARN("[AssetLoadingThread::LoadGltf] Not enough space in vertex buffer (or staging)");
+        models.Remove(newModelHandle);
+        return ModelEntryHandle::Invalid;
+    }
+    memcpy(static_cast<char*>(uploadStaging.stagingBuffer.allocationInfo.pMappedData) + vertexStagingAllocation.offset, vertices.data(), sizeVertices);
+    VkBufferCopy2 vertexCopy{
+        .sType = VK_STRUCTURE_TYPE_BUFFER_COPY_2,
+        .srcOffset = vertexStagingAllocation.offset,
+        .dstOffset = newModel->data.vertexAllocation.offset,
+        .size = sizeVertices,
+    };
+
+
+    if (indexStagingAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE || newModel->data.indexAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
+        LOG_WARN("[AssetLoadingThread::LoadGltf] Not enough space in index buffer (or staging)");
+        models.Remove(newModelHandle);
+        return ModelEntryHandle::Invalid;
+    }
+    memcpy(static_cast<char*>(uploadStaging.stagingBuffer.allocationInfo.pMappedData) + indexStagingAllocation.offset, indices.data(), sizeIndices);
+    VkBufferCopy2 indexCopy{
+        .sType = VK_STRUCTURE_TYPE_BUFFER_COPY_2,
+        .srcOffset = indexStagingAllocation.offset,
+        .dstOffset = newModel->data.indexAllocation.offset,
+        .size = sizeIndices,
+    };
+
+    // preallocate
 }
 
 void AssetLoadingThread::UnloadModel(ModelEntryHandle handle)
@@ -66,19 +527,17 @@ void AssetLoadingThread::UnloadModel(ModelEntryHandle handle)
 }
 
 
-
-void AssetLoadingThread::LoadGltfImages(const fastgltf::Asset& asset, const std::filesystem::path& parentFolder, std::vector<AllocatedImage>& outAllocatedImages)
+void AssetLoadingThread::LoadGltfImages(UploadStaging& uploadStaging, const fastgltf::Asset& asset, const std::filesystem::path& parentFolder, std::vector<AllocatedImage>& outAllocatedImages)
 {
     unsigned char* stbiData{nullptr};
     int32_t width{};
     int32_t height{};
     int32_t nrChannels{};
 
-
-    TextureUploadStaging& textureStaging = GetAvailableTextureStaging();
     const VkCommandBufferBeginInfo cmdBeginInfo = VkHelpers::CommandBufferBeginInfo();
-    VK_CHECK(vkBeginCommandBuffer(textureStaging.commandBuffer, &cmdBeginInfo));
+    VK_CHECK(vkBeginCommandBuffer(uploadStaging.commandBuffer, &cmdBeginInfo));
 
+    // todo: parallelize stbi decoding with enkiTS
     for (const fastgltf::Image& gltfImage : asset.images) {
         AllocatedImage newImage{};
         std::visit(
@@ -260,7 +719,7 @@ void AssetLoadingThread::LoadGltfImages(const fastgltf::Asset& asset, const std:
             imagesize.depth = 1;
             const size_t size = width * height * 4;
 
-            OffsetAllocator::Allocation allocation = textureStaging.stagingAllocator.allocate(size);
+            OffsetAllocator::Allocation allocation = uploadStaging.stagingAllocator.allocate(size);
             if (allocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
                 LOG_ERROR("Texture too large to fit in staging buffer. Increase staging buffer size or do not load this texture.");
                 CrashHandler::TriggerManualDump("Texture too large to fit in staging buffer. Increase staging buffer size or do not load this texture.");
@@ -268,7 +727,7 @@ void AssetLoadingThread::LoadGltfImages(const fastgltf::Asset& asset, const std:
                 continue;
             }
 
-            char* bufferOffset = static_cast<char*>(textureStaging.stagingBuffer.allocationInfo.pMappedData) + allocation.offset;
+            char* bufferOffset = static_cast<char*>(uploadStaging.stagingBuffer.allocationInfo.pMappedData) + allocation.offset;
             memcpy(bufferOffset, stbiData, size);
 
             VkImageCreateInfo imageCreateInfo = VkHelpers::ImageCreateInfo(VK_FORMAT_R8G8B8A8_UNORM, imagesize,
@@ -285,7 +744,7 @@ void AssetLoadingThread::LoadGltfImages(const fastgltf::Asset& asset, const std:
             VkDependencyInfo depInfo{.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
             depInfo.imageMemoryBarrierCount = 1;
             depInfo.pImageMemoryBarriers = &barrier;
-            vkCmdPipelineBarrier2(textureStaging.commandBuffer, &depInfo);
+            vkCmdPipelineBarrier2(uploadStaging.commandBuffer, &depInfo);
 
             VkBufferImageCopy copyRegion = {};
             copyRegion.bufferOffset = allocation.offset;
@@ -297,7 +756,7 @@ void AssetLoadingThread::LoadGltfImages(const fastgltf::Asset& asset, const std:
             copyRegion.imageSubresource.layerCount = 1;
             copyRegion.imageExtent = imagesize;
 
-            vkCmdCopyBufferToImage(textureStaging.commandBuffer, textureStaging.stagingBuffer.handle, newImage.handle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
+            vkCmdCopyBufferToImage(uploadStaging.commandBuffer, uploadStaging.stagingBuffer.handle, newImage.handle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
 
             // todo: mipmapping
             // if (mipmapped) {
@@ -313,7 +772,7 @@ void AssetLoadingThread::LoadGltfImages(const fastgltf::Asset& asset, const std:
             );
             barrier.srcQueueFamilyIndex = context->transferQueueFamily;
             barrier.dstQueueFamilyIndex = context->graphicsQueueFamily;
-            vkCmdPipelineBarrier2(textureStaging.commandBuffer, &depInfo);
+            vkCmdPipelineBarrier2(uploadStaging.commandBuffer, &depInfo);
             newImage.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
             stbi_image_free(stbiData);
@@ -324,33 +783,33 @@ void AssetLoadingThread::LoadGltfImages(const fastgltf::Asset& asset, const std:
     }
 
 
-    VK_CHECK(vkEndCommandBuffer(textureStaging.commandBuffer));
-    VkCommandBufferSubmitInfo cmdSubmitInfo = VkHelpers::CommandBufferSubmitInfo(textureStaging.commandBuffer);
+    VK_CHECK(vkEndCommandBuffer(uploadStaging.commandBuffer));
+    VkCommandBufferSubmitInfo cmdSubmitInfo = VkHelpers::CommandBufferSubmitInfo(uploadStaging.commandBuffer);
     const VkSubmitInfo2 submitInfo = VkHelpers::SubmitInfo(&cmdSubmitInfo, nullptr, nullptr);
-    VK_CHECK(vkQueueSubmit2(context->transferQueue, 1, &submitInfo, textureStaging.fence));
+    VK_CHECK(vkQueueSubmit2(context->transferQueue, 1, &submitInfo, uploadStaging.fence));
 }
 
-TextureUploadStaging& AssetLoadingThread::GetAvailableTextureStaging()
+UploadStaging& AssetLoadingThread::GetAvailableTextureStaging()
 {
-    auto& staging = textureStagingBuffers[currentIndex];
+    auto& staging = uploadStagingDatas[currentIndex];
 
     if (vkGetFenceStatus(context->device, staging.fence) == VK_SUCCESS) {
         staging.stagingAllocator.reset();
         VK_CHECK(vkResetFences(context->device, 1, &staging.fence));
         VK_CHECK(vkResetCommandBuffer(staging.commandBuffer, 0));
-        textureStagingGeneration[currentIndex].fetch_add(1);
+        uploadStagingGenerations[currentIndex].fetch_add(1);
         return staging;
     }
 
     // Try next buffer
-    currentIndex = (currentIndex + 1) % ASSET_LOAD_TEXTURE_STAGING_COUNT;
-    auto& nextStaging = textureStagingBuffers[currentIndex];
+    currentIndex = (currentIndex + 1) % ASSET_LOAD_ASYNC_COUNT;
+    auto& nextStaging = uploadStagingDatas[currentIndex];
 
     if (vkGetFenceStatus(context->device, nextStaging.fence) == VK_SUCCESS) {
         nextStaging.stagingAllocator.reset();
         VK_CHECK(vkResetFences(context->device, 1, &nextStaging.fence));
         VK_CHECK(vkResetCommandBuffer(nextStaging.commandBuffer, 0));
-        textureStagingGeneration[currentIndex].fetch_add(1);
+        uploadStagingGenerations[currentIndex].fetch_add(1);
         return nextStaging;
     }
 
@@ -358,7 +817,43 @@ TextureUploadStaging& AssetLoadingThread::GetAvailableTextureStaging()
     nextStaging.stagingAllocator.reset();
     VK_CHECK(vkResetFences(context->device, 1, &nextStaging.fence));
     VK_CHECK(vkResetCommandBuffer(nextStaging.commandBuffer, 0));
-    textureStagingGeneration[currentIndex].fetch_add(1);
+    uploadStagingGenerations[currentIndex].fetch_add(1);
     return nextStaging;
+}
+
+void AssetLoadingThread::TopologicalSortNodes(std::vector<Node>& nodes, std::vector<uint32_t>& oldToNew)
+{
+    oldToNew.resize(nodes.size());
+
+    sortedNodes.clear();
+    sortedNodes.reserve(nodes.size());
+
+    visited.clear();
+    visited.resize(nodes.size(), false);
+
+    // Topological sort
+    std::function<void(uint32_t)> visit = [&](uint32_t idx) {
+        if (visited[idx]) return;
+        visited[idx] = true;
+
+        if (nodes[idx].parent != ~0u) {
+            visit(nodes[idx].parent);
+        }
+
+        oldToNew[idx] = sortedNodes.size();
+        sortedNodes.push_back(nodes[idx]);
+    };
+
+    for (uint32_t i = 0; i < nodes.size(); ++i) {
+        visit(i);
+    }
+
+    for (auto& node : sortedNodes) {
+        if (node.parent != ~0u) {
+            node.parent = oldToNew[node.parent];
+        }
+    }
+
+    nodes = std::move(sortedNodes);
 }
 }

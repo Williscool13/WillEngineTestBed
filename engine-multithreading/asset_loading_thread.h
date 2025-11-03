@@ -18,6 +18,8 @@ using LockFreeQueue = LockFreeQueueCpp11<T>;
 
 namespace Renderer
 {
+class ResourceManager;
+
 struct ModelEntry
 {
     enum State { Loading, Ready, Failed };
@@ -27,13 +29,13 @@ struct ModelEntry
     State state{};
 };
 
-struct TextureUploadStaging
+struct UploadStaging
 {
     VkCommandBuffer commandBuffer{};
     VkFence fence{};
 
     AllocatedBuffer stagingBuffer{};
-    OffsetAllocator::Allocator stagingAllocator{IMAGE_UPLOAD_STAGING_SIZE};
+    OffsetAllocator::Allocator stagingAllocator{STAGING_SIZE};
 };
 
 struct TextureUploadHandle
@@ -59,6 +61,13 @@ struct AssetLoadComplete
 
 class AssetLoadingThread
 {
+public:
+    AssetLoadingThread();
+
+    ~AssetLoadingThread();
+
+    AssetLoadingThread(VulkanContext* context, ResourceManager* resourceManager);
+
 public: // Threading
     void Start();
 
@@ -69,13 +78,13 @@ private: // Threading
 
     std::jthread thread;
     std::atomic<bool> running{false};
-    LockFreeQueue<AssetLoadRequest> requestQueue;
-    LockFreeQueue<AssetLoadComplete> completeQueue;
+    LockFreeQueue<AssetLoadRequest> requestQueue{ASSET_LOAD_QUEUE_COUNT};
+    LockFreeQueue<AssetLoadComplete> completeQueue{ASSET_LOAD_QUEUE_COUNT};
 
 public:
     void RequestLoad(const std::filesystem::path& path, const std::function<void(ModelEntryHandle)>& callback);
-    void ResolveLoads();
 
+    void ResolveLoads();
 
     ModelEntryHandle LoadGltf(const std::filesystem::path& path);
 
@@ -83,19 +92,26 @@ public:
 
 private:
     VulkanContext* context{};
+    ResourceManager* resourceManager{};
 
 private: // Texture loading
     uint32_t currentIndex{0};
-    std::array<TextureUploadStaging, ASSET_LOAD_TEXTURE_STAGING_COUNT> textureStagingBuffers;
-    std::array<std::atomic<int32_t>, ASSET_LOAD_TEXTURE_STAGING_COUNT> textureStagingGeneration{};
+    std::array<UploadStaging, ASSET_LOAD_ASYNC_COUNT> uploadStagingDatas;
+    std::array<std::atomic<int32_t>, ASSET_LOAD_ASYNC_COUNT> uploadStagingGenerations{};
 
-    void LoadGltfImages(const fastgltf::Asset& asset, const std::filesystem::path& parentFolder, std::vector<AllocatedImage>& outAllocatedImages);
-    TextureUploadStaging& GetAvailableTextureStaging();
+    void LoadGltfImages(UploadStaging& uploadStaging, const fastgltf::Asset& asset, const std::filesystem::path& parentFolder, std::vector<AllocatedImage>& outAllocatedImages);
+
+    UploadStaging& GetAvailableTextureStaging();
+
+private: // Nodes
+    std::vector<Node> sortedNodes;
+    std::vector<bool> visited;
+
+    void TopologicalSortNodes(std::vector<Node>& nodes, std::vector<uint32_t>& oldToNew);
 
 private:
     FreeList<ModelEntry, MAX_LOADED_MODELS> models;
     std::unordered_map<std::filesystem::path, ModelEntryHandle> pathToHandle;
-
 };
 
 // class Engine

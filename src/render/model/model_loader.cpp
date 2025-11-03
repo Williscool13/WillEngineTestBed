@@ -36,7 +36,7 @@ ModelLoader::ModelLoader(VulkanContext* context)
     };
     VK_CHECK(vkCreateFence(context->device, &fenceInfo, nullptr, &uploadFence));
 
-    imageStagingBuffer = VkResources::CreateAllocatedStagingBuffer(context, IMAGE_UPLOAD_STAGING_SIZE);
+    imageStagingBuffer = VkResources::CreateAllocatedStagingBuffer(context, STAGING_SIZE);
 }
 
 ModelLoader::~ModelLoader()

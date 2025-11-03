@@ -863,12 +863,12 @@ bool ModelLoading::LoadModelIntoBuffers(const std::filesystem::path& modelPath, 
 
     // Vertices
     size_t sizeVertexPos = model.vertices.size() * sizeof(Vertex);
-    modelData.vertexPositionAllocation = vertexBufferAllocator.allocate(sizeVertexPos);
-    if (modelData.vertexPositionAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
+    modelData.vertexAllocation = vertexBufferAllocator.allocate(sizeVertexPos);
+    if (modelData.vertexAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
         LOG_WARN("[ModelLoading::LoadModelIntoBuffers] Not enough space in vertex buffer");
         return false;
     }
-    memcpy(static_cast<char*>(megaVertexBuffer.allocationInfo.pMappedData) + modelData.vertexPositionAllocation.offset, model.vertices.data(), sizeVertexPos);
+    memcpy(static_cast<char*>(megaVertexBuffer.allocationInfo.pMappedData) + modelData.vertexAllocation.offset, model.vertices.data(), sizeVertexPos);
 
     // Indices
     size_t sizeIndices = model.indices.size() * sizeof(uint32_t);
@@ -926,7 +926,7 @@ bool ModelLoading::LoadModelIntoBuffers(const std::filesystem::path& modelPath, 
 
     // Primitives
     uint32_t firstIndexCount = modelData.indexAllocation.offset / sizeof(uint32_t);
-    uint32_t vertexOffsetCount = modelData.vertexPositionAllocation.offset / sizeof(Vertex);
+    uint32_t vertexOffsetCount = modelData.vertexAllocation.offset / sizeof(Vertex);
     uint32_t materialOffsetCount = modelData.materialAllocation.offset / sizeof(MaterialProperties);
 
     for (auto& primitive : model.primitives) {
@@ -953,6 +953,7 @@ bool ModelLoading::LoadModelIntoBuffers(const std::filesystem::path& modelPath, 
 
     modelData.samplers = std::move(model.samplers);
     modelData.images = std::move(model.images);
+    modelData.imageViews = std::move(model.imageViews);
     modelData.nodes = std::move(model.nodes);
 
     modelData.inverseBindMatrices = std::move(model.inverseBindMatrices);

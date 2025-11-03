@@ -28,10 +28,11 @@ VkFilter ExtractFilter(fastgltf::Filter filter)
 VkSamplerMipmapMode ExtractMipmapMode(fastgltf::Filter filter)
 {
     switch (filter) {
+        case fastgltf::Filter::Nearest:
         case fastgltf::Filter::NearestMipMapNearest:
         case fastgltf::Filter::LinearMipMapNearest:
             return VK_SAMPLER_MIPMAP_MODE_NEAREST;
-
+        case fastgltf::Filter::Linear:
         case fastgltf::Filter::NearestMipMapLinear:
         case fastgltf::Filter::LinearMipMapLinear:
         default:
