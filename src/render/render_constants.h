@@ -20,24 +20,28 @@ inline static constexpr VkColorSpaceKHR SWAPCHAIN_SDR_COLOR_SPACE = VK_COLOR_SPA
 inline static constexpr VkFormat DRAW_IMAGE_FORMAT = VK_FORMAT_R16G16B16A16_SFLOAT;
 inline static constexpr VkFormat DEPTH_IMAGE_FORMAT = VK_FORMAT_D32_SFLOAT;
 
+
+
+
+// Asset Loading
+inline static constexpr uint32_t MAX_LOADED_MODELS = 1024;
+inline static constexpr int32_t MEGA_VERTEX_BUFFER_COUNT = 1048576; // 1 << 20
+inline static constexpr int32_t MEGA_INDEX_BUFFER_COUNT = 2097152; // 1 << 21
+inline static constexpr int32_t MEGA_PRIMITIVE_BUFFER_COUNT = 65536;
+inline static constexpr int32_t MEGA_MATERIAL_BUFFER_COUNT = 16384;
+
+inline static constexpr int32_t BINDLESS_MODEL_MATRIX_COUNT = 16384;
+inline static constexpr int32_t BINDLESS_INSTANCE_COUNT = 131072;
 inline static constexpr int32_t BINDLESS_UNIFORM_BUFFER_COUNT = 1000;
 inline static constexpr int32_t BINDLESS_COMBINED_IMAGE_SAMPLER_COUNT = 1000;
 inline static constexpr int32_t BINDLESS_STORAGE_IMAGE_COUNT = 1000;
 inline static constexpr int32_t BINDLESS_SAMPLER_COUNT = 64;
 inline static constexpr int32_t BINDLESS_SAMPLED_IMAGE_COUNT = 8192;
 
-inline static constexpr int32_t BINDLESS_MODEL_MATRIX_COUNT = 16384;
-inline static constexpr int32_t BINDLESS_INSTANCE_COUNT = 131072;
+inline static constexpr int32_t ASSET_LOAD_TEXTURE_STAGING_COUNT = 4;
+inline static constexpr int32_t IMAGE_UPLOAD_STAGING_SIZE = 16 * 64 * 1024 * 1024; // 16 x 64 MB (1x uncompressed 4k rgba8, or 4x 4k BC7)
 
-inline static constexpr int32_t MEGA_VERTEX_BUFFER_COUNT = 1048576; // 1 << 20
-inline static constexpr int32_t MEGA_INDEX_BUFFER_COUNT = 2097152; // 1 << 21
-inline static constexpr int32_t MEGA_PRIMITIVE_BUFFER_COUNT = 65536;
-inline static constexpr int32_t MEGA_MATERIAL_BUFFER_COUNT = 16384;
-
-inline static constexpr uint32_t MAX_LOADED_MODELS = 1000;
-
-inline static constexpr int32_t IMAGE_UPLOAD_STAGING_SIZE = 64 * 1024 * 1024; // 64 MB (1x uncompressed 4k rgba8, or 4x 4k BC7)
-
+// Swapchain / Render Context
 inline static constexpr uint32_t DEFAULT_SWAPCHAIN_WIDTH = 1700;
 inline static constexpr uint32_t DEFAULT_SWAPCHAIN_HEIGHT = 900;
 inline static constexpr uint32_t DEFAULT_RENDER_TARGET_WIDTH = 1700;

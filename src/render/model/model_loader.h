@@ -24,17 +24,7 @@ public:
     ExtractedModel LoadGltf(const std::filesystem::path& path);
 
 private:
-    VkFilter ExtractFilter(fastgltf::Filter filter);
-
-    VkSamplerMipmapMode ExtractMipmapMode(fastgltf::Filter filter);
-
     void LoadGltfImages(const fastgltf::Asset& asset, const std::filesystem::path& parentFolder, std::vector<AllocatedImage>& outAllocatedImages);
-
-    MaterialProperties ExtractMaterial(fastgltf::Asset& gltf, const fastgltf::Material& gltfMaterial);
-
-    void LoadTextureIndicesAndUV(const fastgltf::TextureInfo& texture, const fastgltf::Asset& gltf, int& imageIndex, int& samplerIndex, glm::vec4& uvTransform);
-
-    glm::vec4 GenerateBoundingSphere(const std::vector<Vertex>& vertices);
 
     AllocatedImage RecordCreateImageFromData(VkCommandBuffer cmd, size_t offset, unsigned char* data, size_t size, VkExtent3D imageExtent, VkFormat format, VkImageUsageFlagBits usage, bool mipmapped);
 

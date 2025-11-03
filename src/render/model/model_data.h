@@ -124,12 +124,13 @@ struct ModelData
     // if size > 0, means this model has skinning
     std::vector<glm::mat4> inverseBindMatrices{};
 
-    // todo: move to render/resource thread data
+
     std::vector<AllocatedImage> images{};
     std::vector<Sampler> samplers{};
+    TextureUploadHandle textureUploadHandle{};
 
-    std::unordered_map<int32_t, int32_t> samplerIndexToDescriptorBufferIndexMap{};
-    std::unordered_map<int32_t, int32_t> textureIndexToDescriptorBufferIndexMap{};
+    std::vector<int32_t> samplerIndexToDescriptorBufferIndexMap{};
+    std::vector<int32_t> textureIndexToDescriptorBufferIndexMap{};
 
     OffsetAllocator::Allocation vertexPositionAllocation{};
     OffsetAllocator::Allocation vertexPropertyAllocation{};

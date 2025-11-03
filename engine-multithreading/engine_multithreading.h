@@ -34,10 +34,21 @@ struct Swapchain;
 struct RenderTargets;
 }
 
+struct ModelMatrixOperation
+{
+    Renderer::ModelMatrixHandle handle;
+    glm::mat4 value;
+
+    // Filled and used by render thread
+    uint32_t frames;
+};
+
 struct FrameBuffer
 {
     Renderer::SceneData sceneData{};
     uint64_t currentFrame{};
+
+    std::vector<ModelMatrixOperation> modelMatrixOperations;
 };
 
 class EngineMultithreading

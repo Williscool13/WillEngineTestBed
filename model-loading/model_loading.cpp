@@ -879,31 +879,32 @@ bool ModelLoading::LoadModelIntoBuffers(const std::filesystem::path& modelPath, 
     }
     memcpy(static_cast<char*>(megaIndexBuffer.allocationInfo.pMappedData) + modelData.indexAllocation.offset, model.indices.data(), sizeIndices);
 
-    auto RemapIndices = [](auto& indices, const auto& map) {
-        indices.x = map.at(indices.x);
-        indices.y = map.at(indices.y);
-        indices.z = map.at(indices.z);
-        indices.w = map.at(indices.w);
+    // Descriptor assignment can happen here. Resource upload, will need to be staged and
+    auto remapIndices = [](auto& indices, const std::vector<int32_t>& map) {
+        indices.x = indices.x >= 0 ? map[indices.x] : -1;
+        indices.y = indices.y >= 0 ? map[indices.y] : -1;
+        indices.z = indices.z >= 0 ? map[indices.z] : -1;
+        indices.w = indices.w >= 0 ? map[indices.w] : -1;
     };
 
-    std::unordered_map<int32_t, int32_t> materialToBufferMap;
-    materialToBufferMap[-1] = -1;
+    std::vector<int32_t> materialToBufferMap;
 
     // Samplers
+    materialToBufferMap.resize(model.samplers.size());
     for (int32_t i = 0; i < model.samplers.size(); ++i) {
         materialToBufferMap[i] = bindlessResourcesDescriptorBuffer.AllocateSampler(model.samplers[i].handle);
     }
 
     for (MaterialProperties& material : model.materials) {
-        RemapIndices(material.textureSamplerIndices, materialToBufferMap);
-        RemapIndices(material.textureSamplerIndices2, materialToBufferMap);
+        remapIndices(material.textureSamplerIndices, materialToBufferMap);
+        remapIndices(material.textureSamplerIndices2, materialToBufferMap);
     }
 
     modelData.samplerIndexToDescriptorBufferIndexMap = std::move(materialToBufferMap);
 
     // Textures
     materialToBufferMap.clear();
-    materialToBufferMap[-1] = -1;
+    materialToBufferMap.resize(model.imageViews.size());
 
     for (int32_t i = 0; i < model.imageViews.size(); ++i) {
         materialToBufferMap[i] = bindlessResourcesDescriptorBuffer.AllocateTexture({
@@ -913,12 +914,11 @@ bool ModelLoading::LoadModelIntoBuffers(const std::filesystem::path& modelPath, 
     }
 
     for (MaterialProperties& material : model.materials) {
-        RemapIndices(material.textureImageIndices, materialToBufferMap);
-        RemapIndices(material.textureImageIndices2, materialToBufferMap);
+        remapIndices(material.textureImageIndices, materialToBufferMap);
+        remapIndices(material.textureImageIndices2, materialToBufferMap);
     }
 
     modelData.textureIndexToDescriptorBufferIndexMap = std::move(materialToBufferMap);
-
     // Materials
     size_t sizeMaterials = model.materials.size() * sizeof(MaterialProperties);
     modelData.materialAllocation = materialBufferAllocator.allocate(sizeMaterials);
@@ -947,6 +947,9 @@ bool ModelLoading::LoadModelIntoBuffers(const std::filesystem::path& modelPath, 
             primitiveIndex += primitiveOffsetCount;
         }
     }
+
+
+
 
     modelData.samplers = std::move(model.samplers);
     modelData.images = std::move(model.images);
