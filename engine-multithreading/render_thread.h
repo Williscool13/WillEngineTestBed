@@ -25,13 +25,13 @@ class EngineMultithreading;
 
 namespace Renderer
 {
+class ResourceManager;
 struct RenderContext;
 class ModelLoader;
 struct RenderTargets;
 struct ImguiWrapper;
 struct Swapchain;
 struct VulkanContext;
-
 
 
 class RenderThread
@@ -51,6 +51,10 @@ public:
 
     void Join();
 
+public:
+    ResourceManager* GetResourceManager() const { return resourceManager.get(); }
+    VulkanContext* GetVulkanContext() const { return vulkanContext.get(); }
+
 private:
     enum class RenderResponse
     {
@@ -69,7 +73,7 @@ private:
     std::unique_ptr<Swapchain> swapchain{};
     std::unique_ptr<ImguiWrapper> imgui{};
     std::unique_ptr<RenderTargets> renderTargets{};
-    //std::unique_ptr<ModelLoader> modelLoader{};
+    std::unique_ptr<ResourceManager> resourceManager{};
 
     bool bSwapchainOutdated{false};
     std::unique_ptr<RenderContext> renderContext{};

@@ -34,6 +34,7 @@
 #include "render/model/model_loader.h"
 #include "core/time.h"
 #include "render/render_targets.h"
+#include "render/resource_manager.h"
 #include "utils/utils.h"
 #include "utils/world_constants.h"
 
@@ -63,6 +64,7 @@ void RenderThread::Initialize(EngineMultithreading* engineMultithreading_, SDL_W
         // https://github.com/ocornut/imgui/issues/1860#issuecomment-1927630727
         imgui = std::make_unique<ImguiWrapper>(vulkanContext.get(), window, swapchain->imageCount, swapchain->format);
         renderTargets = std::make_unique<RenderTargets>(vulkanContext.get(), w, h);
+        resourceManager = std::make_unique<ResourceManager>(vulkanContext.get());
         Input::Input::Get().Init(window, swapchain->extent.width, swapchain->extent.height);
 
         for (FrameSynchronization& frameSync : frameSynchronization) {
@@ -200,7 +202,7 @@ void RenderThread::ThreadMain()
 
 RenderThread::RenderResponse RenderThread::Render(uint32_t currentFrameInFlight, FrameSynchronization& currentFrameData)
 {
-    auto timer = Utils::ScopedTimer(fmt::format("[Render Thread] Frame time (Frame {})", frameNumber));
+    //auto timer = Utils::ScopedTimer(fmt::format("[Render Thread] Frame time (Frame {})", frameNumber));
 
     std::array<uint32_t, 2> scaledRenderExtent = renderContext->GetScaledRenderExtent();
     uint32_t swapchainImageIndex;
@@ -362,7 +364,7 @@ RenderThread::RenderResponse RenderThread::Render(uint32_t currentFrameInFlight,
         return RenderResponse::SWAPCHAIN_OUTDATED;
     }
 
-    LOG_INFO("[Render Thread] Processed frame {} (should match frame data's frame number - {})", frameNumber, engineMultithreading->frameBuffers[currentFrameInFlight].currentFrame);
+    //LOG_INFO("[Render Thread] Processed frame {} (should match frame data's frame number - {})", frameNumber, engineMultithreading->frameBuffers[currentFrameInFlight].currentFrame);
     return RenderResponse::OK;
 }
 

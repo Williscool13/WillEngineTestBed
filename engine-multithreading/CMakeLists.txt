@@ -7,6 +7,8 @@ add_executable(engine-multithreading
         render_thread.h
         asset_loading_thread.cpp
         asset_loading_thread.h
+        asset_load_types.cpp
+        asset_load_types.h
 )
 
 target_link_libraries(engine-multithreading PRIVATE

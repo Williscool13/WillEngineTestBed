@@ -22,26 +22,97 @@ namespace Renderer
 {
 AssetLoadingThread::AssetLoadingThread() = default;
 
-AssetLoadingThread::~AssetLoadingThread() = default;
+AssetLoadingThread::~AssetLoadingThread()
+{
+    if (context) {
+        vkDestroyCommandPool(context->device, commandPool, nullptr);
 
-AssetLoadingThread::AssetLoadingThread(VulkanContext* context, ResourceManager* resourceManager)
-    : context(context), resourceManager(resourceManager)
-{}
+        for (UploadStaging& uploadStaging : uploadStagingDatas) {
+            vkDestroyFence(context->device, uploadStaging.fence, nullptr);
+        }
+    }
+}
+
+void AssetLoadingThread::Initialize(VulkanContext* context_, ResourceManager* resourceManager_)
+{
+    context = context_;
+    resourceManager = resourceManager_;
+
+    VkCommandPoolCreateInfo poolInfo = VkHelpers::CommandPoolCreateInfo(context->transferQueueFamily);
+    VK_CHECK(vkCreateCommandPool(context->device, &poolInfo, nullptr, &commandPool));
+    VkCommandBufferAllocateInfo cmdInfo = VkHelpers::CommandBufferAllocateInfo(4, commandPool);
+    std::array<VkCommandBuffer, ASSET_LOAD_ASYNC_COUNT> commandBuffers;
+    VK_CHECK(vkAllocateCommandBuffers(context->device, &cmdInfo, commandBuffers.data()));
+
+    for (int32_t i = 0; i < uploadStagingDatas.size(); ++i) {
+        VkFenceCreateInfo fenceInfo = {
+            .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+            .flags = 0, // Unsignaled
+        };
+        VK_CHECK(vkCreateFence(context->device, &fenceInfo, nullptr, &uploadStagingDatas[i].fence));
+        uploadStagingDatas[i].commandBuffer = commandBuffers[i];
+        uploadStagingDatas[i].stagingBuffer = VkResources::CreateAllocatedStagingBuffer(context, STAGING_BUFFER_SIZE);
+    }
+}
 
 void AssetLoadingThread::Start()
 {
-    // start thread loop
+    thread = std::jthread(&AssetLoadingThread::ThreadMain, this);
 }
 
-void AssetLoadingThread::Stop()
+void AssetLoadingThread::RequestShutdown()
 {
-    // .join the thread
+    bShouldExit.store(true);
 }
 
-void AssetLoadingThread::ThreadLoop()
+void AssetLoadingThread::Join()
 {
-    // check request queue
-    // check if models are ready! If so, push to the `completeQueue`
+    if (thread.joinable()) {
+        thread.join();
+    }
+}
+
+void AssetLoadingThread::ThreadMain()
+{
+    Utils::SetThreadName("Asset Loading Thread");
+
+    while (!bShouldExit.load()) {
+        AssetLoadRequest loadRequest;
+        while (requestQueue.pop(loadRequest)) {
+            ModelEntryHandle newModelHandle = LoadGltf(loadRequest.path);
+            if (newModelHandle == ModelEntryHandle::Invalid) {
+                completeQueue.push({newModelHandle, loadRequest.onComplete});
+            }
+            else {
+                modelsInProgress.push_back({newModelHandle, loadRequest.onComplete});
+            }
+        }
+
+        for (int i = static_cast<int>(modelsInProgress.size()) - 1; i >= 0; --i) {
+            AssetLoadInProgress& inProgress = modelsInProgress[i];
+            ModelEntry* modelEntry = models.Get(inProgress.modelEntryHandle);
+
+            if (!modelEntry) {
+                LOG_ERROR("Model handle became invalid while loading");
+                modelsInProgress.erase(modelsInProgress.begin() + i);
+                continue;
+            }
+
+            if (IsUploadFinished(modelEntry->uploadStagingHandle)) {
+                if (modelEntry->state.load() != ModelEntry::State::Ready) {
+                    modelEntry->loadEndTime = std::chrono::steady_clock::now();
+                    modelEntry->state.store(ModelEntry::State::Ready);
+
+                    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(modelEntry->loadEndTime - modelEntry->loadStartTime);
+                    LOG_INFO("[Asset Loading Thread] Model '{}' loaded in {} ms", modelEntry->data.name, duration.count());
+                }
+
+                completeQueue.push({inProgress.modelEntryHandle, inProgress.onComplete});
+                modelsInProgress.erase(modelsInProgress.begin() + i);
+                // todo: add acquire barrier command list to be sent from the game thread to the render thread
+            }
+        }
+    }
 }
 
 void AssetLoadingThread::RequestLoad(const std::filesystem::path& path, const std::function<void(ModelEntryHandle)>& callback)
@@ -67,8 +138,7 @@ ModelEntryHandle AssetLoadingThread::LoadGltf(const std::filesystem::path& path)
     const ModelEntryHandle newModelHandle = models.Add();
     ModelEntry* newModel = models.Get(newModelHandle);
     newModel->refCount = 1;
-
-    Utils::ScopedTimer timer{fmt::format("{} Load Time", path.filename().string())};
+    newModel->loadStartTime = std::chrono::steady_clock::now();
 
     fastgltf::Parser parser{fastgltf::Extensions::KHR_texture_basisu | fastgltf::Extensions::KHR_mesh_quantization | fastgltf::Extensions::KHR_texture_transform};
     constexpr auto gltfOptions = fastgltf::Options::DontRequireValidAssetMember
@@ -89,8 +159,6 @@ ModelEntryHandle AssetLoadingThread::LoadGltf(const std::filesystem::path& path)
         models.Remove(newModelHandle);
         return ModelEntryHandle::Invalid;
     }
-
-    UploadStaging& uploadStaging = GetAvailableTextureStaging();
 
     fastgltf::Asset gltf = std::move(load.get());
 
@@ -448,6 +516,10 @@ ModelEntryHandle AssetLoadingThread::LoadGltf(const std::filesystem::path& path)
     newModel->data.name = path.filename().string();
     newModel->data.path = path;
 
+    UploadStaging& uploadStaging = GetAvailableTextureStaging();
+    const VkCommandBufferBeginInfo cmdBeginInfo = VkHelpers::CommandBufferBeginInfo();
+    VK_CHECK(vkBeginCommandBuffer(uploadStaging.commandBuffer, &cmdBeginInfo));
+
     // Allocate all static stagings first. If fail no need to clear, because next time the handle is used, it is auto cleared
     size_t sizeVertices = vertices.size() * sizeof(Vertex);
     OffsetAllocator::Allocation vertexStagingAllocation = uploadStaging.stagingAllocator.allocate(sizeVertices);
@@ -485,11 +557,6 @@ ModelEntryHandle AssetLoadingThread::LoadGltf(const std::filesystem::path& path)
     }
 
     // Vertices
-    if (vertexStagingAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE || newModel->data.vertexAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
-        LOG_WARN("[AssetLoadingThread::LoadGltf] Not enough space in vertex buffer (or staging)");
-        models.Remove(newModelHandle);
-        return ModelEntryHandle::Invalid;
-    }
     memcpy(static_cast<char*>(uploadStaging.stagingBuffer.allocationInfo.pMappedData) + vertexStagingAllocation.offset, vertices.data(), sizeVertices);
     VkBufferCopy2 vertexCopy{
         .sType = VK_STRUCTURE_TYPE_BUFFER_COPY_2,
@@ -498,12 +565,7 @@ ModelEntryHandle AssetLoadingThread::LoadGltf(const std::filesystem::path& path)
         .size = sizeVertices,
     };
 
-
-    if (indexStagingAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE || newModel->data.indexAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
-        LOG_WARN("[AssetLoadingThread::LoadGltf] Not enough space in index buffer (or staging)");
-        models.Remove(newModelHandle);
-        return ModelEntryHandle::Invalid;
-    }
+    // Indices
     memcpy(static_cast<char*>(uploadStaging.stagingBuffer.allocationInfo.pMappedData) + indexStagingAllocation.offset, indices.data(), sizeIndices);
     VkBufferCopy2 indexCopy{
         .sType = VK_STRUCTURE_TYPE_BUFFER_COPY_2,
@@ -512,7 +574,156 @@ ModelEntryHandle AssetLoadingThread::LoadGltf(const std::filesystem::path& path)
         .size = sizeIndices,
     };
 
-    // preallocate
+    // Descriptor assignment can happen here. Resource upload, will need to be staged and
+    auto remapIndices = [](auto& indices_, const std::vector<int32_t>& map) {
+        indices_.x = indices_.x >= 0 ? map[indices_.x] : -1;
+        indices_.y = indices_.y >= 0 ? map[indices_.y] : -1;
+        indices_.z = indices_.z >= 0 ? map[indices_.z] : -1;
+        indices_.w = indices_.w >= 0 ? map[indices_.w] : -1;
+    };
+
+    auto& bindlessResourcesDescriptorBuffer = resourceManager->GetResourceDescriptorBuffer();
+
+    // Samplers
+    newModel->data.samplerIndexToDescriptorBufferIndexMap.resize(newModel->data.samplers.size());
+    for (int32_t i = 0; i < newModel->data.samplers.size(); ++i) {
+        newModel->data.samplerIndexToDescriptorBufferIndexMap[i] = bindlessResourcesDescriptorBuffer.AllocateSampler(newModel->data.samplers[i].handle);
+    }
+
+    for (MaterialProperties& material : materials) {
+        remapIndices(material.textureSamplerIndices, newModel->data.samplerIndexToDescriptorBufferIndexMap);
+        remapIndices(material.textureSamplerIndices2, newModel->data.samplerIndexToDescriptorBufferIndexMap);
+    }
+
+    // Textures
+    newModel->data.textureIndexToDescriptorBufferIndexMap.resize(newModel->data.imageViews.size());
+    for (int32_t i = 0; i < newModel->data.imageViews.size(); ++i) {
+        newModel->data.textureIndexToDescriptorBufferIndexMap[i] = bindlessResourcesDescriptorBuffer.AllocateTexture({
+            .imageView = newModel->data.imageViews[i].handle,
+            .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+        });
+    }
+
+    for (MaterialProperties& material : materials) {
+        remapIndices(material.textureImageIndices, newModel->data.textureIndexToDescriptorBufferIndexMap);
+        remapIndices(material.textureImageIndices2, newModel->data.textureIndexToDescriptorBufferIndexMap);
+    }
+
+    // Materials
+    memcpy(static_cast<char*>(uploadStaging.stagingBuffer.allocationInfo.pMappedData) + materialStagingAllocation.offset, materials.data(), sizeMaterials);
+    VkBufferCopy2 materialCopy{
+        .sType = VK_STRUCTURE_TYPE_BUFFER_COPY_2,
+        .srcOffset = materialStagingAllocation.offset,
+        .dstOffset = newModel->data.materialAllocation.offset,
+        .size = sizeMaterials,
+    };
+
+    // Primitives
+    uint32_t firstIndexCount = newModel->data.indexAllocation.offset / sizeof(uint32_t);
+    uint32_t vertexOffsetCount = newModel->data.vertexAllocation.offset / sizeof(Vertex);
+    uint32_t materialOffsetCount = newModel->data.materialAllocation.offset / sizeof(MaterialProperties);
+    for (auto& primitive : primitives) {
+        primitive.firstIndex += firstIndexCount;
+        primitive.vertexOffset += static_cast<int32_t>(vertexOffsetCount);
+        primitive.materialIndex += materialOffsetCount;
+    }
+
+    memcpy(static_cast<char*>(uploadStaging.stagingBuffer.allocationInfo.pMappedData) + primitiveStagingAllocation.offset, primitives.data(), sizePrimitives);
+    VkBufferCopy2 primitiveCopy{
+        .sType = VK_STRUCTURE_TYPE_BUFFER_COPY_2,
+        .srcOffset = primitiveStagingAllocation.offset,
+        .dstOffset = newModel->data.primitiveAllocation.offset,
+        .size = sizePrimitives,
+    };
+
+    uint32_t primitiveOffsetCount = primitiveStagingAllocation.offset / sizeof(Primitive);
+    for (auto& mesh : newModel->data.meshes) {
+        for (auto& primitiveIndex : mesh.primitiveIndices) {
+            primitiveIndex += primitiveOffsetCount;
+        }
+    }
+
+    VkCopyBufferInfo2 copyVertexInfo{
+        .sType = VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2,
+        .srcBuffer = uploadStaging.stagingBuffer.handle,
+        .dstBuffer = resourceManager->GetMegaVertexBuffer().handle,
+        .regionCount = 1,
+        .pRegions = &vertexCopy
+    };
+    vkCmdCopyBuffer2(uploadStaging.commandBuffer, &copyVertexInfo);
+    VkCopyBufferInfo2 copyIndexInfo{
+        .sType = VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2,
+        .srcBuffer = uploadStaging.stagingBuffer.handle,
+        .dstBuffer = resourceManager->GetMegaIndexBuffer().handle,
+        .regionCount = 1,
+        .pRegions = &indexCopy
+    };
+    vkCmdCopyBuffer2(uploadStaging.commandBuffer, &copyIndexInfo);
+    VkCopyBufferInfo2 copyMaterialInfo{
+        .sType = VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2,
+        .srcBuffer = uploadStaging.stagingBuffer.handle,
+        .dstBuffer = resourceManager->GetMaterialBuffer().handle,
+        .regionCount = 1,
+        .pRegions = &materialCopy
+    };
+    vkCmdCopyBuffer2(uploadStaging.commandBuffer, &copyMaterialInfo);
+    VkCopyBufferInfo2 copyPrimitiveInfo{
+        .sType = VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2,
+        .srcBuffer = uploadStaging.stagingBuffer.handle,
+        .dstBuffer = resourceManager->GetPrimitiveBuffer().handle,
+        .regionCount = 1,
+        .pRegions = &primitiveCopy
+    };
+    vkCmdCopyBuffer2(uploadStaging.commandBuffer, &copyPrimitiveInfo);
+
+    VkBufferMemoryBarrier2 barriers[4];
+    barriers[0] = VkHelpers::BufferMemoryBarrier(
+        resourceManager->GetMegaVertexBuffer().handle,
+        newModel->data.vertexAllocation.offset, sizeVertices,
+        VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+        VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE);
+    barriers[0].srcQueueFamilyIndex = context->transferQueueFamily;
+    barriers[0].dstQueueFamilyIndex = context->graphicsQueueFamily;
+    barriers[1] = VkHelpers::BufferMemoryBarrier(
+        resourceManager->GetMegaIndexBuffer().handle,
+        newModel->data.indexAllocation.offset, sizeIndices,
+        VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+        VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE);
+    barriers[1].srcQueueFamilyIndex = context->transferQueueFamily;
+    barriers[1].dstQueueFamilyIndex = context->graphicsQueueFamily;
+    barriers[2] = VkHelpers::BufferMemoryBarrier(
+        resourceManager->GetMaterialBuffer().handle,
+        newModel->data.materialAllocation.offset, sizeMaterials,
+        VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+        VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE);
+    barriers[2].srcQueueFamilyIndex = context->transferQueueFamily;
+    barriers[2].dstQueueFamilyIndex = context->graphicsQueueFamily;
+    barriers[3] = VkHelpers::BufferMemoryBarrier(
+        resourceManager->GetPrimitiveBuffer().handle,
+        newModel->data.primitiveAllocation.offset, sizePrimitives,
+        VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+        VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE);
+    barriers[3].srcQueueFamilyIndex = context->transferQueueFamily;
+    barriers[3].dstQueueFamilyIndex = context->graphicsQueueFamily;
+
+    VkDependencyInfo depInfo{};
+    depInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+    depInfo.pNext = nullptr;
+    depInfo.dependencyFlags = 0;
+    depInfo.bufferMemoryBarrierCount = 4;
+    depInfo.pBufferMemoryBarriers = barriers;
+
+    vkCmdPipelineBarrier2(uploadStaging.commandBuffer, &depInfo);
+
+
+    VK_CHECK(vkEndCommandBuffer(uploadStaging.commandBuffer));
+    VkCommandBufferSubmitInfo cmdSubmitInfo = VkHelpers::CommandBufferSubmitInfo(uploadStaging.commandBuffer);
+    const VkSubmitInfo2 submitInfo = VkHelpers::SubmitInfo(&cmdSubmitInfo, nullptr, nullptr);
+    VK_CHECK(vkQueueSubmit2(context->transferQueue, 1, &submitInfo, uploadStaging.fence));
+
+    newModel->uploadStagingHandle = {currentIndex, uploadStagingGenerations[currentIndex].load()};
+    pathToHandle[path] = newModelHandle;
+    return newModelHandle;
 }
 
 void AssetLoadingThread::UnloadModel(ModelEntryHandle handle)
@@ -527,15 +738,22 @@ void AssetLoadingThread::UnloadModel(ModelEntryHandle handle)
 }
 
 
+bool AssetLoadingThread::IsUploadFinished(UploadStagingHandle uploadStagingHandle)
+{
+    if (uploadStagingGenerations[uploadStagingHandle.index] > uploadStagingHandle.generation) {
+        return true;
+    }
+
+    VkResult fenceStatus = vkGetFenceStatus(context->device, uploadStagingDatas[uploadStagingHandle.index].fence);
+    return fenceStatus == VK_SUCCESS;
+}
+
 void AssetLoadingThread::LoadGltfImages(UploadStaging& uploadStaging, const fastgltf::Asset& asset, const std::filesystem::path& parentFolder, std::vector<AllocatedImage>& outAllocatedImages)
 {
     unsigned char* stbiData{nullptr};
     int32_t width{};
     int32_t height{};
     int32_t nrChannels{};
-
-    const VkCommandBufferBeginInfo cmdBeginInfo = VkHelpers::CommandBufferBeginInfo();
-    VK_CHECK(vkBeginCommandBuffer(uploadStaging.commandBuffer, &cmdBeginInfo));
 
     // todo: parallelize stbi decoding with enkiTS
     for (const fastgltf::Image& gltfImage : asset.images) {
@@ -781,38 +999,27 @@ void AssetLoadingThread::LoadGltfImages(UploadStaging& uploadStaging, const fast
 
         outAllocatedImages.push_back(std::move(newImage));
     }
-
-
-    VK_CHECK(vkEndCommandBuffer(uploadStaging.commandBuffer));
-    VkCommandBufferSubmitInfo cmdSubmitInfo = VkHelpers::CommandBufferSubmitInfo(uploadStaging.commandBuffer);
-    const VkSubmitInfo2 submitInfo = VkHelpers::SubmitInfo(&cmdSubmitInfo, nullptr, nullptr);
-    VK_CHECK(vkQueueSubmit2(context->transferQueue, 1, &submitInfo, uploadStaging.fence));
 }
 
 UploadStaging& AssetLoadingThread::GetAvailableTextureStaging()
 {
-    auto& staging = uploadStagingDatas[currentIndex];
+    for (uint32_t i = 0; i < ASSET_LOAD_ASYNC_COUNT; ++i) {
+        uint32_t checkIndex = (currentIndex + i) % ASSET_LOAD_ASYNC_COUNT;
+        auto& staging = uploadStagingDatas[checkIndex];
 
-    if (vkGetFenceStatus(context->device, staging.fence) == VK_SUCCESS) {
-        staging.stagingAllocator.reset();
-        VK_CHECK(vkResetFences(context->device, 1, &staging.fence));
-        VK_CHECK(vkResetCommandBuffer(staging.commandBuffer, 0));
-        uploadStagingGenerations[currentIndex].fetch_add(1);
-        return staging;
+        if (vkGetFenceStatus(context->device, staging.fence) == VK_SUCCESS) {
+            staging.stagingAllocator.reset();
+            VK_CHECK(vkResetFences(context->device, 1, &staging.fence));
+            VK_CHECK(vkResetCommandBuffer(staging.commandBuffer, 0));
+            uploadStagingGenerations[checkIndex].fetch_add(1);
+            currentIndex = checkIndex;
+            return staging;
+        }
     }
 
-    // Try next buffer
+    // All busy, wait on next buffer
     currentIndex = (currentIndex + 1) % ASSET_LOAD_ASYNC_COUNT;
     auto& nextStaging = uploadStagingDatas[currentIndex];
-
-    if (vkGetFenceStatus(context->device, nextStaging.fence) == VK_SUCCESS) {
-        nextStaging.stagingAllocator.reset();
-        VK_CHECK(vkResetFences(context->device, 1, &nextStaging.fence));
-        VK_CHECK(vkResetCommandBuffer(nextStaging.commandBuffer, 0));
-        uploadStagingGenerations[currentIndex].fetch_add(1);
-        return nextStaging;
-    }
-
     vkWaitForFences(context->device, 1, &nextStaging.fence, true, UINT64_MAX);
     nextStaging.stagingAllocator.reset();
     VK_CHECK(vkResetFences(context->device, 1, &nextStaging.fence));

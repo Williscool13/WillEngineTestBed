@@ -34,6 +34,8 @@ void EngineMultithreading::Initialize()
     SDL_ShowWindow(window);
 
     renderThread.Initialize(this, window, Core::DEFAULT_WINDOW_WIDTH, Core::DEFAULT_WINDOW_HEIGHT);
+    assetLoadingThread.Initialize(renderThread.GetVulkanContext(), renderThread.GetResourceManager());
+
     Input::Get().Init(window, Core::DEFAULT_WINDOW_WIDTH, Core::DEFAULT_WINDOW_HEIGHT);
 }
 
@@ -42,6 +44,7 @@ void EngineMultithreading::Run()
     Utils::SetThreadName("GameThread");
 
     renderThread.Start();
+    assetLoadingThread.Start();
 
     Input& input = Input::Input::Get();
     Time& time = Time::Get();
@@ -60,13 +63,29 @@ void EngineMultithreading::Run()
         input.UpdateFocus(SDL_GetWindowFlags(window));
         time.Update();
 
-        if (exit)
-        {
+        if (exit) {
             renderThread.RequestShutdown();
             renderFrames.release();
+            assetLoadingThread.RequestShutdown();
             break;
         }
 
+        if (input.IsKeyPressed(Key::G)) {
+            auto suzannePath = std::filesystem::path("../assets/Suzanne/glTF/Suzanne.gltf");
+            assetLoadingThread.RequestLoad(suzannePath, [this](Renderer::ModelEntryHandle handle) {
+                if (handle == Renderer::ModelEntryHandle::Invalid) {
+                    LOG_ERROR("Failed to load Suzanne model");
+                    return;
+                }
+
+                // Model is loaded and ready to use
+                // Store handle for rendering
+                // loadedModels.push_back(handle);
+
+                // Or immediately spawn an entity with it
+                // SpawnEntity(handle);
+            });
+        }
         // game logicz
         // bla bla bla bla
 
@@ -76,7 +95,7 @@ void EngineMultithreading::Run()
             uint32_t currentFrameInFlight = frameNumber % Core::FRAMES_IN_FLIGHT;
 
             frameBuffers[currentFrameInFlight].currentFrame = frameNumber;
-            LOG_INFO("[Game Thread] Processed frame {}", frameNumber);
+            //LOG_INFO("[Game Thread] Processed frame {}", frameNumber);
         }
 
         renderFrames.release();
@@ -84,6 +103,7 @@ void EngineMultithreading::Run()
     }
 
     renderThread.Join();
+    assetLoadingThread.Join();
 }
 
 void EngineMultithreading::Cleanup()

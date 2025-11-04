@@ -9,6 +9,7 @@
 #include <memory>
 #include <vector>
 
+#include "asset_loading_thread.h"
 #include "offsetAllocator.hpp"
 #include "render_thread.h"
 #include "SDL3/SDL.h"
@@ -69,6 +70,7 @@ private:
 
 
     Renderer::RenderThread renderThread{};
+    Renderer::AssetLoadingThread assetLoadingThread{};
 
     uint64_t frameNumber{0};
     std::atomic<uint32_t> lastGameFrame{0};

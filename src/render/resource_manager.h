@@ -7,6 +7,7 @@
 
 
 #include "render_constants.h"
+#include "descriptor_buffer/descriptor_buffer_bindless_resources.h"
 #include "model/model_data.h"
 #include "utils/handle_allocator.h"
 
@@ -19,6 +20,13 @@ class ModelLoader;
 class ResourceManager
 {
 public:
+    ResourceManager();
+
+    ~ResourceManager();
+
+    ResourceManager(VulkanContext* context);
+
+public:
     OffsetAllocator::Allocation AllocateVertices(size_t count);
 
     OffsetAllocator::Allocation AllocateIndices(size_t count);
@@ -27,9 +35,17 @@ public:
 
     OffsetAllocator::Allocation AllocatePrimitives(size_t count);
 
+public:
+    DescriptorBufferBindlessResources& GetResourceDescriptorBuffer() { return bindlessResourcesDescriptorBuffer; }
 
+    AllocatedBuffer& GetMegaVertexBuffer() { return megaVertexBuffer; }
+    AllocatedBuffer& GetMegaIndexBuffer() { return megaIndexBuffer; }
+    AllocatedBuffer& GetMaterialBuffer() { return materialBuffer; }
+    AllocatedBuffer& GetPrimitiveBuffer() { return primitiveBuffer; }
 
 private:
+    VulkanContext* context;
+
     AllocatedBuffer megaVertexBuffer;
     OffsetAllocator::Allocator vertexBufferAllocator{sizeof(Vertex) * MEGA_VERTEX_BUFFER_COUNT};
     AllocatedBuffer megaIndexBuffer;
@@ -46,6 +62,8 @@ private:
     std::vector<AllocatedBuffer> instanceBuffers;
     OffsetAllocator::Allocator jointMatrixAllocator{sizeof(Model) * BINDLESS_MODEL_MATRIX_COUNT};
     std::vector<AllocatedBuffer> jointMatrixBuffers;
+
+    DescriptorBufferBindlessResources bindlessResourcesDescriptorBuffer{};
 };
 } // Renderer
 
