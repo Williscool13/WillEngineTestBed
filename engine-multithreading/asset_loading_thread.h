@@ -56,6 +56,8 @@ public:
 
     void UnloadModel(ModelEntryHandle handle);
 
+    ModelData* GetModelData(ModelEntryHandle handle);
+
 private:
     VulkanContext* context{};
     ResourceManager* resourceManager{};

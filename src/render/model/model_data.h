@@ -185,19 +185,6 @@ struct RuntimeNode
 
     explicit RuntimeNode(const Node& n);
 };
-
-struct RuntimeMesh
-{
-    ModelDataHandle modelDataHandle{ModelDataHandle::Invalid};
-    // sorted when generated
-    std::vector<RuntimeNode> nodes;
-
-    std::vector<uint32_t> nodeRemap{};
-
-    Transform transform;
-    OffsetAllocator::Allocation jointMatrixAllocation{};
-    uint32_t jointMatrixOffset{0};
-};
 } // Renderer
 
 #endif //WILLENGINETESTBED_MODEL_H

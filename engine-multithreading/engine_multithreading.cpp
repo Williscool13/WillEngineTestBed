@@ -8,6 +8,7 @@
 #include "core/time.h"
 #include "crash-handling/crash_handler.h"
 #include "input/input.h"
+#include "render/resource_manager.h"
 #include "render/vk_imgui_wrapper.h"
 #include "utils/utils.h"
 
@@ -70,24 +71,6 @@ void EngineMultithreading::Run()
             break;
         }
 
-        if (input.IsKeyPressed(Key::G)) {
-            auto suzannePath = std::filesystem::path("../assets/Suzanne/glTF/Suzanne.gltf");
-            assetLoadingThread.RequestLoad(suzannePath, [this](Renderer::ModelEntryHandle handle) {
-                if (handle == Renderer::ModelEntryHandle::Invalid) {
-                    LOG_ERROR("Failed to load Suzanne model");
-                    return;
-                }
-
-                // Model is loaded and ready to use
-                // Store handle for rendering
-                // loadedModels.push_back(handle);
-
-                // Or immediately spawn an entity with it
-                // SpawnEntity(handle);
-            });
-        }
-        // game logicz
-        // bla bla bla bla
 
         gameFrames.acquire();
         //
@@ -96,6 +79,30 @@ void EngineMultithreading::Run()
 
             frameBuffers[currentFrameInFlight].currentFrame = frameNumber;
             //LOG_INFO("[Game Thread] Processed frame {}", frameNumber);
+
+            // game logicz
+            // bla bla bla bla
+
+            if (input.IsKeyPressed(Key::G)) {
+                auto suzannePath = std::filesystem::path("../assets/Suzanne/glTF/Suzanne.gltf");
+                assetLoadingThread.RequestLoad(suzannePath, [this](Renderer::ModelEntryHandle handle) {
+                    if (handle == Renderer::ModelEntryHandle::Invalid) {
+                        LOG_ERROR("Failed to load Suzanne model");
+                        return;
+                    }
+
+                    LOG_INFO("Successfully to load Suzanne model");
+
+                    // Model is loaded and ready to use
+                    // Store handle for rendering
+                    // loadedModels.push_back(handle);
+
+                    // Or immediately spawn an entity with it
+                    // SpawnEntity(handle);
+                });
+            }
+
+            assetLoadingThread.ResolveLoads();
         }
 
         renderFrames.release();
@@ -109,4 +116,122 @@ void EngineMultithreading::Run()
 void EngineMultithreading::Cleanup()
 {
     SDL_DestroyWindow(window);
+}
+
+Renderer::RuntimeMesh EngineMultithreading::GenerateModel(Renderer::ModelEntryHandle modelEntryHandle, const Transform& topLevelTransform)
+{
+    Renderer::ResourceManager* resourceManager = renderThread.GetResourceManager();
+    Renderer::RuntimeMesh rm{};
+
+    Renderer::ModelData* modelData = assetLoadingThread.GetModelData(modelEntryHandle);
+    if (!modelData) { return rm; }
+
+    rm.transform = topLevelTransform;
+    rm.nodes.reserve(modelData->nodes.size());
+    rm.nodeRemap = modelData->nodeRemap;
+
+    size_t jointMatrixCount = modelData->inverseBindMatrices.size();
+    bool bHasSkinning = jointMatrixCount > 0;
+    if (bHasSkinning) {
+        rm.jointMatrixAllocation = resourceManager->jointMatrixAllocator.allocate(jointMatrixCount * sizeof(Renderer::Model));
+        rm.jointMatrixOffset = rm.jointMatrixAllocation.offset / sizeof(uint32_t);
+    }
+
+    rm.modelEntryHandle = modelEntryHandle;
+    for (const Renderer::Node& n : modelData->nodes) {
+        rm.nodes.emplace_back(n);
+        Renderer::RuntimeNode& rn = rm.nodes.back();
+        if (n.inverseBindIndex != ~0u) {
+            rn.inverseBindMatrix = modelData->inverseBindMatrices[n.inverseBindIndex];
+        }
+    }
+
+    return rm;
+}
+
+void EngineMultithreading::UpdateTransforms(std::vector<Renderer::RuntimeNode>& runtimeNodes, const Transform& topLevelTransform)
+{
+    glm::mat4 baseTopLevel = topLevelTransform.GetMatrix();
+
+    // Nodes are sorted
+    for (Renderer::RuntimeNode& rn : runtimeNodes) {
+        glm::mat4 localTransform = rn.transform.GetMatrix();
+
+        if (rn.parent == ~0u) {
+            rn.cachedWorldTransform = baseTopLevel * localTransform;
+        }
+        else {
+            rn.cachedWorldTransform = runtimeNodes[rn.parent].cachedWorldTransform * localTransform;
+        }
+    }
+}
+
+void EngineMultithreading::InitialUploadRuntimeMesh(Renderer::RuntimeMesh& runtimeMesh,
+                                                    std::vector<ModelMatrixOperation>& modelMatrixOperations,
+                                                    std::vector<InstanceOperation>& instanceOperations,
+                                                    std::vector<JointMatrixOperation>& jointMatrixOperations)
+{
+    Renderer::ResourceManager* resourceManager = renderThread.GetResourceManager();
+    for (Renderer::RuntimeNode& node : runtimeMesh.nodes) {
+        if (node.meshIndex != ~0u) {
+            node.modelMatrixHandle = resourceManager->modelMatrixAllocator.Add();
+            modelMatrixOperations.push_back({node.modelMatrixHandle.index, node.cachedWorldTransform});
+
+            if (Renderer::ModelData* modelData = assetLoadingThread.GetModelData(runtimeMesh.modelEntryHandle)) {
+                for (uint32_t primitiveIndex : modelData->meshes[node.meshIndex].primitiveIndices) {
+                    Renderer::InstanceEntryHandle instanceEntry = resourceManager->instanceEntryAllocator.Add();
+                    node.instanceEntryHandles.push_back(instanceEntry);
+
+                    Renderer::Instance inst;
+                    inst.modelIndex = node.modelMatrixHandle.index;
+                    inst.primitiveIndex = primitiveIndex;
+                    inst.jointMatrixOffset = runtimeMesh.jointMatrixOffset;
+                    inst.bIsAllocated = 1;
+
+                    instanceOperations.push_back({instanceEntry.index, inst});
+                }
+            }
+        }
+
+        if (node.jointMatrixIndex != ~0u) {
+            glm::mat4 jointMatrix = node.cachedWorldTransform * node.inverseBindMatrix;
+            const uint32_t jointMatrixFinalIndex = node.jointMatrixIndex + runtimeMesh.jointMatrixOffset;
+            jointMatrixOperations.push_back({jointMatrixFinalIndex, jointMatrix});
+        }
+    }
+}
+
+void EngineMultithreading::UpdateRuntimeMesh(Renderer::RuntimeMesh& runtimeMesh,
+                                             std::vector<ModelMatrixOperation>& modelMatrixOperations,
+                                             std::vector<InstanceOperation>& instanceOperations,
+                                             std::vector<JointMatrixOperation>& jointMatrixOperations)
+{
+    for (Renderer::RuntimeNode& node : runtimeMesh.nodes) {
+        if (node.meshIndex != ~0u) {
+            modelMatrixOperations.push_back({node.modelMatrixHandle.index, node.cachedWorldTransform});
+        }
+
+        if (node.jointMatrixIndex != ~0u) {
+            glm::mat4 jointMatrix = node.cachedWorldTransform * node.inverseBindMatrix;
+            uint32_t jointMatrixFinalIndex = node.jointMatrixIndex + runtimeMesh.jointMatrixOffset;
+            jointMatrixOperations.push_back({jointMatrixFinalIndex, jointMatrix});
+        }
+    }
+}
+
+void EngineMultithreading::DeleteRuntimeMesh(Renderer::RuntimeMesh& runtimeMesh,
+                                             std::vector<ModelMatrixOperation>& modelMatrixOperations,
+                                             std::vector<InstanceOperation>& instanceOperations,
+                                             std::vector<JointMatrixOperation>& jointMatrixOperations)
+{
+    Renderer::ResourceManager* resourceManager = renderThread.GetResourceManager();
+    for (Renderer::RuntimeNode& node : runtimeMesh.nodes) {
+        if (node.meshIndex != ~0u) {
+            resourceManager->modelMatrixAllocator.Remove(node.modelMatrixHandle);
+            for (Renderer::InstanceEntryHandle instanceEntryHandle : node.instanceEntryHandles) {
+                instanceOperations.push_back({instanceEntryHandle.index, {}});
+                resourceManager->instanceEntryAllocator.Remove(instanceEntryHandle);
+            }
+        }
+    }
 }

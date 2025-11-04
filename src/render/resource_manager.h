@@ -27,25 +27,6 @@ public:
     ResourceManager(VulkanContext* context);
 
 public:
-    OffsetAllocator::Allocation AllocateVertices(size_t count);
-
-    OffsetAllocator::Allocation AllocateIndices(size_t count);
-
-    OffsetAllocator::Allocation AllocateMaterials(size_t count);
-
-    OffsetAllocator::Allocation AllocatePrimitives(size_t count);
-
-public:
-    DescriptorBufferBindlessResources& GetResourceDescriptorBuffer() { return bindlessResourcesDescriptorBuffer; }
-
-    AllocatedBuffer& GetMegaVertexBuffer() { return megaVertexBuffer; }
-    AllocatedBuffer& GetMegaIndexBuffer() { return megaIndexBuffer; }
-    AllocatedBuffer& GetMaterialBuffer() { return materialBuffer; }
-    AllocatedBuffer& GetPrimitiveBuffer() { return primitiveBuffer; }
-
-private:
-    VulkanContext* context;
-
     AllocatedBuffer megaVertexBuffer;
     OffsetAllocator::Allocator vertexBufferAllocator{sizeof(Vertex) * MEGA_VERTEX_BUFFER_COUNT};
     AllocatedBuffer megaIndexBuffer;
@@ -56,14 +37,14 @@ private:
     AllocatedBuffer primitiveBuffer;
     OffsetAllocator::Allocator primitiveBufferAllocator{sizeof(MaterialProperties) * MEGA_PRIMITIVE_BUFFER_COUNT};
 
-    HandleAllocator<ModelMatrix, BINDLESS_MODEL_MATRIX_COUNT> modelMatrixAllocator;
-    std::vector<AllocatedBuffer> modelBuffers;
-    HandleAllocator<InstanceEntry, BINDLESS_INSTANCE_COUNT> instanceEntryAllocator;
-    std::vector<AllocatedBuffer> instanceBuffers;
-    OffsetAllocator::Allocator jointMatrixAllocator{sizeof(Model) * BINDLESS_MODEL_MATRIX_COUNT};
-    std::vector<AllocatedBuffer> jointMatrixBuffers;
-
     DescriptorBufferBindlessResources bindlessResourcesDescriptorBuffer{};
+
+    HandleAllocator<ModelMatrix, BINDLESS_MODEL_MATRIX_COUNT> modelMatrixAllocator;
+    HandleAllocator<InstanceEntry, BINDLESS_INSTANCE_COUNT> instanceEntryAllocator;
+    OffsetAllocator::Allocator jointMatrixAllocator{sizeof(Model) * BINDLESS_MODEL_MATRIX_COUNT};
+
+private:
+    VulkanContext* context;
 };
 } // Renderer
 

@@ -18,7 +18,9 @@
 #include "render/vk_types.h"
 #include "render/descriptor_buffer/descriptor_buffer_bindless_resources.h"
 #include "render/descriptor_buffer/descriptor_buffer_storage_image.h"
+#include "render/model/model_data.h"
 #include "render/pipelines/gradient_compute_pipeline.h"
+#include "utils/handle_allocator.h"
 #include "utils/utils.h"
 
 class EngineMultithreading;
@@ -42,6 +44,8 @@ public:
     ~RenderThread();
 
     void Initialize(EngineMultithreading* engineMultithreading_, SDL_Window* window_, uint32_t w, uint32_t h);
+
+    void InitializeBuffers();
 
     void InitializeResources();
 
@@ -91,6 +95,17 @@ private:
     DescriptorBufferBindlessResources bindlessResourcesDescriptorBuffer{};
 
     GradientComputePipeline gradientComputePipeline{};
+
+private: // Frame Draw Resources
+    std::vector<AllocatedBuffer> modelBuffers;
+    std::vector<AllocatedBuffer> instanceBuffers;
+    std::vector<AllocatedBuffer> jointMatrixBuffers;
+
+    uint32_t highestInstanceIndex{0};
+    AllocatedBuffer opaqueIndexedIndirectBuffer;
+    std::vector<AllocatedBuffer> indirectCountBuffers;
+    AllocatedBuffer opaqueSkeletalIndexedIndirectBuffer;
+    std::vector<AllocatedBuffer> skeletalIndirectCountBuffers;
 
 private: // Thread Sync
     std::jthread thread;

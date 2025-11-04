@@ -523,16 +523,16 @@ ModelEntryHandle AssetLoadingThread::LoadGltf(const std::filesystem::path& path)
     // Allocate all static stagings first. If fail no need to clear, because next time the handle is used, it is auto cleared
     size_t sizeVertices = vertices.size() * sizeof(Vertex);
     OffsetAllocator::Allocation vertexStagingAllocation = uploadStaging.stagingAllocator.allocate(sizeVertices);
-    newModel->data.vertexAllocation = resourceManager->AllocateVertices(sizeVertices);
+    newModel->data.vertexAllocation = resourceManager->vertexBufferAllocator.allocate(sizeVertices);
     size_t sizeIndices = indices.size() * sizeof(uint32_t);
     OffsetAllocator::Allocation indexStagingAllocation = uploadStaging.stagingAllocator.allocate(sizeIndices);
-    newModel->data.indexAllocation = resourceManager->AllocateIndices(sizeIndices);
+    newModel->data.indexAllocation = resourceManager->indexBufferAllocator.allocate(sizeIndices);
     size_t sizeMaterials = materials.size() * sizeof(MaterialProperties);
     OffsetAllocator::Allocation materialStagingAllocation = uploadStaging.stagingAllocator.allocate(sizeMaterials);
-    newModel->data.materialAllocation = resourceManager->AllocateMaterials(sizeMaterials);
+    newModel->data.materialAllocation = resourceManager->materialBufferAllocator.allocate(sizeMaterials);
     size_t sizePrimitives = primitives.size() * sizeof(Primitive);
     OffsetAllocator::Allocation primitiveStagingAllocation = uploadStaging.stagingAllocator.allocate(sizePrimitives);
-    newModel->data.primitiveAllocation = resourceManager->AllocatePrimitives(sizePrimitives);
+    newModel->data.primitiveAllocation = resourceManager->primitiveBufferAllocator.allocate(sizePrimitives);
 
     if (vertexStagingAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE || indexStagingAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE ||
         materialStagingAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE || primitiveStagingAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE ||
@@ -582,12 +582,10 @@ ModelEntryHandle AssetLoadingThread::LoadGltf(const std::filesystem::path& path)
         indices_.w = indices_.w >= 0 ? map[indices_.w] : -1;
     };
 
-    auto& bindlessResourcesDescriptorBuffer = resourceManager->GetResourceDescriptorBuffer();
-
     // Samplers
     newModel->data.samplerIndexToDescriptorBufferIndexMap.resize(newModel->data.samplers.size());
     for (int32_t i = 0; i < newModel->data.samplers.size(); ++i) {
-        newModel->data.samplerIndexToDescriptorBufferIndexMap[i] = bindlessResourcesDescriptorBuffer.AllocateSampler(newModel->data.samplers[i].handle);
+        newModel->data.samplerIndexToDescriptorBufferIndexMap[i] = resourceManager->bindlessResourcesDescriptorBuffer.AllocateSampler(newModel->data.samplers[i].handle);
     }
 
     for (MaterialProperties& material : materials) {
@@ -598,7 +596,7 @@ ModelEntryHandle AssetLoadingThread::LoadGltf(const std::filesystem::path& path)
     // Textures
     newModel->data.textureIndexToDescriptorBufferIndexMap.resize(newModel->data.imageViews.size());
     for (int32_t i = 0; i < newModel->data.imageViews.size(); ++i) {
-        newModel->data.textureIndexToDescriptorBufferIndexMap[i] = bindlessResourcesDescriptorBuffer.AllocateTexture({
+        newModel->data.textureIndexToDescriptorBufferIndexMap[i] = resourceManager->bindlessResourcesDescriptorBuffer.AllocateTexture({
             .imageView = newModel->data.imageViews[i].handle,
             .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
         });
@@ -646,7 +644,7 @@ ModelEntryHandle AssetLoadingThread::LoadGltf(const std::filesystem::path& path)
     VkCopyBufferInfo2 copyVertexInfo{
         .sType = VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2,
         .srcBuffer = uploadStaging.stagingBuffer.handle,
-        .dstBuffer = resourceManager->GetMegaVertexBuffer().handle,
+        .dstBuffer = resourceManager->megaVertexBuffer.handle,
         .regionCount = 1,
         .pRegions = &vertexCopy
     };
@@ -654,7 +652,7 @@ ModelEntryHandle AssetLoadingThread::LoadGltf(const std::filesystem::path& path)
     VkCopyBufferInfo2 copyIndexInfo{
         .sType = VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2,
         .srcBuffer = uploadStaging.stagingBuffer.handle,
-        .dstBuffer = resourceManager->GetMegaIndexBuffer().handle,
+        .dstBuffer = resourceManager->megaIndexBuffer.handle,
         .regionCount = 1,
         .pRegions = &indexCopy
     };
@@ -662,7 +660,7 @@ ModelEntryHandle AssetLoadingThread::LoadGltf(const std::filesystem::path& path)
     VkCopyBufferInfo2 copyMaterialInfo{
         .sType = VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2,
         .srcBuffer = uploadStaging.stagingBuffer.handle,
-        .dstBuffer = resourceManager->GetMaterialBuffer().handle,
+        .dstBuffer = resourceManager->materialBuffer.handle,
         .regionCount = 1,
         .pRegions = &materialCopy
     };
@@ -670,7 +668,7 @@ ModelEntryHandle AssetLoadingThread::LoadGltf(const std::filesystem::path& path)
     VkCopyBufferInfo2 copyPrimitiveInfo{
         .sType = VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2,
         .srcBuffer = uploadStaging.stagingBuffer.handle,
-        .dstBuffer = resourceManager->GetPrimitiveBuffer().handle,
+        .dstBuffer = resourceManager->primitiveBuffer.handle,
         .regionCount = 1,
         .pRegions = &primitiveCopy
     };
@@ -678,28 +676,28 @@ ModelEntryHandle AssetLoadingThread::LoadGltf(const std::filesystem::path& path)
 
     VkBufferMemoryBarrier2 barriers[4];
     barriers[0] = VkHelpers::BufferMemoryBarrier(
-        resourceManager->GetMegaVertexBuffer().handle,
+        resourceManager->megaVertexBuffer.handle,
         newModel->data.vertexAllocation.offset, sizeVertices,
         VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
         VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE);
     barriers[0].srcQueueFamilyIndex = context->transferQueueFamily;
     barriers[0].dstQueueFamilyIndex = context->graphicsQueueFamily;
     barriers[1] = VkHelpers::BufferMemoryBarrier(
-        resourceManager->GetMegaIndexBuffer().handle,
+        resourceManager->megaIndexBuffer.handle,
         newModel->data.indexAllocation.offset, sizeIndices,
         VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
         VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE);
     barriers[1].srcQueueFamilyIndex = context->transferQueueFamily;
     barriers[1].dstQueueFamilyIndex = context->graphicsQueueFamily;
     barriers[2] = VkHelpers::BufferMemoryBarrier(
-        resourceManager->GetMaterialBuffer().handle,
+        resourceManager->materialBuffer.handle,
         newModel->data.materialAllocation.offset, sizeMaterials,
         VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
         VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE);
     barriers[2].srcQueueFamilyIndex = context->transferQueueFamily;
     barriers[2].dstQueueFamilyIndex = context->graphicsQueueFamily;
     barriers[3] = VkHelpers::BufferMemoryBarrier(
-        resourceManager->GetPrimitiveBuffer().handle,
+        resourceManager->primitiveBuffer.handle,
         newModel->data.primitiveAllocation.offset, sizePrimitives,
         VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
         VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE);
@@ -728,13 +726,23 @@ ModelEntryHandle AssetLoadingThread::LoadGltf(const std::filesystem::path& path)
 
 void AssetLoadingThread::UnloadModel(ModelEntryHandle handle)
 {
-    // todo: Send unload command to render thread
+    // todo: defer unload by 3 frames. It's the responsibility of the game thread to call UnloadModel responsibly
+    //      (at least the same frame the resources have been removed from use in render thread)
     if (auto* entry = models.Get(handle)) {
         if (--entry->refCount == 0) {
             pathToHandle.erase(entry->data.path);
             models.Remove(handle);
         }
     }
+}
+
+ModelData* AssetLoadingThread::GetModelData(ModelEntryHandle handle)
+{
+    ModelEntry* modelEntry = models.Get(handle);
+    if (modelEntry->state != ModelEntry::State::Ready) {
+        return nullptr;
+    }
+    return &modelEntry->data;
 }
 
 

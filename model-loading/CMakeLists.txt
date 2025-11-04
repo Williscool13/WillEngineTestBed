@@ -2,6 +2,8 @@ add_executable(model-loading
         main.cpp
         model_loading.cpp
         model_loading.h
+        model_loading_types.cpp
+        model_loading_types.h
 )
 
 target_link_libraries(model-loading PRIVATE

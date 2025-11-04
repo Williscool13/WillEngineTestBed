@@ -7,6 +7,7 @@
 #include <memory>
 #include <vector>
 
+#include "model_loading_types.h"
 #include "offsetAllocator.hpp"
 #include "SDL3/SDL.h"
 

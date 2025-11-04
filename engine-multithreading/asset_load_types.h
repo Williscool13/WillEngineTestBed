@@ -80,6 +80,19 @@ struct AssetLoadComplete
     ModelEntryHandle handle;
     std::function<void(ModelEntryHandle)> onComplete;
 };
+
+struct RuntimeMesh
+{
+    ModelEntryHandle modelEntryHandle{ModelEntryHandle::Invalid};
+    // sorted when generated
+    std::vector<RuntimeNode> nodes;
+
+    std::vector<uint32_t> nodeRemap{};
+
+    Transform transform;
+    OffsetAllocator::Allocation jointMatrixAllocation{};
+    uint32_t jointMatrixOffset{0};
+};
 } // Renderer
 
 #endif //WILLENGINETESTBED_ASSET_LOAD_TYPES_H
