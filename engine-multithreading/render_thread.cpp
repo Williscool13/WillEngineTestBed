@@ -67,21 +67,22 @@ void RenderThread::Initialize(EngineMultithreading* engineMultithreading_, SDL_W
         resourceManager = std::make_unique<ResourceManager>(vulkanContext.get());
         Input::Input::Get().Init(window, swapchain->extent.width, swapchain->extent.height);
 
-        for (FrameSynchronization& frameSync : frameSynchronization) {
-            frameSync = FrameSynchronization(vulkanContext.get());
-            frameSync.Initialize();
-        }
 
-        for (AllocatedBuffer& sceneBuffer : sceneDataBuffers) {
-            VkBufferCreateInfo bufferInfo = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
-            bufferInfo.pNext = nullptr;
-            VmaAllocationCreateInfo vmaAllocInfo = {};
-            vmaAllocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
-            vmaAllocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+        VkBufferCreateInfo bufferInfo = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+        bufferInfo.pNext = nullptr;
+        VmaAllocationCreateInfo vmaAllocInfo = {};
+        vmaAllocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+        vmaAllocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+        bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
+        bufferInfo.size = sizeof(SceneData);
 
-            bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
-            bufferInfo.size = sizeof(SceneData);
-            sceneBuffer = VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
+        sceneDataBuffers.reserve(swapchain->imageCount);
+        frameSynchronization.reserve(swapchain->imageCount);
+        for (int32_t i = 0; i < swapchain->imageCount; ++i) {
+            frameSynchronization.emplace_back(vulkanContext.get());
+            frameSynchronization.back().Initialize();
+
+            sceneDataBuffers.push_back(std::move(VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo)));
         }
     }
 
@@ -157,11 +158,10 @@ void RenderThread::InitializeResources()
     drawDescriptorInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
     renderTargetDescriptors.UpdateDescriptor(drawDescriptorInfo, 0, 0, 0);
 
-    bindlessResourcesDescriptorBuffer = DescriptorBufferBindlessResources(vulkanContext.get());
 
     gradientComputePipeline = GradientComputePipeline(vulkanContext.get(), renderTargetSetLayout.handle);
     drawCullComputePipeline = DrawCullComputePipeline(vulkanContext.get());
-    mainRenderPipeline = MainRenderPipeline(vulkanContext.get(), bindlessResourcesDescriptorBuffer.descriptorSetLayout.handle);
+    mainRenderPipeline = MainRenderPipeline(vulkanContext.get(), resourceManager->bindlessResourcesDescriptorBuffer.descriptorSetLayout.handle);
 }
 
 void RenderThread::Start()
@@ -417,7 +417,7 @@ RenderThread::RenderResponse RenderThread::Render(uint32_t currentFrameInFlight,
         auto barrier = VkHelpers::ImageMemoryBarrier(
             renderTargets->drawImage.handle,
             subresource,
-            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_UNDEFINED,
+            VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_UNDEFINED,
             VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
         );
         auto dependencyInfo = VkHelpers::DependencyInfo(&barrier);
@@ -452,7 +452,7 @@ RenderThread::RenderResponse RenderThread::Render(uint32_t currentFrameInFlight,
 
         vkCmdPushConstants(cmd, mainRenderPipeline.renderPipelineLayout.handle, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(BindlessAddressPushConstant), &pushData);
 
-        VkDescriptorBufferBindingInfoEXT bindingInfo = bindlessResourcesDescriptorBuffer.GetBindingInfo();
+        VkDescriptorBufferBindingInfoEXT bindingInfo = resourceManager->bindlessResourcesDescriptorBuffer.GetBindingInfo();
         vkCmdBindDescriptorBuffersEXT(cmd, 1, &bindingInfo);
 
         uint32_t bufferIndexImage = 0;
@@ -484,7 +484,7 @@ RenderThread::RenderResponse RenderThread::Render(uint32_t currentFrameInFlight,
         barriers[1] = VkHelpers::ImageMemoryBarrier(
             currentSwapchainImage,
             VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT),
-            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_UNDEFINED,
+            VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_UNDEFINED,
             VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
         );
         VkDependencyInfo depInfo{.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
@@ -537,7 +537,7 @@ RenderThread::RenderResponse RenderThread::Render(uint32_t currentFrameInFlight,
     VK_CHECK(vkEndCommandBuffer(cmd));
 
     VkCommandBufferSubmitInfo commandBufferSubmitInfo = VkHelpers::CommandBufferSubmitInfo(currentFrameData.commandBuffer);
-    VkSemaphoreSubmitInfo swapchainSemaphoreWaitInfo = VkHelpers::SemaphoreSubmitInfo(currentFrameData.swapchainSemaphore, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR);
+    VkSemaphoreSubmitInfo swapchainSemaphoreWaitInfo = VkHelpers::SemaphoreSubmitInfo(currentFrameData.swapchainSemaphore, VK_PIPELINE_STAGE_2_BLIT_BIT  );
     VkSemaphoreSubmitInfo renderSemaphoreSignalInfo = VkHelpers::SemaphoreSubmitInfo(currentFrameData.renderSemaphore, VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT);
     VkSubmitInfo2 submitInfo = VkHelpers::SubmitInfo(&commandBufferSubmitInfo, &swapchainSemaphoreWaitInfo, &renderSemaphoreSignalInfo);
 

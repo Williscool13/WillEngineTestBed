@@ -84,23 +84,21 @@ private:
     bool bSwapchainOutdated{false};
     std::unique_ptr<RenderContext> renderContext{};
 
-    uint64_t frameNumber{0};
-    std::array<FrameSynchronization, Core::FRAMES_IN_FLIGHT> frameSynchronization;
-
-    SceneData sceneData{};
-    std::array<AllocatedBuffer, Core::FRAMES_IN_FLIGHT> sceneDataBuffers;
-
 private:
     DescriptorSetLayout renderTargetSetLayout{};
     DescriptorBufferStorageImage renderTargetDescriptors{};
-
-    DescriptorBufferBindlessResources bindlessResourcesDescriptorBuffer{};
 
     GradientComputePipeline gradientComputePipeline{};
     DrawCullComputePipeline drawCullComputePipeline{};
     MainRenderPipeline mainRenderPipeline{};
 
 private: // Frame Draw Resources
+    uint64_t frameNumber{0};
+    std::vector<FrameSynchronization> frameSynchronization;
+
+    SceneData sceneData{};
+    std::vector<AllocatedBuffer> sceneDataBuffers;
+
     std::vector<AllocatedBuffer> modelBuffers;
     std::vector<AllocatedBuffer> instanceBuffers;
     std::vector<AllocatedBuffer> jointMatrixBuffers;
