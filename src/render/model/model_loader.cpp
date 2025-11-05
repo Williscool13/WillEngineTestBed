@@ -731,8 +731,8 @@ AllocatedImage ModelLoader::RecordCreateImageFromData(VkCommandBuffer cmd, size_
         VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
         VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
     );
-    // barrier.srcQueueFamilyIndex = context->transferQueueFamily;
-    // barrier.dstQueueFamilyIndex = context->graphicsQueueFamily;
+    barrier.srcQueueFamilyIndex = context->transferQueueFamily;
+    barrier.dstQueueFamilyIndex = context->graphicsQueueFamily;
     vkCmdPipelineBarrier2(cmd, &depInfo);
     newImage.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 

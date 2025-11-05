@@ -51,10 +51,13 @@ add_library(render-lib STATIC
         pipelines/draw_cull_compute_pipeline.h
         pipelines/gradient_compute_pipeline.cpp
         pipelines/gradient_compute_pipeline.h
+        pipelines/main_render_pipeline.cpp
+        pipelines/main_render_pipeline.h
         resource_manager.cpp
         resource_manager.h
         model/model_load_utils.cpp
         model/model_load_utils.h
+
 )
 
 target_link_libraries(render-lib PUBLIC

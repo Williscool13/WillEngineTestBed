@@ -66,6 +66,7 @@ struct FrameBuffer
     // todo: make ring buffer
     std::vector<ModelMatrixOperation> modelMatrixOperations;
     std::vector<InstanceOperation> instanceOperations;
+    std::vector<JointMatrixOperation> jointMatrixOperations;
 };
 
 class EngineMultithreading
@@ -99,8 +100,17 @@ private:
                            std::vector<JointMatrixOperation>& jointMatrixOperations);
 
 private:
-    SDL_Window* window{nullptr};
+    Renderer::ModelEntryHandle suzanneModelEntryHandle{Renderer::ModelEntryHandle::Invalid};
+    Renderer::RuntimeMesh suzanneRuntimeMesh{};
+    Renderer::ModelEntryHandle structureModelEntryHandle{Renderer::ModelEntryHandle::Invalid};
+    Renderer::RuntimeMesh structureRuntimeMesh{};
+    Renderer::ModelEntryHandle riggedFigureModelEntryHandle{Renderer::ModelEntryHandle::Invalid};
+    Renderer::RuntimeMesh riggedFigureRuntimeMesh{};
+    Renderer::ModelEntryHandle texturedBoxModelEntryHandle{Renderer::ModelEntryHandle::Invalid};
+    Renderer::RuntimeMesh texturedBoxRuntimeMesh{};
 
+private:
+    SDL_Window* window{nullptr};
 
     Renderer::RenderThread renderThread{};
     Renderer::AssetLoadingThread assetLoadingThread{};

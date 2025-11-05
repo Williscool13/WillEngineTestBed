@@ -72,8 +72,6 @@ void RenderThread::Initialize(EngineMultithreading* engineMultithreading_, SDL_W
             frameSync.Initialize();
         }
 
-        //modelLoader = std::make_unique<ModelLoader>(vulkanContext.get());
-
         for (AllocatedBuffer& sceneBuffer : sceneDataBuffers) {
             VkBufferCreateInfo bufferInfo = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
             bufferInfo.pNext = nullptr;
@@ -162,6 +160,8 @@ void RenderThread::InitializeResources()
     bindlessResourcesDescriptorBuffer = DescriptorBufferBindlessResources(vulkanContext.get());
 
     gradientComputePipeline = GradientComputePipeline(vulkanContext.get(), renderTargetSetLayout.handle);
+    drawCullComputePipeline = DrawCullComputePipeline(vulkanContext.get());
+    mainRenderPipeline = MainRenderPipeline(vulkanContext.get(), bindlessResourcesDescriptorBuffer.descriptorSetLayout.handle);
 }
 
 void RenderThread::Start()
@@ -247,6 +247,46 @@ void RenderThread::ThreadMain()
 RenderThread::RenderResponse RenderThread::Render(uint32_t currentFrameInFlight, FrameSynchronization& currentFrameData)
 {
     //auto timer = Utils::ScopedTimer(fmt::format("[Render Thread] Frame time (Frame {})", frameNumber));
+    FrameBuffer& currentFrameBuffer = engineMultithreading->frameBuffers[currentFrameInFlight];
+
+    // todo: check what it looks like if we dont repeat it 3x. Should show up in FIF 1, but be missing from 2/3, reappear at 4, etc.
+    for (InstanceOperation& instanceOp : currentFrameBuffer.instanceOperations) {
+        memcpy(static_cast<char*>(instanceBuffers[0].allocationInfo.pMappedData) + sizeof(Instance) * instanceOp.index,
+               &instanceOp.instance,
+               sizeof(Instance));
+        memcpy(static_cast<char*>(instanceBuffers[1].allocationInfo.pMappedData) + sizeof(Instance) * instanceOp.index,
+               &instanceOp.instance,
+               sizeof(Instance));
+        memcpy(static_cast<char*>(instanceBuffers[2].allocationInfo.pMappedData) + sizeof(Instance) * instanceOp.index,
+               &instanceOp.instance,
+               sizeof(Instance));
+        highestInstanceIndex = glm::max(highestInstanceIndex, instanceOp.index + 1);
+    }
+    currentFrameBuffer.instanceOperations.clear();
+    for (ModelMatrixOperation& modelOp : currentFrameBuffer.modelMatrixOperations) {
+        memcpy(static_cast<char*>(modelBuffers[0].allocationInfo.pMappedData) + modelOp.index * sizeof(Model) + offsetof(Model, modelMatrix),
+               &modelOp.modelMatrix,
+               sizeof(Model::modelMatrix));
+        memcpy(static_cast<char*>(modelBuffers[1].allocationInfo.pMappedData) + modelOp.index * sizeof(Model) + offsetof(Model, modelMatrix),
+               &modelOp.modelMatrix,
+               sizeof(Model::modelMatrix));
+        memcpy(static_cast<char*>(modelBuffers[2].allocationInfo.pMappedData) + modelOp.index * sizeof(Model) + offsetof(Model, modelMatrix),
+               &modelOp.modelMatrix,
+               sizeof(Model::modelMatrix));
+    }
+    currentFrameBuffer.modelMatrixOperations.clear();
+    for (JointMatrixOperation& jointMatrixOp : currentFrameBuffer.jointMatrixOperations) {
+        memcpy(static_cast<char*>(jointMatrixBuffers[0].allocationInfo.pMappedData) + jointMatrixOp.index * sizeof(Model),
+               &jointMatrixOp.jointMatrix,
+               sizeof(Model));
+        memcpy(static_cast<char*>(jointMatrixBuffers[1].allocationInfo.pMappedData) + jointMatrixOp.index * sizeof(Model),
+               &jointMatrixOp.jointMatrix,
+               sizeof(Model));
+        memcpy(static_cast<char*>(jointMatrixBuffers[2].allocationInfo.pMappedData) + jointMatrixOp.index * sizeof(Model),
+               &jointMatrixOp.jointMatrix,
+               sizeof(Model));
+    }
+    currentFrameBuffer.jointMatrixOperations.clear();
 
     std::array<uint32_t, 2> scaledRenderExtent = renderContext->GetScaledRenderExtent();
     uint32_t swapchainImageIndex;
@@ -296,34 +336,140 @@ RenderThread::RenderResponse RenderThread::Render(uint32_t currentFrameInFlight,
     auto* currentSceneData = static_cast<SceneData*>(currentSceneDataBuffer.allocationInfo.pMappedData);
     *currentSceneData = sceneData;
 
-    // Transition 1 - Prepare for compute draw
+    //
+    {
+        vkCmdFillBuffer(cmd, indirectCountBuffers[currentFrameInFlight].handle,offsetof(IndirectCount, opaqueCount), sizeof(uint32_t), 0);
+        vkCmdFillBuffer(cmd, skeletalIndirectCountBuffers[currentFrameInFlight].handle,offsetof(IndirectCount, opaqueCount), sizeof(uint32_t), 0);
+        VkBufferMemoryBarrier2 bufferBarrier[2];
+        bufferBarrier[0] = VkHelpers::BufferMemoryBarrier(
+            indirectCountBuffers[currentFrameInFlight].handle, 0, VK_WHOLE_SIZE,
+            VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT);
+        bufferBarrier[1] = VkHelpers::BufferMemoryBarrier(
+            skeletalIndirectCountBuffers[currentFrameInFlight].handle, 0, VK_WHOLE_SIZE,
+            VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT);
+
+        VkDependencyInfo depInfo{};
+        depInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        depInfo.pNext = nullptr;
+        depInfo.dependencyFlags = 0;
+        depInfo.bufferMemoryBarrierCount = 2;
+        depInfo.pBufferMemoryBarriers = bufferBarrier;
+
+        vkCmdPipelineBarrier2(cmd, &depInfo);
+    }
+
+    //
+    {
+        if (highestInstanceIndex > 0) {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, drawCullComputePipeline.drawCullPipeline.handle);
+            BindlessIndirectPushConstant pushData{
+                currentSceneDataBuffer.address,
+                resourceManager->primitiveBuffer.address,
+                modelBuffers[currentFrameInFlight].address,
+                instanceBuffers[currentFrameInFlight].address,
+                opaqueIndexedIndirectBuffer.address,
+                indirectCountBuffers[currentFrameInFlight].address,
+                opaqueSkeletalIndexedIndirectBuffer.address,
+                skeletalIndirectCountBuffers[currentFrameInFlight].address,
+            };
+
+            vkCmdPushConstants(cmd, drawCullComputePipeline.drawCullPipelineLayout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(BindlessIndirectPushConstant), &pushData);
+            uint32_t groupsX = (highestInstanceIndex + 63) / 64;
+            vkCmdDispatch(cmd, groupsX, 1, 1);
+        }
+    }
+
+    //
+    {
+        VkBufferMemoryBarrier2 bufferBarrier[4];
+        bufferBarrier[0] = VkHelpers::BufferMemoryBarrier(
+            opaqueIndexedIndirectBuffer.handle, 0, VK_WHOLE_SIZE,
+            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT,
+            VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT, VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT);
+        bufferBarrier[1] = VkHelpers::BufferMemoryBarrier(
+            indirectCountBuffers[currentFrameInFlight].handle, 0, VK_WHOLE_SIZE,
+            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT,
+            VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT, VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT);
+        bufferBarrier[2] = VkHelpers::BufferMemoryBarrier(
+            opaqueSkeletalIndexedIndirectBuffer.handle, 0, VK_WHOLE_SIZE,
+            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT,
+            VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT, VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT);
+        bufferBarrier[3] = VkHelpers::BufferMemoryBarrier(
+            skeletalIndirectCountBuffers[currentFrameInFlight].handle, 0, VK_WHOLE_SIZE,
+            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT,
+            VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT, VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT);
+
+        VkDependencyInfo depInfo{};
+        depInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        depInfo.pNext = nullptr;
+        depInfo.dependencyFlags = 0;
+        depInfo.bufferMemoryBarrierCount = 4;
+        depInfo.pBufferMemoryBarriers = bufferBarrier;
+
+        vkCmdPipelineBarrier2(cmd, &depInfo);
+    }
+
+    // Transition 1
     {
         auto subresource = VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT);
         auto barrier = VkHelpers::ImageMemoryBarrier(
             renderTargets->drawImage.handle,
             subresource,
-            VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
-            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_GENERAL
+            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_UNDEFINED,
+            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
         );
         auto dependencyInfo = VkHelpers::DependencyInfo(&barrier);
         vkCmdPipelineBarrier2(cmd, &dependencyInfo);
     }
 
-    // Draw compute
+
+    // Draw render
     {
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, gradientComputePipeline.gradientPipeline.handle);
-        // Push Constants
-        vkCmdPushConstants(cmd, gradientComputePipeline.gradientPipelineLayout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(uint32_t) * 2, scaledRenderExtent.data());
-        VkDescriptorBufferBindingInfoEXT descriptorBufferBindingInfo[1]{};
-        descriptorBufferBindingInfo[0] = renderTargetDescriptors.GetBindingInfo();
-        vkCmdBindDescriptorBuffersEXT(cmd, 1, descriptorBufferBindingInfo);
+        constexpr VkClearValue colorClear = {.color = {0.0f, 0.0f, 1.0f, 1.0f}};
+        const VkRenderingAttachmentInfo colorAttachment = VkHelpers::RenderingAttachmentInfo(renderTargets->drawImageView.handle, &colorClear, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+        constexpr VkClearValue depthClear = {.depthStencil = {0.0f, 0u}};
+        const VkRenderingAttachmentInfo depthAttachment = VkHelpers::RenderingAttachmentInfo(renderTargets->depthImageView.handle, &depthClear, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+        const VkRenderingInfo renderInfo = VkHelpers::RenderingInfo({scaledRenderExtent[0], scaledRenderExtent[1]}, &colorAttachment, &depthAttachment);
+
+
+        vkCmdBeginRendering(cmd, &renderInfo);
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainRenderPipeline.renderPipeline.handle);
+
+        VkViewport viewport = VkHelpers::GenerateViewport(scaledRenderExtent[0], scaledRenderExtent[1]);
+        vkCmdSetViewport(cmd, 0, 1, &viewport);
+        VkRect2D scissor = VkHelpers::GenerateScissor(scaledRenderExtent[0], scaledRenderExtent[1]);
+        vkCmdSetScissor(cmd, 0, 1, &scissor);
+
+        BindlessAddressPushConstant pushData{
+            currentSceneDataBuffer.address,
+            resourceManager->materialBuffer.address,
+            resourceManager->primitiveBuffer.address,
+            modelBuffers[currentFrameInFlight].address,
+            instanceBuffers[currentFrameInFlight].address,
+        };
+
+        vkCmdPushConstants(cmd, mainRenderPipeline.renderPipelineLayout.handle, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(BindlessAddressPushConstant), &pushData);
+
+        VkDescriptorBufferBindingInfoEXT bindingInfo = bindlessResourcesDescriptorBuffer.GetBindingInfo();
+        vkCmdBindDescriptorBuffersEXT(cmd, 1, &bindingInfo);
 
         uint32_t bufferIndexImage = 0;
         VkDeviceSize bufferOffset = 0;
-        vkCmdSetDescriptorBufferOffsetsEXT(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, gradientComputePipeline.gradientPipelineLayout.handle, 0, 1, &bufferIndexImage, &bufferOffset);
-        uint32_t groupsX = (scaledRenderExtent[0] + 15) / 16;
-        uint32_t groupsY = (scaledRenderExtent[1] + 15) / 16;
-        vkCmdDispatch(cmd, groupsX, groupsY, 1);
+        vkCmdSetDescriptorBufferOffsetsEXT(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainRenderPipeline.renderPipelineLayout.handle, 0, 1, &bufferIndexImage, &bufferOffset);
+
+
+        const VkBuffer vertexBuffers[2] = {resourceManager->megaVertexBuffer.handle, resourceManager->megaVertexBuffer.handle};
+        constexpr VkDeviceSize vertexOffsets[2] = {0, 0};
+        vkCmdBindVertexBuffers(cmd, 0, 2, vertexBuffers, vertexOffsets);
+        vkCmdBindIndexBuffer(cmd, resourceManager->megaIndexBuffer.handle, 0, VK_INDEX_TYPE_UINT32);
+        vkCmdDrawIndexedIndirectCount(cmd,
+                                      opaqueIndexedIndirectBuffer.handle, 0,
+                                      indirectCountBuffers[currentFrameInFlight].handle, offsetof(IndirectCount, opaqueCount),
+                                      highestInstanceIndex, sizeof(VkDrawIndexedIndirectCommand));
+
+        vkCmdEndRendering(cmd);
     }
 
     // Transition 2 - Prepare for copy
@@ -332,7 +478,7 @@ RenderThread::RenderResponse RenderThread::Render(uint32_t currentFrameInFlight,
         barriers[0] = VkHelpers::ImageMemoryBarrier(
             renderTargets->drawImage.handle,
             VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT),
-            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_GENERAL,
+            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
             VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
         );
         barriers[1] = VkHelpers::ImageMemoryBarrier(

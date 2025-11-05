@@ -634,7 +634,7 @@ ModelEntryHandle AssetLoadingThread::LoadGltf(const std::filesystem::path& path)
         .size = sizePrimitives,
     };
 
-    uint32_t primitiveOffsetCount = primitiveStagingAllocation.offset / sizeof(Primitive);
+    uint32_t primitiveOffsetCount = newModel->data.primitiveAllocation.offset / sizeof(Primitive);
     for (auto& mesh : newModel->data.meshes) {
         for (auto& primitiveIndex : mesh.primitiveIndices) {
             primitiveIndex += primitiveOffsetCount;

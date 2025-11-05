@@ -65,35 +65,9 @@ void ModelLoading::CreateResources()
     bindlessResourcesDescriptorBuffer = DescriptorBufferBindlessResources(vulkanContext.get());
 
     drawCullComputePipeline = DrawCullComputePipeline(vulkanContext.get());
-
+    mainRenderPipeline = MainRenderPipeline(vulkanContext.get(), bindlessResourcesDescriptorBuffer.descriptorSetLayout.handle);
     //
     {
-        VkPushConstantRange renderPushConstantRange{};
-        renderPushConstantRange.offset = 0;
-        renderPushConstantRange.size = sizeof(BindlessAddressPushConstant);
-        renderPushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-
-        VkPipelineLayoutCreateInfo renderPipelineLayoutCreateInfo{};
-        renderPipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        renderPipelineLayoutCreateInfo.pSetLayouts = &bindlessResourcesDescriptorBuffer.descriptorSetLayout.handle;
-        renderPipelineLayoutCreateInfo.setLayoutCount = 1;
-        //renderPipelineLayoutCreateInfo.pSetLayouts = nullptr;
-        //renderPipelineLayoutCreateInfo.setLayoutCount = 0;
-        renderPipelineLayoutCreateInfo.pPushConstantRanges = &renderPushConstantRange;
-        renderPipelineLayoutCreateInfo.pushConstantRangeCount = 1;
-
-        renderPipelineLayout = VkResources::CreatePipelineLayout(vulkanContext.get(), renderPipelineLayoutCreateInfo);
-
-        VkShaderModule vertShader;
-        VkShaderModule fragShader;
-        if (!VkHelpers::LoadShaderModule("shaders\\indirectDraw_vertex.spv", vulkanContext->device, &vertShader)) {
-            throw std::runtime_error("Error when building the vertex shader (indirectDraw_vertex.spv)");
-        }
-        if (!VkHelpers::LoadShaderModule("shaders\\indirectDraw_fragment.spv", vulkanContext->device, &fragShader)) {
-            throw std::runtime_error("Error when building the fragment shader (indirectDraw_fragment.spv)");
-        }
-
-
         RenderPipelineBuilder renderPipelineBuilder;
 
         const std::vector<VkVertexInputBindingDescription> vertexBindings{
@@ -157,18 +131,12 @@ void ModelLoading::CreateResources()
 
         renderPipelineBuilder.setupVertexInput(vertexBindings, vertexAttributes);
 
-        renderPipelineBuilder.setShaders(vertShader, fragShader);
         renderPipelineBuilder.setupInputAssembly(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
         renderPipelineBuilder.setupRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_BACK_BIT, VK_FRONT_FACE_COUNTER_CLOCKWISE);
         renderPipelineBuilder.disableMultisampling();
         renderPipelineBuilder.enableDepthTest(true, VK_COMPARE_OP_GREATER_OR_EQUAL);
         renderPipelineBuilder.setupRenderer({DRAW_IMAGE_FORMAT}, DEPTH_IMAGE_FORMAT);
-        renderPipelineBuilder.setupPipelineLayout(renderPipelineLayout.handle);
         VkGraphicsPipelineCreateInfo pipelineCreateInfo = renderPipelineBuilder.generatePipelineCreateInfo();
-        renderPipeline = VkResources::CreateGraphicsPipeline(vulkanContext.get(), pipelineCreateInfo);
-
-        vkDestroyShaderModule(vulkanContext->device, vertShader, nullptr);
-        vkDestroyShaderModule(vulkanContext->device, fragShader, nullptr);
 
 
         VkPushConstantRange skeletalPushConstantRange{};
@@ -187,6 +155,8 @@ void ModelLoading::CreateResources()
 
         skeletalPipelineLayout = VkResources::CreatePipelineLayout(vulkanContext.get(), skeletalPipelineLayoutCreateInfo);
 
+        VkShaderModule vertShader;
+        VkShaderModule fragShader;
         if (!VkHelpers::LoadShaderModule("shaders\\skeletalIndirectDraw_vertex.spv", vulkanContext->device, &vertShader)) {
             throw std::runtime_error("Error when building the vertex shader (skeletalIndirectDraw_vertex.spv)");
         }
@@ -663,7 +633,7 @@ void ModelLoading::Render()
 
 
             vkCmdBeginRendering(cmd, &renderInfo);
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, renderPipeline.handle);
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainRenderPipeline.renderPipeline.handle);
 
             VkViewport viewport = VkHelpers::GenerateViewport(scaledRenderExtent[0], scaledRenderExtent[1]);
             vkCmdSetViewport(cmd, 0, 1, &viewport);
@@ -678,14 +648,14 @@ void ModelLoading::Render()
                 instanceBuffers[currentFrameInFlight].address,
             };
 
-            vkCmdPushConstants(cmd, renderPipelineLayout.handle, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(BindlessAddressPushConstant), &pushData);
+            vkCmdPushConstants(cmd, mainRenderPipeline.renderPipelineLayout.handle, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(BindlessAddressPushConstant), &pushData);
 
             VkDescriptorBufferBindingInfoEXT bindingInfo = bindlessResourcesDescriptorBuffer.GetBindingInfo();
             vkCmdBindDescriptorBuffersEXT(cmd, 1, &bindingInfo);
 
             uint32_t bufferIndexImage = 0;
             VkDeviceSize bufferOffset = 0;
-            vkCmdSetDescriptorBufferOffsetsEXT(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, renderPipelineLayout.handle, 0, 1, &bufferIndexImage, &bufferOffset);
+            vkCmdSetDescriptorBufferOffsetsEXT(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainRenderPipeline.renderPipelineLayout.handle, 0, 1, &bufferIndexImage, &bufferOffset);
 
 
             const VkBuffer vertexBuffers[2] = {megaVertexBuffer.handle, megaVertexBuffer.handle};

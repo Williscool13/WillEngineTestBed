@@ -19,7 +19,9 @@
 #include "render/descriptor_buffer/descriptor_buffer_bindless_resources.h"
 #include "render/descriptor_buffer/descriptor_buffer_storage_image.h"
 #include "render/model/model_data.h"
+#include "render/pipelines/draw_cull_compute_pipeline.h"
 #include "render/pipelines/gradient_compute_pipeline.h"
+#include "render/pipelines/main_render_pipeline.h"
 #include "utils/handle_allocator.h"
 #include "utils/utils.h"
 
@@ -95,6 +97,8 @@ private:
     DescriptorBufferBindlessResources bindlessResourcesDescriptorBuffer{};
 
     GradientComputePipeline gradientComputePipeline{};
+    DrawCullComputePipeline drawCullComputePipeline{};
+    MainRenderPipeline mainRenderPipeline{};
 
 private: // Frame Draw Resources
     std::vector<AllocatedBuffer> modelBuffers;

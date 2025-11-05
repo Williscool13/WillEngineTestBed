@@ -346,7 +346,7 @@ AllocatedBuffer VkResources::CreateAllocatedStagingBuffer(VulkanContext* context
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
         .size = bufferSize,
         .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | additionalUsages,
-        .sharingMode = VK_SHARING_MODE_EXCLUSIVE
+        .sharingMode = VK_SHARING_MODE_CONCURRENT
     };
 
     const VmaAllocationCreateInfo allocInfo{
