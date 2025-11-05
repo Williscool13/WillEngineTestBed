@@ -308,7 +308,7 @@ RenderThread::RenderResponse RenderThread::Render(uint32_t currentFrameInFlight,
     VkCommandBufferBeginInfo commandBufferBeginInfo = VkHelpers::CommandBufferBeginInfo();
     VK_CHECK(vkBeginCommandBuffer(cmd, &commandBufferBeginInfo));
 
-    constexpr float cameraPos[3] = {0, 2, 0};
+    constexpr float cameraPos[3] = {0, 0, -2};
     constexpr float cameraLook[3] = {0, 0, 0};
     glm::mat4 view = glm::lookAt(
         glm::vec3(cameraPos[0], cameraPos[1], cameraPos[2]),
