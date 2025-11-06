@@ -35,6 +35,10 @@
 #include "core/time.h"
 #include "render/render_targets.h"
 #include "render/resource_manager.h"
+#include "render/animation/animation_player.h"
+#include "render/animation/animation_player.h"
+#include "render/animation/animation_player.h"
+#include "render/animation/animation_player.h"
 #include "utils/utils.h"
 #include "utils/world_constants.h"
 
@@ -162,6 +166,8 @@ void RenderThread::InitializeResources()
     gradientComputePipeline = GradientComputePipeline(vulkanContext.get(), renderTargetSetLayout.handle);
     drawCullComputePipeline = DrawCullComputePipeline(vulkanContext.get());
     mainRenderPipeline = MainRenderPipeline(vulkanContext.get(), resourceManager->bindlessResourcesDescriptorBuffer.descriptorSetLayout.handle);
+
+    modelMatrixRingBuffer.resize(FRAME_BUFFER_OPERATION_COUNT_LIMIT);
 }
 
 void RenderThread::Start()
@@ -216,15 +222,18 @@ void RenderThread::ThreadMain()
         engineMultithreading->renderFrames.acquire();
         if (bShouldExit.load()) { break; }
 
-        uint32_t currentFrameInFlight = frameNumber % Core::FRAMES_IN_FLIGHT;
-        FrameSynchronization& currentFrameData = frameSynchronization[currentFrameInFlight];
+        const uint32_t currentFrameInFlight = frameNumber % Core::FRAMES_IN_FLIGHT;
+        FrameSynchronization& currentFrameSynchronization = frameSynchronization[currentFrameInFlight];
+        FrameBuffer& currentFrameBuffer = engineMultithreading->frameBuffers[currentFrameInFlight];
 
         // Wait for the GPU to finish the last frame that used this frame-in-flight's resources (N - imageCount).
-        VK_CHECK(vkWaitForFences(vulkanContext->device, 1, &currentFrameData.renderFence, true, 1000000000));
+        VK_CHECK(vkWaitForFences(vulkanContext->device, 1, &currentFrameSynchronization.renderFence, true, 1000000000));
 
         auto frameStartTime = std::chrono::high_resolution_clock::now();
 
-        RenderResponse renderResponse = Render(currentFrameInFlight, currentFrameData);
+        ProcessOperations(currentFrameBuffer, currentFrameInFlight);
+
+        RenderResponse renderResponse = Render(currentFrameInFlight, currentFrameSynchronization, currentFrameBuffer);
         switch (renderResponse) {
             case RenderResponse::SWAPCHAIN_OUTDATED:
                 bSwapchainOutdated = true;
@@ -244,11 +253,39 @@ void RenderThread::ThreadMain()
     vkDeviceWaitIdle(vulkanContext->device);
 }
 
-RenderThread::RenderResponse RenderThread::Render(uint32_t currentFrameInFlight, FrameSynchronization& currentFrameData)
+void RenderThread::ProcessOperations(FrameBuffer& currentFrameBuffer, uint32_t currentFrameInFlight)
+{
+    AllocatedBuffer& currentModelBuffer = modelBuffers[currentFrameInFlight];
+    for (const ModelMatrixOperation& op : currentFrameBuffer.modelMatrixOperations) {
+        modelMatrixRingBuffer[modelMatrixRingBufferHead] = op;
+        modelMatrixRingBufferHead = (modelMatrixRingBufferHead + 1) % FRAME_BUFFER_OPERATION_COUNT_LIMIT;
+    }
+    modelMatrixRingBufferCount += currentFrameBuffer.modelMatrixOperations.size();
+    currentFrameBuffer.modelMatrixOperations.clear();
+
+    const uint32_t modelMatrixUpdateCount = swapchain->imageCount + 1;
+    for (int i = 0; i < modelMatrixRingBufferCount; ++i) {
+        const uint32_t opIndex = (modelMatrixRingBufferTail + i) % FRAME_BUFFER_OPERATION_COUNT_LIMIT;
+        ModelMatrixOperation& op = modelMatrixRingBuffer[opIndex];
+        if (op.frames == 0) {
+            memcpy(static_cast<char*>(currentModelBuffer.allocationInfo.pMappedData) + op.index * sizeof(Model) + offsetof(Model, modelMatrix), &op.modelMatrix, sizeof(glm::mat4));
+        }
+        else {
+            memcpy(static_cast<char*>(currentModelBuffer.allocationInfo.pMappedData) + op.index * sizeof(Model) + offsetof(Model, prevModelMatrix), &op.modelMatrix, sizeof(glm::mat4));
+            memcpy(static_cast<char*>(currentModelBuffer.allocationInfo.pMappedData) + op.index * sizeof(Model) + offsetof(Model, modelMatrix), &op.modelMatrix, sizeof(glm::mat4));
+        }
+
+        op.frames++;
+        if (op.frames == modelMatrixUpdateCount) {
+            modelMatrixRingBufferTail = (modelMatrixRingBufferTail + 1) % FRAME_BUFFER_OPERATION_COUNT_LIMIT;
+            modelMatrixRingBufferCount--;
+        }
+    }
+}
+
+RenderThread::RenderResponse RenderThread::Render(uint32_t currentFrameInFlight, FrameSynchronization& currentFrameData, FrameBuffer& currentFrameBuffer)
 {
     //auto timer = Utils::ScopedTimer(fmt::format("[Render Thread] Frame time (Frame {})", frameNumber));
-    FrameBuffer& currentFrameBuffer = engineMultithreading->frameBuffers[currentFrameInFlight];
-
     // todo: check what it looks like if we dont repeat it 3x. Should show up in FIF 1, but be missing from 2/3, reappear at 4, etc.
     for (InstanceOperation& instanceOp : currentFrameBuffer.instanceOperations) {
         memcpy(static_cast<char*>(instanceBuffers[0].allocationInfo.pMappedData) + sizeof(Instance) * instanceOp.index,
@@ -263,18 +300,6 @@ RenderThread::RenderResponse RenderThread::Render(uint32_t currentFrameInFlight,
         highestInstanceIndex = glm::max(highestInstanceIndex, instanceOp.index + 1);
     }
     currentFrameBuffer.instanceOperations.clear();
-    for (ModelMatrixOperation& modelOp : currentFrameBuffer.modelMatrixOperations) {
-        memcpy(static_cast<char*>(modelBuffers[0].allocationInfo.pMappedData) + modelOp.index * sizeof(Model) + offsetof(Model, modelMatrix),
-               &modelOp.modelMatrix,
-               sizeof(Model::modelMatrix));
-        memcpy(static_cast<char*>(modelBuffers[1].allocationInfo.pMappedData) + modelOp.index * sizeof(Model) + offsetof(Model, modelMatrix),
-               &modelOp.modelMatrix,
-               sizeof(Model::modelMatrix));
-        memcpy(static_cast<char*>(modelBuffers[2].allocationInfo.pMappedData) + modelOp.index * sizeof(Model) + offsetof(Model, modelMatrix),
-               &modelOp.modelMatrix,
-               sizeof(Model::modelMatrix));
-    }
-    currentFrameBuffer.modelMatrixOperations.clear();
     for (JointMatrixOperation& jointMatrixOp : currentFrameBuffer.jointMatrixOperations) {
         memcpy(static_cast<char*>(jointMatrixBuffers[0].allocationInfo.pMappedData) + jointMatrixOp.index * sizeof(Model),
                &jointMatrixOp.jointMatrix,
@@ -308,33 +333,12 @@ RenderThread::RenderResponse RenderThread::Render(uint32_t currentFrameInFlight,
     VkCommandBufferBeginInfo commandBufferBeginInfo = VkHelpers::CommandBufferBeginInfo();
     VK_CHECK(vkBeginCommandBuffer(cmd, &commandBufferBeginInfo));
 
-    constexpr float cameraPos[3] = {0, 0, -2};
-    constexpr float cameraLook[3] = {0, 0, 0};
-    glm::mat4 view = glm::lookAt(
-        glm::vec3(cameraPos[0], cameraPos[1], cameraPos[2]),
-        glm::vec3(cameraLook[0], cameraLook[1], cameraLook[2]),
-        WORLD_UP);
-
-    glm::mat4 proj = glm::perspective(
-        glm::radians(75.0f),
-        static_cast<float>(scaledRenderExtent[0]) / static_cast<float>(scaledRenderExtent[1]),
-        1000.0f,
-        0.1f);
-
-    sceneData.prevView = sceneData.view;
-    sceneData.prevProj = sceneData.proj;
-    sceneData.prevViewProj = sceneData.viewProj;
-    sceneData.view = view;
-    sceneData.proj = proj;
-    sceneData.viewProj = proj * view;
-    sceneData.renderTargetSize.x = scaledRenderExtent[0];
-    sceneData.renderTargetSize.y = scaledRenderExtent[1];
-
-    //sceneData.deltaTime = deltaTime;
-
     AllocatedBuffer& currentSceneDataBuffer = sceneDataBuffers[currentFrameInFlight];
     auto* currentSceneData = static_cast<SceneData*>(currentSceneDataBuffer.allocationInfo.pMappedData);
-    *currentSceneData = sceneData;
+    float aspectRatio = renderContext->GetAspectRatio();
+    glm::vec2 renderTargetSize = {scaledRenderExtent[0], scaledRenderExtent[1]};
+    glm::vec2 texelSize = renderContext->GetTexelSize();
+    ConstructSceneData(currentFrameBuffer.rawSceneData, *currentSceneData, aspectRatio, renderTargetSize, texelSize);
 
     //
     {
@@ -537,7 +541,7 @@ RenderThread::RenderResponse RenderThread::Render(uint32_t currentFrameInFlight,
     VK_CHECK(vkEndCommandBuffer(cmd));
 
     VkCommandBufferSubmitInfo commandBufferSubmitInfo = VkHelpers::CommandBufferSubmitInfo(currentFrameData.commandBuffer);
-    VkSemaphoreSubmitInfo swapchainSemaphoreWaitInfo = VkHelpers::SemaphoreSubmitInfo(currentFrameData.swapchainSemaphore, VK_PIPELINE_STAGE_2_BLIT_BIT  );
+    VkSemaphoreSubmitInfo swapchainSemaphoreWaitInfo = VkHelpers::SemaphoreSubmitInfo(currentFrameData.swapchainSemaphore, VK_PIPELINE_STAGE_2_BLIT_BIT);
     VkSemaphoreSubmitInfo renderSemaphoreSignalInfo = VkHelpers::SemaphoreSubmitInfo(currentFrameData.renderSemaphore, VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT);
     VkSubmitInfo2 submitInfo = VkHelpers::SubmitInfo(&commandBufferSubmitInfo, &swapchainSemaphoreWaitInfo, &renderSemaphoreSignalInfo);
 
@@ -556,6 +560,38 @@ RenderThread::RenderResponse RenderThread::Render(uint32_t currentFrameInFlight,
 
     //LOG_INFO("[Render Thread] Processed frame {} (should match frame data's frame number - {})", frameNumber, engineMultithreading->frameBuffers[currentFrameInFlight].currentFrame);
     return RenderResponse::OK;
+}
+
+void RenderThread::ConstructSceneData(RawSceneData& raw, SceneData& scene, float aspectRatio, glm::vec2 renderTargetSize, glm::vec2 texelSize)
+{
+    scene.view = raw.view;
+    scene.prevView = raw.prevView;
+    scene.cameraWorldPos = {raw.cameraWorldPos, 0.0f};
+    scene.prevCameraWorldPos = {raw.prevCameraWorldPos, 0.0f};
+    scene.deltaTime = raw.deltaTime;
+
+    // Render thread calculates these with correct aspect ratio
+    scene.prevViewProj = scene.viewProj;
+    scene.prevProj = scene.proj;
+    scene.proj = glm::perspective(glm::radians(raw.fovDegrees), aspectRatio, raw.farPlane, raw.nearPlane);
+    scene.viewProj = scene.proj * scene.view;
+
+
+
+    scene.invView = glm::inverse(scene.view);
+    scene.invProj = glm::inverse(scene.proj);
+    scene.invViewProj = glm::inverse(scene.viewProj);
+    scene.prevInvView = glm::inverse(scene.prevView);
+    scene.prevInvProj = glm::inverse(scene.prevProj);
+    scene.prevInvViewProj = glm::inverse(scene.prevViewProj);
+
+    // Assuming this removes translation for skybox
+    scene.viewProjCameraLookDirection = scene.proj * glm::mat4(glm::mat3(scene.view));
+    scene.prevViewProjCameraLookDirection = scene.prevProj * glm::mat4(glm::mat3(scene.prevView));
+
+    scene.renderTargetSize = renderTargetSize;
+    scene.texelSize = glm::vec2(1.0f) / renderTargetSize;
+    scene.cameraPlanes = glm::vec2(raw.farPlane, raw.nearPlane);
 }
 
 void RenderThread::UpdateFrameTimeStats(float frameTimeMs)

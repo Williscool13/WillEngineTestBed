@@ -13,6 +13,7 @@
 
 #include "core/constants.h"
 #include "render/render_constants.h"
+#include "render/render_operations.h"
 #include "render/vk_resources.h"
 #include "render/vk_synchronization.h"
 #include "render/vk_types.h"
@@ -70,7 +71,12 @@ private:
 
     void ThreadMain();
 
-    RenderResponse Render(uint32_t currentFrameInFlight, FrameSynchronization& currentFrameData);
+    void ProcessOperations(FrameBuffer& currentFrameBuffer, uint32_t currentFrameInFlight);
+
+    RenderResponse Render(uint32_t currentFrameInFlight, FrameSynchronization& currentFrameData, FrameBuffer& currentFrameBuffer);
+
+private:
+    void ConstructSceneData(RawSceneData& raw, SceneData& scene, float aspectRatio, glm::vec2 renderTargetSize, glm::vec2 texelSize);
 
 private:
     EngineMultithreading* engineMultithreading{};
@@ -96,7 +102,6 @@ private: // Frame Draw Resources
     uint64_t frameNumber{0};
     std::vector<FrameSynchronization> frameSynchronization;
 
-    SceneData sceneData{};
     std::vector<AllocatedBuffer> sceneDataBuffers;
 
     std::vector<AllocatedBuffer> modelBuffers;
@@ -108,6 +113,12 @@ private: // Frame Draw Resources
     std::vector<AllocatedBuffer> indirectCountBuffers;
     AllocatedBuffer opaqueSkeletalIndexedIndirectBuffer;
     std::vector<AllocatedBuffer> skeletalIndirectCountBuffers;
+
+private:
+    std::vector<ModelMatrixOperation> modelMatrixRingBuffer;
+    size_t modelMatrixRingBufferHead = 0;
+    size_t modelMatrixRingBufferTail = 0;
+    size_t modelMatrixRingBufferCount = 0;
 
 private: // Thread Sync
     std::jthread thread;

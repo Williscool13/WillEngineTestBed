@@ -8,6 +8,7 @@
 #include <array>
 #include <cmath>
 #include <volk/volk.h>
+#include <glm/glm.hpp>
 
 #include "render_constants.h"
 
@@ -20,6 +21,9 @@ struct RenderContext
         renderExtents[0] = width;
         renderExtents[1] = height;
         renderScale = scale;
+
+        aspectRatio = renderExtents[0] / static_cast<float>(renderExtents[1]);
+        texelSize = {1.0f / renderExtents[0], 1 / renderExtents[1]};
 
         scaledRenderExtents[0] = static_cast<uint32_t>(std::round(width * scale));
         scaledRenderExtents[1] = static_cast<uint32_t>(std::round(height * scale));
@@ -41,6 +45,9 @@ struct RenderContext
         renderExtents[0] = pendingRenderWidth;
         renderExtents[1] = pendingRenderHeight;
 
+        aspectRatio = renderExtents[0] / static_cast<float>(renderExtents[1]);
+        texelSize = {1.0f / renderExtents[0], 1 / renderExtents[1]};
+
         scaledRenderExtents[0] = static_cast<uint32_t>(std::round(renderExtents[0] * renderScale));
         scaledRenderExtents[1] = static_cast<uint32_t>(std::round(renderExtents[1] * renderScale));
         bHasPendingRenderExtentChanges = false;
@@ -58,8 +65,13 @@ struct RenderContext
 
     std::array<uint32_t, 2> GetRenderExtent() const { return renderExtents; }
     std::array<uint32_t, 2> GetScaledRenderExtent() const { return scaledRenderExtents; }
+    float GetAspectRatio() const { return aspectRatio; }
+    glm::vec2 GetTexelSize() const { return texelSize; }
+
 private:
     float renderScale{1.0f};
+    float aspectRatio{1920.0f / 1080};
+    glm::vec2 texelSize{1 / 1920.0f, 1 / 1080.0f};
 
     // Calculated from the 3 above
     std::array<uint32_t, 2> renderExtents;

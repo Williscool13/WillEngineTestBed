@@ -12,6 +12,7 @@
 #include "asset_loading_thread.h"
 #include "offsetAllocator.hpp"
 #include "render_thread.h"
+#include "render/render_operations.h"
 #include "SDL3/SDL.h"
 
 #include "render/vk_resources.h"
@@ -31,44 +32,6 @@ struct Swapchain;
 struct RenderTargets;
 }
 
-struct ModelMatrixOperation
-{
-    uint32_t index;
-    glm::mat4 modelMatrix;
-
-    // Filled and used by render thread
-    uint32_t frames;
-};
-
-struct InstanceOperation
-{
-    uint32_t index;
-    Renderer::Instance instance;
-
-    // Filled and used by render thread
-    uint32_t frames;
-};
-
-struct JointMatrixOperation
-{
-    uint32_t index;
-    glm::mat4 jointMatrix;
-
-    // Filled and used by render thread
-    uint32_t frames;
-};
-
-struct FrameBuffer
-{
-    Renderer::SceneData sceneData{};
-    uint64_t currentFrame{};
-
-    // todo: make ring buffer
-    std::vector<ModelMatrixOperation> modelMatrixOperations;
-    std::vector<InstanceOperation> instanceOperations;
-    std::vector<JointMatrixOperation> jointMatrixOperations;
-};
-
 class EngineMultithreading
 {
 public:
@@ -78,6 +41,8 @@ public:
 
     void Initialize();
 
+    void ThreadMain();
+
     void Run();
 
     void Cleanup();
@@ -86,18 +51,21 @@ private:
     Renderer::RuntimeMesh GenerateModel(Renderer::ModelEntryHandle modelEntryHandle, const Transform& topLevelTransform);
 
     void UpdateTransforms(std::vector<Renderer::RuntimeNode>& runtimeNodes, const Transform& topLevelTransform);
+
     void InitialUploadRuntimeMesh(Renderer::RuntimeMesh& runtimeMesh,
-                           std::vector<ModelMatrixOperation>& modelMatrixOperations,
-                           std::vector<InstanceOperation>& instanceOperations,
-                           std::vector<JointMatrixOperation>& jointMatrixOperations);
+                                  std::vector<Renderer::ModelMatrixOperation>& modelMatrixOperations,
+                                  std::vector<Renderer::InstanceOperation>& instanceOperations,
+                                  std::vector<Renderer::JointMatrixOperation>& jointMatrixOperations);
+
     void UpdateRuntimeMesh(Renderer::RuntimeMesh& runtimeMesh,
-                           std::vector<ModelMatrixOperation>& modelMatrixOperations,
-                           std::vector<InstanceOperation>& instanceOperations,
-                           std::vector<JointMatrixOperation>& jointMatrixOperations);
+                           std::vector<Renderer::ModelMatrixOperation>& modelMatrixOperations,
+                           std::vector<Renderer::InstanceOperation>& instanceOperations,
+                           std::vector<Renderer::JointMatrixOperation>& jointMatrixOperations);
+
     void DeleteRuntimeMesh(Renderer::RuntimeMesh& runtimeMesh,
-                           std::vector<ModelMatrixOperation>& modelMatrixOperations,
-                           std::vector<InstanceOperation>& instanceOperations,
-                           std::vector<JointMatrixOperation>& jointMatrixOperations);
+                           std::vector<Renderer::ModelMatrixOperation>& modelMatrixOperations,
+                           std::vector<Renderer::InstanceOperation>& instanceOperations,
+                           std::vector<Renderer::JointMatrixOperation>& jointMatrixOperations);
 
 private:
     Renderer::ModelEntryHandle suzanneModelEntryHandle{Renderer::ModelEntryHandle::Invalid};
@@ -116,13 +84,14 @@ private:
     Renderer::AssetLoadingThread assetLoadingThread{};
 
     uint64_t frameNumber{0};
+    Renderer::RawSceneData rawSceneData;
     std::atomic<uint32_t> lastGameFrame{0};
 
 public:
     std::counting_semaphore<Core::FRAMES_IN_FLIGHT> gameFrames{Core::FRAMES_IN_FLIGHT};
     std::counting_semaphore<Core::FRAMES_IN_FLIGHT> renderFrames{0};
 
-    std::array<FrameBuffer, Core::FRAMES_IN_FLIGHT> frameBuffers{};
+    std::array<Renderer::FrameBuffer, Core::FRAMES_IN_FLIGHT> frameBuffers{};
 };
 
 

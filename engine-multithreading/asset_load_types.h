@@ -26,6 +26,7 @@ struct ModelEntry
     std::atomic<State> state{};
 
     // Used by asset thread to find out if a model is ready.
+    //todo: use multiple upload staging handles if the upload requires more staging buffer space.
     UploadStagingHandle uploadStagingHandle;
 
     std::chrono::steady_clock::time_point loadStartTime;

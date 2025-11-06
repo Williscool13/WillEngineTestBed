@@ -20,9 +20,6 @@ inline static constexpr VkColorSpaceKHR SWAPCHAIN_SDR_COLOR_SPACE = VK_COLOR_SPA
 inline static constexpr VkFormat DRAW_IMAGE_FORMAT = VK_FORMAT_R16G16B16A16_SFLOAT;
 inline static constexpr VkFormat DEPTH_IMAGE_FORMAT = VK_FORMAT_D32_SFLOAT;
 
-
-
-
 // Asset Loading
 inline static constexpr uint32_t MAX_LOADED_MODELS = 1024;
 inline static constexpr int32_t MEGA_VERTEX_BUFFER_COUNT = 1048576; // 1 << 20
@@ -49,6 +46,8 @@ inline static constexpr uint32_t DEFAULT_RENDER_TARGET_WIDTH = 1700;
 inline static constexpr uint32_t DEFAULT_RENDER_TARGET_HEIGHT = 900;
 inline static constexpr float DEFAULT_RENDER_SCALE = 1.0f;
 inline static constexpr bool RENDER_TARGET_SIZE_EQUALS_SWAPCHAIN_SIZE = true;
+
+inline static constexpr uint32_t FRAME_BUFFER_OPERATION_COUNT_LIMIT = 8192;
 
 
 }

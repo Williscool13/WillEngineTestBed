@@ -93,6 +93,22 @@ struct IndirectCount
     uint32_t opaqueCount;
 };
 
+struct RawSceneData
+{
+    glm::mat4 view{1.0f};
+    glm::mat4 prevView{1.0f};
+
+    glm::vec3 cameraWorldPos{0.0f};
+    glm::vec3 prevCameraWorldPos{0.0f};
+
+    float fovDegrees{75.0f};
+    float nearPlane{0.1f};
+    float farPlane{1000.0f};
+
+    float timeElapsed{};
+    float deltaTime{};
+};
+
 struct SceneData
 {
     glm::mat4 view{1.0f};

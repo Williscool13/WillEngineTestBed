@@ -57,6 +57,8 @@ add_library(render-lib STATIC
         resource_manager.h
         model/model_load_utils.cpp
         model/model_load_utils.h
+        render_operations.cpp
+        render_operations.h
 
 )
 
