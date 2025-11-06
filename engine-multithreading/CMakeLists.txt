@@ -15,6 +15,7 @@ target_link_libraries(engine-multithreading PRIVATE
         engine-common
         crash-handling
         core-lib
+        game-lib
         render-lib
         input-lib
 )

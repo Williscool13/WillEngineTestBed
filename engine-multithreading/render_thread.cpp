@@ -5,42 +5,30 @@
 #include "render_thread.h"
 
 #include <VkBootstrap.h>
-#include <backends/imgui_impl_sdl3.h>
 #include <backends/imgui_impl_vulkan.h>
 #include <glm/glm.hpp>
+#include <glm/ext/matrix_clip_space.hpp>
 
 #include "engine_multithreading.h"
-#include "offsetAllocator.hpp"
 #include "crash-handling/crash_handler.h"
 #include "crash-handling/logger.h"
-#include "glm/ext/matrix_clip_space.hpp"
-#include "glm/ext/matrix_transform.hpp"
 
 #include "render/vk_context.h"
 #include "render/vk_swapchain.h"
 #include "render/vk_imgui_wrapper.h"
 #include "render/vk_descriptors.h"
-#include "render/vk_pipelines.h"
 #include "render/vk_helpers.h"
 #include "render/render_context.h"
 #include "render/render_utils.h"
 #include "render/render_constants.h"
-
-#include "render/descriptor_buffer/descriptor_buffer_combined_image_sampler.h"
-#include "render/descriptor_buffer/descriptor_buffer_storage_image.h"
-#include "render/descriptor_buffer/descriptor_buffer_uniform.h"
-
-#include "input/input.h"
-#include "render/model/model_loader.h"
-#include "core/time.h"
 #include "render/render_targets.h"
 #include "render/resource_manager.h"
-#include "render/animation/animation_player.h"
-#include "render/animation/animation_player.h"
-#include "render/animation/animation_player.h"
-#include "render/animation/animation_player.h"
+#include "render/model/model_loader.h"
+#include "render/descriptor_buffer/descriptor_buffer_storage_image.h"
+
+#include "input/input.h"
+#include "core/time.h"
 #include "utils/utils.h"
-#include "utils/world_constants.h"
 
 namespace Renderer
 {
@@ -57,7 +45,10 @@ RenderThread::~RenderThread()
 void RenderThread::Initialize(EngineMultithreading* engineMultithreading_, SDL_Window* window_, uint32_t w, uint32_t h)
 {
     engineMultithreading = engineMultithreading_;
-    window = window_; {
+    window = window_;
+
+    //
+    {
         Utils::ScopedTimer timer{"[Render Thread] Render Context"};
         renderContext = std::make_unique<RenderContext>(w, h, DEFAULT_RENDER_SCALE);
         std::array<uint32_t, 2> renderExtent = renderContext->GetRenderExtent();
@@ -256,11 +247,15 @@ void RenderThread::ThreadMain()
 void RenderThread::ProcessOperations(FrameBuffer& currentFrameBuffer, uint32_t currentFrameInFlight)
 {
     AllocatedBuffer& currentModelBuffer = modelBuffers[currentFrameInFlight];
+
+    modelMatrixRingBufferCount += currentFrameBuffer.modelMatrixOperations.size();
+    if (modelMatrixRingBufferCount > FRAME_BUFFER_OPERATION_COUNT_LIMIT) {
+        LOG_ERROR("Model matrix operation buffer has exceeded count limit.");
+    }
     for (const ModelMatrixOperation& op : currentFrameBuffer.modelMatrixOperations) {
         modelMatrixRingBuffer[modelMatrixRingBufferHead] = op;
         modelMatrixRingBufferHead = (modelMatrixRingBufferHead + 1) % FRAME_BUFFER_OPERATION_COUNT_LIMIT;
     }
-    modelMatrixRingBufferCount += currentFrameBuffer.modelMatrixOperations.size();
     currentFrameBuffer.modelMatrixOperations.clear();
 
     const uint32_t modelMatrixUpdateCount = swapchain->imageCount + 1;
@@ -570,13 +565,10 @@ void RenderThread::ConstructSceneData(RawSceneData& raw, SceneData& scene, float
     scene.prevCameraWorldPos = {raw.prevCameraWorldPos, 0.0f};
     scene.deltaTime = raw.deltaTime;
 
-    // Render thread calculates these with correct aspect ratio
     scene.prevViewProj = scene.viewProj;
     scene.prevProj = scene.proj;
     scene.proj = glm::perspective(glm::radians(raw.fovDegrees), aspectRatio, raw.farPlane, raw.nearPlane);
     scene.viewProj = scene.proj * scene.view;
-
-
 
     scene.invView = glm::inverse(scene.view);
     scene.invProj = glm::inverse(scene.proj);
@@ -585,7 +577,6 @@ void RenderThread::ConstructSceneData(RawSceneData& raw, SceneData& scene, float
     scene.prevInvProj = glm::inverse(scene.prevProj);
     scene.prevInvViewProj = glm::inverse(scene.prevViewProj);
 
-    // Assuming this removes translation for skybox
     scene.viewProjCameraLookDirection = scene.proj * glm::mat4(glm::mat3(scene.view));
     scene.prevViewProjCameraLookDirection = scene.prevProj * glm::mat4(glm::mat3(scene.prevView));
 

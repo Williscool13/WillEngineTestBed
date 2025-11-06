@@ -12,6 +12,7 @@
 #include "asset_loading_thread.h"
 #include "offsetAllocator.hpp"
 #include "render_thread.h"
+#include "game/camera/free_camera.h"
 #include "render/render_operations.h"
 #include "SDL3/SDL.h"
 
@@ -41,9 +42,9 @@ public:
 
     void Initialize();
 
-    void ThreadMain();
-
     void Run();
+
+    void ThreadMain();
 
     void Cleanup();
 
@@ -85,13 +86,16 @@ private:
 
     uint64_t frameNumber{0};
     Renderer::RawSceneData rawSceneData;
-    std::atomic<uint32_t> lastGameFrame{0};
+    Game::FreeCamera freeCamera;
 
 public:
     std::counting_semaphore<Core::FRAMES_IN_FLIGHT> gameFrames{Core::FRAMES_IN_FLIGHT};
     std::counting_semaphore<Core::FRAMES_IN_FLIGHT> renderFrames{0};
 
     std::array<Renderer::FrameBuffer, Core::FRAMES_IN_FLIGHT> frameBuffers{};
+
+private:
+    std::chrono::time_point<std::chrono::steady_clock> start{};
 };
 
 

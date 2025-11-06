@@ -7,6 +7,8 @@
 #include <ranges>
 #include <fmt/format.h>
 
+#include "crash-handling/logger.h"
+
 namespace Core
 {
 void Input::Init(SDL_Window* window, const uint32_t w, const uint32_t h)
@@ -58,10 +60,10 @@ void Input::UpdateFocus(const Uint32 sdlWindowFlags)
 {
     bIsWindowInputFocus = (sdlWindowFlags & SDL_WINDOW_INPUT_FOCUS) != 0;
 
-    if (bIsWindowInputFocus && IsKeyPressed(Key::NUMLOCKCLEAR)) {
+    if (bIsWindowInputFocus && IsKeyPressed(Key::PERIOD)) {
         bIsCursorActive = !bIsCursorActive;
         if (!window) {
-            fmt::print("Input: Attempted to update focus but window is not defined, perhaps init was not called?\n");
+            LOG_ERROR("Input: Attempted to update focus but window is not defined, perhaps init was not called?");
             return;
         }
         SDL_SetWindowRelativeMouseMode(window, bIsCursorActive);

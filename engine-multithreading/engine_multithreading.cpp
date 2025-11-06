@@ -19,6 +19,7 @@ EngineMultithreading::~EngineMultithreading() = default;
 
 void EngineMultithreading::Initialize()
 {
+    start = std::chrono::high_resolution_clock::now();
     bool sdlInitSuccess = SDL_Init(SDL_INIT_VIDEO);
     if (!sdlInitSuccess) {
         LOG_ERROR("SDL_Init failed: {}", SDL_GetError());
@@ -41,6 +42,59 @@ void EngineMultithreading::Initialize()
     Input::Get().Init(window, Core::DEFAULT_WINDOW_WIDTH, Core::DEFAULT_WINDOW_HEIGHT);
 }
 
+void EngineMultithreading::Run()
+{
+    Utils::SetThreadName("GameThread");
+
+    renderThread.Start();
+    assetLoadingThread.Start();
+
+    Input& input = Input::Input::Get();
+    Time& time = Time::Get();
+
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+    LOG_INFO("Engine Multithreading initialized in {:.3f}s", duration.count() / 1000000.0);
+
+    SDL_Event e;
+    bool exit = false;
+    while (true) {
+        input.FrameReset();
+        while (SDL_PollEvent(&e) != 0) {
+            input.ProcessEvent(e);
+            Renderer::ImguiWrapper::HandleInput(e);
+            if (e.type == SDL_EVENT_QUIT) { exit = true; }
+            if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_ESCAPE) { exit = true; }
+        }
+
+        input.UpdateFocus(SDL_GetWindowFlags(window));
+        time.Update();
+
+        if (exit) {
+            renderThread.RequestShutdown();
+            renderFrames.release();
+            assetLoadingThread.RequestShutdown();
+            break;
+        }
+
+
+        gameFrames.acquire();
+        //
+        {
+            //LOG_INFO("[Game Thread] Processed frame {}", frameNumber);
+            assetLoadingThread.ResolveLoads();
+
+            ThreadMain();
+        }
+
+        renderFrames.release();
+        frameNumber++;
+    }
+
+    renderThread.Join();
+    assetLoadingThread.Join();
+}
+
 void EngineMultithreading::ThreadMain()
 {
     Input& input = Input::Input::Get();
@@ -48,6 +102,7 @@ void EngineMultithreading::ThreadMain()
     const float deltaTime = time.GetDeltaTime();
     const float timeElapsed = time.GetTime();
 
+    freeCamera.Update(deltaTime);
 
     uint32_t currentFrameInFlight = frameNumber % Core::FRAMES_IN_FLIGHT;
     Renderer::FrameBuffer& currentFrameBuffer = frameBuffers[currentFrameInFlight];
@@ -138,74 +193,25 @@ void EngineMultithreading::ThreadMain()
         UpdateRuntimeMesh(suzanneRuntimeMesh, currentFrameBuffer.modelMatrixOperations, currentFrameBuffer.instanceOperations, currentFrameBuffer.jointMatrixOperations);
     }
 
-    constexpr float cameraPos[3] = {0, 0, 2};
-    constexpr float cameraLook[3] = {0, 0, 0};
-    glm::mat4 view = glm::lookAt(
-        glm::vec3(cameraPos[0], cameraPos[1], cameraPos[2]),
-        glm::vec3(cameraLook[0], cameraLook[1], cameraLook[2]),
-        WORLD_UP);
+    const glm::vec3 cameraPos = freeCamera.GetPosition();
+    const glm::quat cameraRot = freeCamera.GetRotation();
+    const glm::vec3 forward = freeCamera.GetForward();
+    const glm::vec3 up = freeCamera.GetUp();
+
+    glm::mat4 view = glm::lookAt(cameraPos, cameraPos + forward, up);
 
     rawSceneData.prevView = rawSceneData.view;
     rawSceneData.view = view;
     rawSceneData.prevCameraWorldPos = rawSceneData.cameraWorldPos;
-    rawSceneData.cameraWorldPos = {cameraPos[0], cameraPos[1], cameraPos[2]};
-    rawSceneData.fovDegrees = 75.0f;
-    rawSceneData.nearPlane = 0.1f;
-    rawSceneData.farPlane = 1000.0f;
+    rawSceneData.cameraWorldPos = glm::vec4(cameraPos, 1.0f);
+    rawSceneData.fovDegrees = glm::degrees(freeCamera.GetFov());
+    rawSceneData.nearPlane = freeCamera.GetNearPlane();
+    rawSceneData.farPlane = freeCamera.GetFarPlane();
     rawSceneData.timeElapsed = timeElapsed;
     rawSceneData.deltaTime = deltaTime;
 
     currentFrameBuffer.currentFrame = frameNumber;
     currentFrameBuffer.rawSceneData = rawSceneData;
-}
-
-void EngineMultithreading::Run()
-{
-    Utils::SetThreadName("GameThread");
-
-    renderThread.Start();
-    assetLoadingThread.Start();
-
-    Input& input = Input::Input::Get();
-    Time& time = Time::Get();
-
-    SDL_Event e;
-    bool exit = false;
-    while (true) {
-        input.FrameReset();
-        while (SDL_PollEvent(&e) != 0) {
-            input.ProcessEvent(e);
-            Renderer::ImguiWrapper::HandleInput(e);
-            if (e.type == SDL_EVENT_QUIT) { exit = true; }
-            if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_ESCAPE) { exit = true; }
-        }
-
-        input.UpdateFocus(SDL_GetWindowFlags(window));
-        time.Update();
-
-        if (exit) {
-            renderThread.RequestShutdown();
-            renderFrames.release();
-            assetLoadingThread.RequestShutdown();
-            break;
-        }
-
-
-        gameFrames.acquire();
-        //
-        {
-            //LOG_INFO("[Game Thread] Processed frame {}", frameNumber);
-            assetLoadingThread.ResolveLoads();
-
-            ThreadMain();
-        }
-
-        renderFrames.release();
-        frameNumber++;
-    }
-
-    renderThread.Join();
-    assetLoadingThread.Join();
 }
 
 void EngineMultithreading::Cleanup()
