@@ -5,10 +5,21 @@
 #include "free_camera.h"
 
 #include "input/input.h"
+#include "utils/world_constants.h"
 
 namespace Game
 {
 FreeCamera::FreeCamera() : Camera() {}
+
+FreeCamera::FreeCamera(glm::vec3 startingPosition, glm::vec3 startingLookPoint)
+{
+    transform.translation = startingPosition;
+    glm::vec3 forward = glm::normalize(startingLookPoint - startingPosition);
+    glm::vec3 right = glm::normalize(glm::cross(forward, WORLD_UP));
+    glm::vec3 up = glm::cross(right, forward);
+    glm::mat3 rotMatrix(right, up, -forward);
+    transform.rotation = glm::quat_cast(rotMatrix);
+}
 
 void FreeCamera::Update(float deltaTime)
 {

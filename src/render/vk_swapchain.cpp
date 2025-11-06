@@ -68,7 +68,7 @@ void Swapchain::Create(uint32_t width, uint32_t height)
             .set_desired_extent(width, height)
             .add_image_usage_flags(VK_IMAGE_USAGE_TRANSFER_DST_BIT)
             .set_desired_min_image_count(vkb::SwapchainBuilder::TRIPLE_BUFFERING)
-            //.set_desired_min_image_count(vkb::SwapchainBuilder::DOUBLE_BUFFERING)
+            // .set_desired_min_image_count(vkb::SwapchainBuilder::DOUBLE_BUFFERING)
             .build();
 
     if (!swapchainResult) {

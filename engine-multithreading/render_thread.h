@@ -13,7 +13,7 @@
 
 #include "core/constants.h"
 #include "render/render_constants.h"
-#include "render/render_operations.h"
+#include "../src/render/render-operations/render_operations.h"
 #include "render/vk_resources.h"
 #include "render/vk_synchronization.h"
 #include "render/vk_types.h"
@@ -23,6 +23,7 @@
 #include "render/pipelines/draw_cull_compute_pipeline.h"
 #include "render/pipelines/gradient_compute_pipeline.h"
 #include "render/pipelines/main_render_pipeline.h"
+#include "render/render-operations/render_operation_ring_buffer.h"
 #include "utils/handle_allocator.h"
 #include "utils/utils.h"
 
@@ -73,7 +74,7 @@ private:
 
     void ProcessOperations(FrameBuffer& currentFrameBuffer, uint32_t currentFrameInFlight);
 
-    RenderResponse Render(uint32_t currentFrameInFlight, FrameSynchronization& currentFrameData, FrameBuffer& currentFrameBuffer);
+    RenderResponse Render(uint32_t currentRenderFrameInFlight, FrameSynchronization& currentFrameData, FrameBuffer& currentFrameBuffer);
 
 private:
     void ConstructSceneData(RawSceneData& raw, SceneData& scene, float aspectRatio, glm::vec2 renderTargetSize, glm::vec2 texelSize);
@@ -115,17 +116,16 @@ private: // Frame Draw Resources
     std::vector<AllocatedBuffer> skeletalIndirectCountBuffers;
 
 private:
-    std::vector<ModelMatrixOperation> modelMatrixRingBuffer;
-    size_t modelMatrixRingBufferHead = 0;
-    size_t modelMatrixRingBufferTail = 0;
-    size_t modelMatrixRingBufferCount = 0;
+    ModelMatrixOperationRingBuffer modelMatrixOperationRingBuffer;
+    InstanceOperationRingBuffer instanceOperationRingBuffer;
+    JointMatrixOperationRingBuffer jointMatrixOperationRingBuffer;
 
 private: // Thread Sync
     std::jthread thread;
     std::atomic<bool> bShouldExit{false};
 
 private: // Performance Tracking
-    Utils::FrameTimeTracker frameTimeTracker{100, 1.5f};
+    Utils::FrameTimeTracker frameTimeTracker{1000, 1.5f};
 
     void UpdateFrameTimeStats(float frameTimeMs);
 };

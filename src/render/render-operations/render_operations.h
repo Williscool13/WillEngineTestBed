@@ -7,7 +7,7 @@
 
 #include <glm/glm.hpp>
 
-#include "model/model_data.h"
+#include "../model/model_data.h"
 
 namespace Renderer
 {

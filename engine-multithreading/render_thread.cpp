@@ -158,7 +158,9 @@ void RenderThread::InitializeResources()
     drawCullComputePipeline = DrawCullComputePipeline(vulkanContext.get());
     mainRenderPipeline = MainRenderPipeline(vulkanContext.get(), resourceManager->bindlessResourcesDescriptorBuffer.descriptorSetLayout.handle);
 
-    modelMatrixRingBuffer.resize(FRAME_BUFFER_OPERATION_COUNT_LIMIT);
+    modelMatrixOperationRingBuffer.Initialize(FRAME_BUFFER_OPERATION_COUNT_LIMIT);
+    instanceOperationRingBuffer.Initialize(FRAME_BUFFER_OPERATION_COUNT_LIMIT);
+    jointMatrixOperationRingBuffer.Initialize(FRAME_BUFFER_OPERATION_COUNT_LIMIT);
 }
 
 void RenderThread::Start()
@@ -213,18 +215,19 @@ void RenderThread::ThreadMain()
         engineMultithreading->renderFrames.acquire();
         if (bShouldExit.load()) { break; }
 
-        const uint32_t currentFrameInFlight = frameNumber % Core::FRAMES_IN_FLIGHT;
-        FrameSynchronization& currentFrameSynchronization = frameSynchronization[currentFrameInFlight];
-        FrameBuffer& currentFrameBuffer = engineMultithreading->frameBuffers[currentFrameInFlight];
+        const uint32_t currentGameFrameInFlight = frameNumber % Core::FRAMES_IN_FLIGHT;
+        const uint32_t currentRenderFrameInFlight = frameNumber % swapchain->imageCount;
+        FrameBuffer& currentFrameBuffer = engineMultithreading->frameBuffers[currentGameFrameInFlight];
+        FrameSynchronization& currentFrameSynchronization = frameSynchronization[currentRenderFrameInFlight];
+
 
         // Wait for the GPU to finish the last frame that used this frame-in-flight's resources (N - imageCount).
         VK_CHECK(vkWaitForFences(vulkanContext->device, 1, &currentFrameSynchronization.renderFence, true, 1000000000));
 
         auto frameStartTime = std::chrono::high_resolution_clock::now();
 
-        ProcessOperations(currentFrameBuffer, currentFrameInFlight);
-
-        RenderResponse renderResponse = Render(currentFrameInFlight, currentFrameSynchronization, currentFrameBuffer);
+        ProcessOperations(currentFrameBuffer, currentRenderFrameInFlight);
+        RenderResponse renderResponse = Render(currentRenderFrameInFlight, currentFrameSynchronization, currentFrameBuffer);
         switch (renderResponse) {
             case RenderResponse::SWAPCHAIN_OUTDATED:
                 bSwapchainOutdated = true;
@@ -246,68 +249,26 @@ void RenderThread::ThreadMain()
 
 void RenderThread::ProcessOperations(FrameBuffer& currentFrameBuffer, uint32_t currentFrameInFlight)
 {
-    AllocatedBuffer& currentModelBuffer = modelBuffers[currentFrameInFlight];
+    const AllocatedBuffer& currentModelBuffer = modelBuffers[currentFrameInFlight];
+    const AllocatedBuffer& currentInstanceBuffer = instanceBuffers[currentFrameInFlight];
+    const AllocatedBuffer& currentJointMatrixBuffers = jointMatrixBuffers[currentFrameInFlight];
 
-    modelMatrixRingBufferCount += currentFrameBuffer.modelMatrixOperations.size();
-    if (modelMatrixRingBufferCount > FRAME_BUFFER_OPERATION_COUNT_LIMIT) {
-        LOG_ERROR("Model matrix operation buffer has exceeded count limit.");
-    }
-    for (const ModelMatrixOperation& op : currentFrameBuffer.modelMatrixOperations) {
-        modelMatrixRingBuffer[modelMatrixRingBufferHead] = op;
-        modelMatrixRingBufferHead = (modelMatrixRingBufferHead + 1) % FRAME_BUFFER_OPERATION_COUNT_LIMIT;
-    }
+    modelMatrixOperationRingBuffer.Enqueue(currentFrameBuffer.modelMatrixOperations);
     currentFrameBuffer.modelMatrixOperations.clear();
+    modelMatrixOperationRingBuffer.ProcessOperations(static_cast<char*>(currentModelBuffer.allocationInfo.pMappedData), swapchain->imageCount + 1);
 
-    const uint32_t modelMatrixUpdateCount = swapchain->imageCount + 1;
-    for (int i = 0; i < modelMatrixRingBufferCount; ++i) {
-        const uint32_t opIndex = (modelMatrixRingBufferTail + i) % FRAME_BUFFER_OPERATION_COUNT_LIMIT;
-        ModelMatrixOperation& op = modelMatrixRingBuffer[opIndex];
-        if (op.frames == 0) {
-            memcpy(static_cast<char*>(currentModelBuffer.allocationInfo.pMappedData) + op.index * sizeof(Model) + offsetof(Model, modelMatrix), &op.modelMatrix, sizeof(glm::mat4));
-        }
-        else {
-            memcpy(static_cast<char*>(currentModelBuffer.allocationInfo.pMappedData) + op.index * sizeof(Model) + offsetof(Model, prevModelMatrix), &op.modelMatrix, sizeof(glm::mat4));
-            memcpy(static_cast<char*>(currentModelBuffer.allocationInfo.pMappedData) + op.index * sizeof(Model) + offsetof(Model, modelMatrix), &op.modelMatrix, sizeof(glm::mat4));
-        }
+    instanceOperationRingBuffer.Enqueue(currentFrameBuffer.instanceOperations);
+    currentFrameBuffer.instanceOperations.clear();
+    instanceOperationRingBuffer.ProcessOperations(static_cast<char*>(currentInstanceBuffer.allocationInfo.pMappedData), swapchain->imageCount, highestInstanceIndex);
 
-        op.frames++;
-        if (op.frames == modelMatrixUpdateCount) {
-            modelMatrixRingBufferTail = (modelMatrixRingBufferTail + 1) % FRAME_BUFFER_OPERATION_COUNT_LIMIT;
-            modelMatrixRingBufferCount--;
-        }
-    }
+    jointMatrixOperationRingBuffer.Enqueue(currentFrameBuffer.jointMatrixOperations);
+    currentFrameBuffer.jointMatrixOperations.clear();
+    jointMatrixOperationRingBuffer.ProcessOperations(static_cast<char*>(currentJointMatrixBuffers.allocationInfo.pMappedData), swapchain->imageCount + 1);
 }
 
-RenderThread::RenderResponse RenderThread::Render(uint32_t currentFrameInFlight, FrameSynchronization& currentFrameData, FrameBuffer& currentFrameBuffer)
+RenderThread::RenderResponse RenderThread::Render(uint32_t currentRenderFrameInFlight, FrameSynchronization& currentFrameData, FrameBuffer& currentFrameBuffer)
 {
     //auto timer = Utils::ScopedTimer(fmt::format("[Render Thread] Frame time (Frame {})", frameNumber));
-    // todo: check what it looks like if we dont repeat it 3x. Should show up in FIF 1, but be missing from 2/3, reappear at 4, etc.
-    for (InstanceOperation& instanceOp : currentFrameBuffer.instanceOperations) {
-        memcpy(static_cast<char*>(instanceBuffers[0].allocationInfo.pMappedData) + sizeof(Instance) * instanceOp.index,
-               &instanceOp.instance,
-               sizeof(Instance));
-        memcpy(static_cast<char*>(instanceBuffers[1].allocationInfo.pMappedData) + sizeof(Instance) * instanceOp.index,
-               &instanceOp.instance,
-               sizeof(Instance));
-        memcpy(static_cast<char*>(instanceBuffers[2].allocationInfo.pMappedData) + sizeof(Instance) * instanceOp.index,
-               &instanceOp.instance,
-               sizeof(Instance));
-        highestInstanceIndex = glm::max(highestInstanceIndex, instanceOp.index + 1);
-    }
-    currentFrameBuffer.instanceOperations.clear();
-    for (JointMatrixOperation& jointMatrixOp : currentFrameBuffer.jointMatrixOperations) {
-        memcpy(static_cast<char*>(jointMatrixBuffers[0].allocationInfo.pMappedData) + jointMatrixOp.index * sizeof(Model),
-               &jointMatrixOp.jointMatrix,
-               sizeof(Model));
-        memcpy(static_cast<char*>(jointMatrixBuffers[1].allocationInfo.pMappedData) + jointMatrixOp.index * sizeof(Model),
-               &jointMatrixOp.jointMatrix,
-               sizeof(Model));
-        memcpy(static_cast<char*>(jointMatrixBuffers[2].allocationInfo.pMappedData) + jointMatrixOp.index * sizeof(Model),
-               &jointMatrixOp.jointMatrix,
-               sizeof(Model));
-    }
-    currentFrameBuffer.jointMatrixOperations.clear();
-
     std::array<uint32_t, 2> scaledRenderExtent = renderContext->GetScaledRenderExtent();
     uint32_t swapchainImageIndex;
     // (Non-Blocking) Acquire swapchain image index. Signal semaphore when the actual image is ready for use.
@@ -328,7 +289,7 @@ RenderThread::RenderResponse RenderThread::Render(uint32_t currentFrameInFlight,
     VkCommandBufferBeginInfo commandBufferBeginInfo = VkHelpers::CommandBufferBeginInfo();
     VK_CHECK(vkBeginCommandBuffer(cmd, &commandBufferBeginInfo));
 
-    AllocatedBuffer& currentSceneDataBuffer = sceneDataBuffers[currentFrameInFlight];
+    AllocatedBuffer& currentSceneDataBuffer = sceneDataBuffers[currentRenderFrameInFlight];
     auto* currentSceneData = static_cast<SceneData*>(currentSceneDataBuffer.allocationInfo.pMappedData);
     float aspectRatio = renderContext->GetAspectRatio();
     glm::vec2 renderTargetSize = {scaledRenderExtent[0], scaledRenderExtent[1]};
@@ -337,15 +298,15 @@ RenderThread::RenderResponse RenderThread::Render(uint32_t currentFrameInFlight,
 
     //
     {
-        vkCmdFillBuffer(cmd, indirectCountBuffers[currentFrameInFlight].handle,offsetof(IndirectCount, opaqueCount), sizeof(uint32_t), 0);
-        vkCmdFillBuffer(cmd, skeletalIndirectCountBuffers[currentFrameInFlight].handle,offsetof(IndirectCount, opaqueCount), sizeof(uint32_t), 0);
+        vkCmdFillBuffer(cmd, indirectCountBuffers[currentRenderFrameInFlight].handle,offsetof(IndirectCount, opaqueCount), sizeof(uint32_t), 0);
+        vkCmdFillBuffer(cmd, skeletalIndirectCountBuffers[currentRenderFrameInFlight].handle,offsetof(IndirectCount, opaqueCount), sizeof(uint32_t), 0);
         VkBufferMemoryBarrier2 bufferBarrier[2];
         bufferBarrier[0] = VkHelpers::BufferMemoryBarrier(
-            indirectCountBuffers[currentFrameInFlight].handle, 0, VK_WHOLE_SIZE,
+            indirectCountBuffers[currentRenderFrameInFlight].handle, 0, VK_WHOLE_SIZE,
             VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
             VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT);
         bufferBarrier[1] = VkHelpers::BufferMemoryBarrier(
-            skeletalIndirectCountBuffers[currentFrameInFlight].handle, 0, VK_WHOLE_SIZE,
+            skeletalIndirectCountBuffers[currentRenderFrameInFlight].handle, 0, VK_WHOLE_SIZE,
             VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
             VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT);
 
@@ -366,12 +327,12 @@ RenderThread::RenderResponse RenderThread::Render(uint32_t currentFrameInFlight,
             BindlessIndirectPushConstant pushData{
                 currentSceneDataBuffer.address,
                 resourceManager->primitiveBuffer.address,
-                modelBuffers[currentFrameInFlight].address,
-                instanceBuffers[currentFrameInFlight].address,
+                modelBuffers[currentRenderFrameInFlight].address,
+                instanceBuffers[currentRenderFrameInFlight].address,
                 opaqueIndexedIndirectBuffer.address,
-                indirectCountBuffers[currentFrameInFlight].address,
+                indirectCountBuffers[currentRenderFrameInFlight].address,
                 opaqueSkeletalIndexedIndirectBuffer.address,
-                skeletalIndirectCountBuffers[currentFrameInFlight].address,
+                skeletalIndirectCountBuffers[currentRenderFrameInFlight].address,
             };
 
             vkCmdPushConstants(cmd, drawCullComputePipeline.drawCullPipelineLayout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(BindlessIndirectPushConstant), &pushData);
@@ -388,7 +349,7 @@ RenderThread::RenderResponse RenderThread::Render(uint32_t currentFrameInFlight,
             VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT,
             VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT, VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT);
         bufferBarrier[1] = VkHelpers::BufferMemoryBarrier(
-            indirectCountBuffers[currentFrameInFlight].handle, 0, VK_WHOLE_SIZE,
+            indirectCountBuffers[currentRenderFrameInFlight].handle, 0, VK_WHOLE_SIZE,
             VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT,
             VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT, VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT);
         bufferBarrier[2] = VkHelpers::BufferMemoryBarrier(
@@ -396,7 +357,7 @@ RenderThread::RenderResponse RenderThread::Render(uint32_t currentFrameInFlight,
             VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT,
             VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT, VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT);
         bufferBarrier[3] = VkHelpers::BufferMemoryBarrier(
-            skeletalIndirectCountBuffers[currentFrameInFlight].handle, 0, VK_WHOLE_SIZE,
+            skeletalIndirectCountBuffers[currentRenderFrameInFlight].handle, 0, VK_WHOLE_SIZE,
             VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT,
             VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT, VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT);
 
@@ -445,8 +406,8 @@ RenderThread::RenderResponse RenderThread::Render(uint32_t currentFrameInFlight,
             currentSceneDataBuffer.address,
             resourceManager->materialBuffer.address,
             resourceManager->primitiveBuffer.address,
-            modelBuffers[currentFrameInFlight].address,
-            instanceBuffers[currentFrameInFlight].address,
+            modelBuffers[currentRenderFrameInFlight].address,
+            instanceBuffers[currentRenderFrameInFlight].address,
         };
 
         vkCmdPushConstants(cmd, mainRenderPipeline.renderPipelineLayout.handle, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(BindlessAddressPushConstant), &pushData);
@@ -465,7 +426,7 @@ RenderThread::RenderResponse RenderThread::Render(uint32_t currentFrameInFlight,
         vkCmdBindIndexBuffer(cmd, resourceManager->megaIndexBuffer.handle, 0, VK_INDEX_TYPE_UINT32);
         vkCmdDrawIndexedIndirectCount(cmd,
                                       opaqueIndexedIndirectBuffer.handle, 0,
-                                      indirectCountBuffers[currentFrameInFlight].handle, offsetof(IndirectCount, opaqueCount),
+                                      indirectCountBuffers[currentRenderFrameInFlight].handle, offsetof(IndirectCount, opaqueCount),
                                       highestInstanceIndex, sizeof(VkDrawIndexedIndirectCommand));
 
         vkCmdEndRendering(cmd);
@@ -598,7 +559,7 @@ void RenderThread::UpdateFrameTimeStats(float frameTimeMs)
         }
     }
 
-    if (frameNumber % 100 == 0 && frameNumber > 0) {
+    if (frameNumber % 1000 == 0 && frameNumber > 0) {
         float avg = frameTimeTracker.GetRollingAverage();
         LOG_INFO("[Render Thread] Rolling average frame time (last {} frames): {:.2f}ms ({:.1f} FPS)",
                  frameTimeTracker.GetSampleCount(), avg, 1000.0f / avg);

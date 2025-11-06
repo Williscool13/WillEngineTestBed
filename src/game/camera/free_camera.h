@@ -13,6 +13,8 @@ class FreeCamera final : public Camera
 public:
     explicit FreeCamera();
 
+    FreeCamera(glm::vec3 startingPosition, glm::vec3 startingLookPoint);
+
     ~FreeCamera() override = default;
 
     void Update(float deltaTime) override;

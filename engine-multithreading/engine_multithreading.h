@@ -6,20 +6,13 @@
 #define WILLENGINETESTBED_ENGINE_MULTITHREADING_H
 
 
-#include <memory>
 #include <vector>
+#include <SDL3/SDL.h>
 
 #include "asset_loading_thread.h"
-#include "offsetAllocator.hpp"
 #include "render_thread.h"
-#include "game/camera/free_camera.h"
-#include "render/render_operations.h"
-#include "SDL3/SDL.h"
 
-#include "render/vk_resources.h"
-#include "render/animation/animation_player.h"
-#include "render/model/model_data.h"
-#include "utils/handle_allocator.h"
+#include "game/camera/free_camera.h"
 
 namespace Renderer
 {
@@ -86,7 +79,7 @@ private:
 
     uint64_t frameNumber{0};
     Renderer::RawSceneData rawSceneData;
-    Game::FreeCamera freeCamera;
+    Game::FreeCamera freeCamera{{0.0f, 0.0f, 5.0f}, {0.0f, 0.0f, 0.0f}};
 
 public:
     std::counting_semaphore<Core::FRAMES_IN_FLIGHT> gameFrames{Core::FRAMES_IN_FLIGHT};

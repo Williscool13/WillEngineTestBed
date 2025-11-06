@@ -25,10 +25,14 @@ add_library(render-lib STATIC
         render_context.h
         render_targets.cpp
         render_targets.h
+        resource_manager.cpp
+        resource_manager.h
         model/model_loader.cpp
         model/model_loader.h
         model/model_data.cpp
         model/model_data.h
+        model/model_load_utils.cpp
+        model/model_load_utils.h
         descriptor_buffer/descriptor_buffer_uniform.cpp
         descriptor_buffer/descriptor_buffer_uniform.h
         descriptor_buffer/descriptor_buffer_storage.cpp
@@ -53,13 +57,10 @@ add_library(render-lib STATIC
         pipelines/gradient_compute_pipeline.h
         pipelines/main_render_pipeline.cpp
         pipelines/main_render_pipeline.h
-        resource_manager.cpp
-        resource_manager.h
-        model/model_load_utils.cpp
-        model/model_load_utils.h
-        render_operations.cpp
-        render_operations.h
-
+        render-operations/render_operations.cpp
+        render-operations/render_operations.h
+        render-operations/render_operation_ring_buffer.cpp
+        render-operations/render_operation_ring_buffer.h
 )
 
 target_link_libraries(render-lib PUBLIC
