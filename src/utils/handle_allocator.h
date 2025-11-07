@@ -43,7 +43,7 @@ public:
 
     bool Remove(Handle<T> handle)
     {
-        if (!IsValid(handle)) {  // Changed from Get(handle)
+        if (!IsValid(handle)) {
             return false;
         }
 

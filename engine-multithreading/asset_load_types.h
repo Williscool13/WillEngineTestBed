@@ -8,14 +8,20 @@
 
 #include "render/render_constants.h"
 #include "render/model/model_data.h"
+#include "render/render-operations/render_operations.h"
 
 namespace Renderer
 {
-struct UploadStagingHandle
+struct UploadStaging
 {
-    uint32_t index{0};
-    uint32_t generation{0};
+    VkCommandBuffer commandBuffer{};
+    VkFence fence{};
+
+    AllocatedBuffer stagingBuffer{};
+    OffsetAllocator::Allocator stagingAllocator{STAGING_BUFFER_SIZE};
 };
+
+using UploadStagingHandle = Handle<UploadStaging>;
 
 struct ModelEntry
 {
@@ -25,12 +31,15 @@ struct ModelEntry
     uint32_t refCount = 0;
     std::atomic<State> state{};
 
-    // Used by asset thread to find out if a model is ready.
-    //todo: use multiple upload staging handles if the upload requires more staging buffer space.
-    UploadStagingHandle uploadStagingHandle;
+    bool bRequiresAcquisition{false};
+    std::vector<BufferAcquireOperation> bufferAcquireOps{};
+    std::vector<ImageAcquireOperation> imageAcquireOps{};
 
+    // Only accessed by asset loading thread
+    std::vector<UploadStagingHandle> uploadStagingHandles;
     std::chrono::steady_clock::time_point loadStartTime;
     std::chrono::steady_clock::time_point loadEndTime;
+
 
     ModelEntry() = default;
 
@@ -38,7 +47,7 @@ struct ModelEntry
         : data(std::move(other.data))
           , refCount(other.refCount)
           , state(other.state.load())
-          , uploadStagingHandle(std::move(other.uploadStagingHandle))
+          , uploadStagingHandles(std::move(other.uploadStagingHandles))
     {}
 
     ModelEntry& operator=(ModelEntry&& other) noexcept
@@ -47,19 +56,10 @@ struct ModelEntry
             data = std::move(other.data);
             refCount = other.refCount;
             state.store(other.state.load());
-            uploadStagingHandle = std::move(other.uploadStagingHandle);
+            uploadStagingHandles = std::move(other.uploadStagingHandles);
         }
         return *this;
     }
-};
-
-struct UploadStaging
-{
-    VkCommandBuffer commandBuffer{};
-    VkFence fence{};
-
-    AllocatedBuffer stagingBuffer{};
-    OffsetAllocator::Allocator stagingAllocator{STAGING_BUFFER_SIZE};
 };
 
 using ModelEntryHandle = Handle<ModelEntry>;

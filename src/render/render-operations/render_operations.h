@@ -13,35 +13,65 @@ namespace Renderer
 {
 struct ModelMatrixOperation
 {
-    uint32_t index;
-    glm::mat4 modelMatrix;
+    uint32_t index{};
+    glm::mat4 modelMatrix{1.0f};
 
     // Filled and used by render thread
-    uint32_t frames;
+    uint32_t frames{};
 };
 
 struct InstanceOperation
 {
-    uint32_t index;
-    Instance instance;
+    uint32_t index{};
+    Instance instance{};
 
     // Filled and used by render thread
-    uint32_t frames;
+    uint32_t frames{};
 };
 
 struct JointMatrixOperation
 {
-    uint32_t index;
-    glm::mat4 jointMatrix;
+    uint32_t index{};
+    glm::mat4 jointMatrix{};
 
     // Filled and used by render thread
-    uint32_t frames;
+    uint32_t frames{};
+};
+
+struct BufferAcquireOperation
+{
+    VkPipelineStageFlags2 srcStageMask;
+    VkAccessFlags2 srcAccessMask;
+    VkPipelineStageFlags2 dstStageMask;
+    VkAccessFlags2 dstAccessMask;
+    uint32_t srcQueueFamilyIndex;
+
+    VkBuffer buffer;
+    VkDeviceSize offset;
+    VkDeviceSize size;
+};
+
+struct ImageAcquireOperation
+{
+    VkPipelineStageFlags2 srcStageMask;
+    VkAccessFlags2 srcAccessMask;
+    VkImageLayout oldLayout;
+    VkPipelineStageFlags2 dstStageMask;
+    VkAccessFlags2 dstAccessMask;
+    VkImageLayout newLayout;
+    uint32_t srcQueueFamilyIndex;
+
+    VkImage image;
+    VkImageSubresourceRange subresourceRange;
 };
 
 struct FrameBuffer
 {
     RawSceneData rawSceneData{};
     uint64_t currentFrame{};
+
+    std::vector<BufferAcquireOperation> bufferAcquireOperations;
+    std::vector<ImageAcquireOperation> imageAcquireOperations;
 
     std::vector<ModelMatrixOperation> modelMatrixOperations;
     std::vector<InstanceOperation> instanceOperations;

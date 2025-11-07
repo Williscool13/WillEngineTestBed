@@ -41,7 +41,7 @@ void AssetLoadingThread::Initialize(VulkanContext* context_, ResourceManager* re
     VkCommandPoolCreateInfo poolInfo = VkHelpers::CommandPoolCreateInfo(context->transferQueueFamily);
     VK_CHECK(vkCreateCommandPool(context->device, &poolInfo, nullptr, &commandPool));
     VkCommandBufferAllocateInfo cmdInfo = VkHelpers::CommandBufferAllocateInfo(4, commandPool);
-    std::array<VkCommandBuffer, ASSET_LOAD_ASYNC_COUNT> commandBuffers;
+    std::array<VkCommandBuffer, ASSET_LOAD_ASYNC_COUNT> commandBuffers{};
     VK_CHECK(vkAllocateCommandBuffers(context->device, &cmdInfo, commandBuffers.data()));
 
     for (int32_t i = 0; i < uploadStagingDatas.size(); ++i) {
@@ -53,6 +53,8 @@ void AssetLoadingThread::Initialize(VulkanContext* context_, ResourceManager* re
         uploadStagingDatas[i].commandBuffer = commandBuffers[i];
         uploadStagingDatas[i].stagingBuffer = VkResources::CreateAllocatedStagingBuffer(context, STAGING_BUFFER_SIZE);
     }
+
+    CreateDefaultResources();
 }
 
 void AssetLoadingThread::Start()
@@ -81,10 +83,10 @@ void AssetLoadingThread::ThreadMain()
         while (requestQueue.pop(loadRequest)) {
             ModelEntryHandle newModelHandle = LoadGltf(loadRequest.path);
             if (newModelHandle == ModelEntryHandle::Invalid) {
-                completeQueue.push({newModelHandle, loadRequest.onComplete});
+                completeQueue.push({newModelHandle, std::move(loadRequest.onComplete)});
             }
             else {
-                modelsInProgress.push_back({newModelHandle, loadRequest.onComplete});
+                modelsInProgress.push_back({newModelHandle, std::move(loadRequest.onComplete)});
             }
         }
 
@@ -98,7 +100,11 @@ void AssetLoadingThread::ThreadMain()
                 continue;
             }
 
-            if (IsUploadFinished(modelEntry->uploadStagingHandle)) {
+            if (modelEntry->uploadStagingHandles.size() > 0) {
+                RemoveFinishedUploadStaging(modelEntry->uploadStagingHandles);
+            }
+
+            if (modelEntry->uploadStagingHandles.empty()) {
                 if (modelEntry->state.load() != ModelEntry::State::Ready) {
                     modelEntry->loadEndTime = std::chrono::steady_clock::now();
                     modelEntry->state.store(ModelEntry::State::Ready);
@@ -107,7 +113,7 @@ void AssetLoadingThread::ThreadMain()
                     LOG_INFO("[Asset Loading Thread] Model '{}' loaded in {} ms", modelEntry->data.name, duration.count());
                 }
 
-                completeQueue.push({inProgress.modelEntryHandle, inProgress.onComplete});
+                completeQueue.push({inProgress.modelEntryHandle, std::move(inProgress.onComplete)});
                 modelsInProgress.erase(modelsInProgress.begin() + i);
                 // todo: add acquire barrier command list to be sent from the game thread to the render thread
             }
@@ -516,38 +522,76 @@ ModelEntryHandle AssetLoadingThread::LoadGltf(const std::filesystem::path& path)
     newModel->data.name = path.filename().string();
     newModel->data.path = path;
 
-    UploadStaging& uploadStaging = GetAvailableTextureStaging();
-    const VkCommandBufferBeginInfo cmdBeginInfo = VkHelpers::CommandBufferBeginInfo();
-    VK_CHECK(vkBeginCommandBuffer(uploadStaging.commandBuffer, &cmdBeginInfo));
 
     // Allocate all static stagings first. If fail no need to clear, because next time the handle is used, it is auto cleared
     size_t sizeVertices = vertices.size() * sizeof(Vertex);
-    OffsetAllocator::Allocation vertexStagingAllocation = uploadStaging.stagingAllocator.allocate(sizeVertices);
-    newModel->data.vertexAllocation = resourceManager->vertexBufferAllocator.allocate(sizeVertices);
     size_t sizeIndices = indices.size() * sizeof(uint32_t);
-    OffsetAllocator::Allocation indexStagingAllocation = uploadStaging.stagingAllocator.allocate(sizeIndices);
-    newModel->data.indexAllocation = resourceManager->indexBufferAllocator.allocate(sizeIndices);
     size_t sizeMaterials = materials.size() * sizeof(MaterialProperties);
-    OffsetAllocator::Allocation materialStagingAllocation = uploadStaging.stagingAllocator.allocate(sizeMaterials);
-    newModel->data.materialAllocation = resourceManager->materialBufferAllocator.allocate(sizeMaterials);
     size_t sizePrimitives = primitives.size() * sizeof(Primitive);
-    OffsetAllocator::Allocation primitiveStagingAllocation = uploadStaging.stagingAllocator.allocate(sizePrimitives);
-    newModel->data.primitiveAllocation = resourceManager->primitiveBufferAllocator.allocate(sizePrimitives);
 
-    if (vertexStagingAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE || indexStagingAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE ||
-        materialStagingAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE || primitiveStagingAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE ||
-        newModel->data.vertexAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE || newModel->data.indexAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE ||
-        newModel->data.materialAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE || newModel->data.primitiveAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE
-    ) {
-        LOG_WARN("[AssetLoadingThread::LoadGltf] LoadGltf could not fit all static data into resource/staging buffers");
+    if (sizeVertices > STAGING_BUFFER_SIZE) {
+        LOG_WARN("[AssetLoadingThread::LoadGltf] Not enough space in a single staging buffer to upload vertices of {}", newModel->data.name);
+        models.Remove(newModelHandle);
+        return ModelEntryHandle::Invalid;
+    }
+    if (sizeIndices > STAGING_BUFFER_SIZE) {
+        LOG_WARN("[AssetLoadingThread::LoadGltf] Not enough space in a single staging buffer to upload indices of {}", newModel->data.name);
+        models.Remove(newModelHandle);
+        return ModelEntryHandle::Invalid;
+    }
+    if (sizeMaterials > STAGING_BUFFER_SIZE) {
+        LOG_WARN("[AssetLoadingThread::LoadGltf] Not enough space in a single staging buffer to upload materials of {}", newModel->data.name);
+        models.Remove(newModelHandle);
+        return ModelEntryHandle::Invalid;
+    }
+    if (sizePrimitives > STAGING_BUFFER_SIZE) {
+        LOG_WARN("[AssetLoadingThread::LoadGltf] Not enough space in a single staging buffer to upload primitives of {}", newModel->data.name);
         models.Remove(newModelHandle);
         return ModelEntryHandle::Invalid;
     }
 
-    // Images after other data, so that images don't starve the staging
-    // Also so we can void vulkan resource creation if model loading is going to fail.
+    newModel->data.vertexAllocation = resourceManager->vertexBufferAllocator.allocate(sizeVertices);
+    if (newModel->data.vertexAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
+        LOG_WARN("[AssetLoadingThread::LoadGltf] Not enough space in mega vertex buffer to upload {}", newModel->data.name);
+        models.Remove(newModelHandle);
+        return ModelEntryHandle::Invalid;
+    }
+
+    newModel->data.indexAllocation = resourceManager->indexBufferAllocator.allocate(sizeIndices);
+    if (newModel->data.indexAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
+        resourceManager->vertexBufferAllocator.free(newModel->data.vertexAllocation);
+        LOG_WARN("[AssetLoadingThread::LoadGltf] Not enough space in mega index buffer to upload {}", newModel->data.name);
+        models.Remove(newModelHandle);
+        return ModelEntryHandle::Invalid;
+    }
+
+    newModel->data.materialAllocation = resourceManager->materialBufferAllocator.allocate(sizeMaterials);
+    if (newModel->data.materialAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
+        resourceManager->vertexBufferAllocator.free(newModel->data.vertexAllocation);
+        resourceManager->indexBufferAllocator.free(newModel->data.indexAllocation);
+        LOG_WARN("[AssetLoadingThread::LoadGltf] Not enough space in mega material buffer to upload {}", newModel->data.name);
+        models.Remove(newModelHandle);
+        return ModelEntryHandle::Invalid;
+    }
+
+    newModel->data.primitiveAllocation = resourceManager->primitiveBufferAllocator.allocate(sizePrimitives);
+    if (newModel->data.primitiveAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
+        resourceManager->vertexBufferAllocator.free(newModel->data.vertexAllocation);
+        resourceManager->indexBufferAllocator.free(newModel->data.indexAllocation);
+        resourceManager->materialBufferAllocator.free(newModel->data.materialAllocation);
+        LOG_WARN("[AssetLoadingThread::LoadGltf] Not enough space in mega material buffer to upload {}", newModel->data.name);
+        models.Remove(newModelHandle);
+        return ModelEntryHandle::Invalid;
+    }
+
+    UploadStagingHandle uploadStagingHandle = GetAvailableStaging();
+    UploadStaging* currentUploadStaging = &uploadStagingDatas[uploadStagingHandle.index];
+    newModel->uploadStagingHandles.push_back(uploadStagingHandle);
+    const VkCommandBufferBeginInfo cmdBeginInfo = VkHelpers::CommandBufferBeginInfo();
+    VK_CHECK(vkBeginCommandBuffer(currentUploadStaging->commandBuffer, &cmdBeginInfo));
+
     newModel->data.images.reserve(gltf.images.size());
-    LoadGltfImages(uploadStaging, gltf, path.parent_path(), newModel->data.images);
+    LoadGltfImages(currentUploadStaging, newModel->uploadStagingHandles, gltf, path.parent_path(), newModel->data.images);
 
     newModel->data.imageViews.reserve(gltf.images.size());
     for (const AllocatedImage& image : newModel->data.images) {
@@ -556,23 +600,6 @@ ModelEntryHandle AssetLoadingThread::LoadGltf(const std::filesystem::path& path)
         // todo: if image is vk_null_handle, replace with default white image index
     }
 
-    // Vertices
-    memcpy(static_cast<char*>(uploadStaging.stagingBuffer.allocationInfo.pMappedData) + vertexStagingAllocation.offset, vertices.data(), sizeVertices);
-    VkBufferCopy2 vertexCopy{
-        .sType = VK_STRUCTURE_TYPE_BUFFER_COPY_2,
-        .srcOffset = vertexStagingAllocation.offset,
-        .dstOffset = newModel->data.vertexAllocation.offset,
-        .size = sizeVertices,
-    };
-
-    // Indices
-    memcpy(static_cast<char*>(uploadStaging.stagingBuffer.allocationInfo.pMappedData) + indexStagingAllocation.offset, indices.data(), sizeIndices);
-    VkBufferCopy2 indexCopy{
-        .sType = VK_STRUCTURE_TYPE_BUFFER_COPY_2,
-        .srcOffset = indexStagingAllocation.offset,
-        .dstOffset = newModel->data.indexAllocation.offset,
-        .size = sizeIndices,
-    };
 
     // Descriptor assignment can happen here. Resource upload, will need to be staged and
     auto remapIndices = [](auto& indices_, const std::vector<int32_t>& map) {
@@ -607,14 +634,133 @@ ModelEntryHandle AssetLoadingThread::LoadGltf(const std::filesystem::path& path)
         remapIndices(material.textureImageIndices2, newModel->data.textureIndexToDescriptorBufferIndexMap);
     }
 
+    // Vertices
+    {
+        OffsetAllocator::Allocation vertexStagingAllocation = currentUploadStaging->stagingAllocator.allocate(sizeVertices);
+        if (vertexStagingAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
+            StartUploadStaging(*currentUploadStaging);
+            uploadStagingHandle = GetAvailableStaging();
+            currentUploadStaging = &uploadStagingDatas[uploadStagingHandle.index];
+            newModel->uploadStagingHandles.push_back(uploadStagingHandle);
+            VK_CHECK(vkBeginCommandBuffer(currentUploadStaging->commandBuffer, &cmdBeginInfo));
+            vertexStagingAllocation = currentUploadStaging->stagingAllocator.allocate(sizeIndices);
+        }
+        memcpy(static_cast<char*>(currentUploadStaging->stagingBuffer.allocationInfo.pMappedData) + vertexStagingAllocation.offset, vertices.data(), sizeVertices);
+        VkBufferCopy2 vertexCopy{
+            .sType = VK_STRUCTURE_TYPE_BUFFER_COPY_2,
+            .srcOffset = vertexStagingAllocation.offset,
+            .dstOffset = newModel->data.vertexAllocation.offset,
+            .size = sizeVertices,
+        };
+        VkCopyBufferInfo2 copyVertexInfo{
+            .sType = VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2,
+            .srcBuffer = currentUploadStaging->stagingBuffer.handle,
+            .dstBuffer = resourceManager->megaVertexBuffer.handle,
+            .regionCount = 1,
+            .pRegions = &vertexCopy
+        };
+        vkCmdCopyBuffer2(currentUploadStaging->commandBuffer, &copyVertexInfo);
+        VkBufferMemoryBarrier2 vertexBarrier = VkHelpers::BufferMemoryBarrier(
+            resourceManager->megaVertexBuffer.handle,
+            newModel->data.vertexAllocation.offset, sizeVertices,
+            VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+            VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE);
+        vertexBarrier.srcQueueFamilyIndex = context->transferQueueFamily;
+        vertexBarrier.dstQueueFamilyIndex = context->graphicsQueueFamily;
+        VkDependencyInfo depInfo{};
+        depInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        depInfo.pNext = nullptr;
+        depInfo.dependencyFlags = 0;
+        depInfo.bufferMemoryBarrierCount = 1;
+        depInfo.pBufferMemoryBarriers = &vertexBarrier;
+        vkCmdPipelineBarrier2(currentUploadStaging->commandBuffer, &depInfo);
+    }
+
+    // Indices
+    {
+        OffsetAllocator::Allocation indexStagingAllocation = currentUploadStaging->stagingAllocator.allocate(sizeIndices);
+        if (indexStagingAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
+            StartUploadStaging(*currentUploadStaging);
+            uploadStagingHandle = GetAvailableStaging();
+            currentUploadStaging = &uploadStagingDatas[uploadStagingHandle.index];
+            newModel->uploadStagingHandles.push_back(uploadStagingHandle);
+            VK_CHECK(vkBeginCommandBuffer(currentUploadStaging->commandBuffer, &cmdBeginInfo));
+            indexStagingAllocation = currentUploadStaging->stagingAllocator.allocate(sizeIndices);
+        }
+        memcpy(static_cast<char*>(currentUploadStaging->stagingBuffer.allocationInfo.pMappedData) + indexStagingAllocation.offset, indices.data(), sizeIndices);
+        VkBufferCopy2 indexCopy{
+            .sType = VK_STRUCTURE_TYPE_BUFFER_COPY_2,
+            .srcOffset = indexStagingAllocation.offset,
+            .dstOffset = newModel->data.indexAllocation.offset,
+            .size = sizeIndices,
+        };
+        VkCopyBufferInfo2 copyIndexInfo{
+            .sType = VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2,
+            .srcBuffer = currentUploadStaging->stagingBuffer.handle,
+            .dstBuffer = resourceManager->megaIndexBuffer.handle,
+            .regionCount = 1,
+            .pRegions = &indexCopy
+        };
+        vkCmdCopyBuffer2(currentUploadStaging->commandBuffer, &copyIndexInfo);
+        VkBufferMemoryBarrier2 indexBarrier = VkHelpers::BufferMemoryBarrier(
+            resourceManager->megaIndexBuffer.handle,
+            newModel->data.indexAllocation.offset, sizeIndices,
+            VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+            VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE);
+        indexBarrier.srcQueueFamilyIndex = context->transferQueueFamily;
+        indexBarrier.dstQueueFamilyIndex = context->graphicsQueueFamily;
+        VkDependencyInfo depInfo{};
+        depInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        depInfo.pNext = nullptr;
+        depInfo.dependencyFlags = 0;
+        depInfo.bufferMemoryBarrierCount = 1;
+        depInfo.pBufferMemoryBarriers = &indexBarrier;
+        vkCmdPipelineBarrier2(currentUploadStaging->commandBuffer, &depInfo);
+    }
+
+
     // Materials
-    memcpy(static_cast<char*>(uploadStaging.stagingBuffer.allocationInfo.pMappedData) + materialStagingAllocation.offset, materials.data(), sizeMaterials);
-    VkBufferCopy2 materialCopy{
-        .sType = VK_STRUCTURE_TYPE_BUFFER_COPY_2,
-        .srcOffset = materialStagingAllocation.offset,
-        .dstOffset = newModel->data.materialAllocation.offset,
-        .size = sizeMaterials,
-    };
+    {
+        OffsetAllocator::Allocation materialStagingAllocation = currentUploadStaging->stagingAllocator.allocate(sizeMaterials);
+        if (materialStagingAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
+            StartUploadStaging(*currentUploadStaging);
+            uploadStagingHandle = GetAvailableStaging();
+            currentUploadStaging = &uploadStagingDatas[uploadStagingHandle.index];
+            newModel->uploadStagingHandles.push_back(uploadStagingHandle);
+            VK_CHECK(vkBeginCommandBuffer(currentUploadStaging->commandBuffer, &cmdBeginInfo));
+            materialStagingAllocation = currentUploadStaging->stagingAllocator.allocate(sizeMaterials);
+        }
+        memcpy(static_cast<char*>(currentUploadStaging->stagingBuffer.allocationInfo.pMappedData) + materialStagingAllocation.offset, materials.data(), sizeMaterials);
+        VkBufferCopy2 materialCopy{
+            .sType = VK_STRUCTURE_TYPE_BUFFER_COPY_2,
+            .srcOffset = materialStagingAllocation.offset,
+            .dstOffset = newModel->data.materialAllocation.offset,
+            .size = sizeMaterials,
+        };
+        VkCopyBufferInfo2 copyMaterialInfo{
+            .sType = VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2,
+            .srcBuffer = currentUploadStaging->stagingBuffer.handle,
+            .dstBuffer = resourceManager->materialBuffer.handle,
+            .regionCount = 1,
+            .pRegions = &materialCopy
+        };
+        vkCmdCopyBuffer2(currentUploadStaging->commandBuffer, &copyMaterialInfo);
+        VkBufferMemoryBarrier2 materialBarrier = VkHelpers::BufferMemoryBarrier(
+            resourceManager->materialBuffer.handle,
+            newModel->data.materialAllocation.offset, sizeMaterials,
+            VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+            VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE);
+        materialBarrier.srcQueueFamilyIndex = context->transferQueueFamily;
+        materialBarrier.dstQueueFamilyIndex = context->graphicsQueueFamily;
+        VkDependencyInfo depInfo{};
+        depInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        depInfo.pNext = nullptr;
+        depInfo.dependencyFlags = 0;
+        depInfo.bufferMemoryBarrierCount = 1;
+        depInfo.pBufferMemoryBarriers = &materialBarrier;
+        vkCmdPipelineBarrier2(currentUploadStaging->commandBuffer, &depInfo);
+    }
+
 
     // Primitives
     uint32_t firstIndexCount = newModel->data.indexAllocation.offset / sizeof(uint32_t);
@@ -625,101 +771,57 @@ ModelEntryHandle AssetLoadingThread::LoadGltf(const std::filesystem::path& path)
         primitive.vertexOffset += static_cast<int32_t>(vertexOffsetCount);
         primitive.materialIndex += materialOffsetCount;
     }
-
-    memcpy(static_cast<char*>(uploadStaging.stagingBuffer.allocationInfo.pMappedData) + primitiveStagingAllocation.offset, primitives.data(), sizePrimitives);
-    VkBufferCopy2 primitiveCopy{
-        .sType = VK_STRUCTURE_TYPE_BUFFER_COPY_2,
-        .srcOffset = primitiveStagingAllocation.offset,
-        .dstOffset = newModel->data.primitiveAllocation.offset,
-        .size = sizePrimitives,
-    };
-
-    uint32_t primitiveOffsetCount = newModel->data.primitiveAllocation.offset / sizeof(Primitive);
-    for (auto& mesh : newModel->data.meshes) {
-        for (auto& primitiveIndex : mesh.primitiveIndices) {
-            primitiveIndex += primitiveOffsetCount;
+    // Primitives
+    {
+        OffsetAllocator::Allocation primitiveStagingAllocation = currentUploadStaging->stagingAllocator.allocate(sizePrimitives);
+        if (primitiveStagingAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
+            StartUploadStaging(*currentUploadStaging);
+            uploadStagingHandle = GetAvailableStaging();
+            currentUploadStaging = &uploadStagingDatas[uploadStagingHandle.index];
+            newModel->uploadStagingHandles.push_back(uploadStagingHandle);
+            VK_CHECK(vkBeginCommandBuffer(currentUploadStaging->commandBuffer, &cmdBeginInfo));
+            primitiveStagingAllocation = currentUploadStaging->stagingAllocator.allocate(sizePrimitives);
         }
+        memcpy(static_cast<char*>(currentUploadStaging->stagingBuffer.allocationInfo.pMappedData) + primitiveStagingAllocation.offset, primitives.data(), sizePrimitives);
+        VkBufferCopy2 primitiveCopy{
+            .sType = VK_STRUCTURE_TYPE_BUFFER_COPY_2,
+            .srcOffset = primitiveStagingAllocation.offset,
+            .dstOffset = newModel->data.primitiveAllocation.offset,
+            .size = sizePrimitives,
+        };
+        uint32_t primitiveOffsetCount = newModel->data.primitiveAllocation.offset / sizeof(Primitive);
+        for (auto& mesh : newModel->data.meshes) {
+            for (auto& primitiveIndex : mesh.primitiveIndices) {
+                primitiveIndex += primitiveOffsetCount;
+            }
+        }
+        VkCopyBufferInfo2 copyPrimitiveInfo{
+            .sType = VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2,
+            .srcBuffer = currentUploadStaging->stagingBuffer.handle,
+            .dstBuffer = resourceManager->primitiveBuffer.handle,
+            .regionCount = 1,
+            .pRegions = &primitiveCopy
+        };
+        vkCmdCopyBuffer2(currentUploadStaging->commandBuffer, &copyPrimitiveInfo);
+        VkBufferMemoryBarrier2 primitiveBarrier = VkHelpers::BufferMemoryBarrier(
+            resourceManager->primitiveBuffer.handle,
+            newModel->data.primitiveAllocation.offset, sizePrimitives,
+            VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+            VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE);
+        primitiveBarrier.srcQueueFamilyIndex = context->transferQueueFamily;
+        primitiveBarrier.dstQueueFamilyIndex = context->graphicsQueueFamily;
+        VkDependencyInfo depInfo{};
+        depInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        depInfo.pNext = nullptr;
+        depInfo.dependencyFlags = 0;
+        depInfo.bufferMemoryBarrierCount = 1;
+        depInfo.pBufferMemoryBarriers = &primitiveBarrier;
+        vkCmdPipelineBarrier2(currentUploadStaging->commandBuffer, &depInfo);
     }
 
-    VkCopyBufferInfo2 copyVertexInfo{
-        .sType = VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2,
-        .srcBuffer = uploadStaging.stagingBuffer.handle,
-        .dstBuffer = resourceManager->megaVertexBuffer.handle,
-        .regionCount = 1,
-        .pRegions = &vertexCopy
-    };
-    vkCmdCopyBuffer2(uploadStaging.commandBuffer, &copyVertexInfo);
-    VkCopyBufferInfo2 copyIndexInfo{
-        .sType = VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2,
-        .srcBuffer = uploadStaging.stagingBuffer.handle,
-        .dstBuffer = resourceManager->megaIndexBuffer.handle,
-        .regionCount = 1,
-        .pRegions = &indexCopy
-    };
-    vkCmdCopyBuffer2(uploadStaging.commandBuffer, &copyIndexInfo);
-    VkCopyBufferInfo2 copyMaterialInfo{
-        .sType = VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2,
-        .srcBuffer = uploadStaging.stagingBuffer.handle,
-        .dstBuffer = resourceManager->materialBuffer.handle,
-        .regionCount = 1,
-        .pRegions = &materialCopy
-    };
-    vkCmdCopyBuffer2(uploadStaging.commandBuffer, &copyMaterialInfo);
-    VkCopyBufferInfo2 copyPrimitiveInfo{
-        .sType = VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2,
-        .srcBuffer = uploadStaging.stagingBuffer.handle,
-        .dstBuffer = resourceManager->primitiveBuffer.handle,
-        .regionCount = 1,
-        .pRegions = &primitiveCopy
-    };
-    vkCmdCopyBuffer2(uploadStaging.commandBuffer, &copyPrimitiveInfo);
 
-    VkBufferMemoryBarrier2 barriers[4];
-    barriers[0] = VkHelpers::BufferMemoryBarrier(
-        resourceManager->megaVertexBuffer.handle,
-        newModel->data.vertexAllocation.offset, sizeVertices,
-        VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
-        VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE);
-    barriers[0].srcQueueFamilyIndex = context->transferQueueFamily;
-    barriers[0].dstQueueFamilyIndex = context->graphicsQueueFamily;
-    barriers[1] = VkHelpers::BufferMemoryBarrier(
-        resourceManager->megaIndexBuffer.handle,
-        newModel->data.indexAllocation.offset, sizeIndices,
-        VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
-        VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE);
-    barriers[1].srcQueueFamilyIndex = context->transferQueueFamily;
-    barriers[1].dstQueueFamilyIndex = context->graphicsQueueFamily;
-    barriers[2] = VkHelpers::BufferMemoryBarrier(
-        resourceManager->materialBuffer.handle,
-        newModel->data.materialAllocation.offset, sizeMaterials,
-        VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
-        VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE);
-    barriers[2].srcQueueFamilyIndex = context->transferQueueFamily;
-    barriers[2].dstQueueFamilyIndex = context->graphicsQueueFamily;
-    barriers[3] = VkHelpers::BufferMemoryBarrier(
-        resourceManager->primitiveBuffer.handle,
-        newModel->data.primitiveAllocation.offset, sizePrimitives,
-        VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
-        VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE);
-    barriers[3].srcQueueFamilyIndex = context->transferQueueFamily;
-    barriers[3].dstQueueFamilyIndex = context->graphicsQueueFamily;
+    StartUploadStaging(*currentUploadStaging);
 
-    VkDependencyInfo depInfo{};
-    depInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-    depInfo.pNext = nullptr;
-    depInfo.dependencyFlags = 0;
-    depInfo.bufferMemoryBarrierCount = 4;
-    depInfo.pBufferMemoryBarriers = barriers;
-
-    vkCmdPipelineBarrier2(uploadStaging.commandBuffer, &depInfo);
-
-
-    VK_CHECK(vkEndCommandBuffer(uploadStaging.commandBuffer));
-    VkCommandBufferSubmitInfo cmdSubmitInfo = VkHelpers::CommandBufferSubmitInfo(uploadStaging.commandBuffer);
-    const VkSubmitInfo2 submitInfo = VkHelpers::SubmitInfo(&cmdSubmitInfo, nullptr, nullptr);
-    VK_CHECK(vkQueueSubmit2(context->transferQueue, 1, &submitInfo, uploadStaging.fence));
-
-    newModel->uploadStagingHandle = {currentIndex, uploadStagingGenerations[currentIndex].load()};
     pathToHandle[path] = newModelHandle;
     return newModelHandle;
 }
@@ -745,18 +847,63 @@ ModelData* AssetLoadingThread::GetModelData(ModelEntryHandle handle)
     return &modelEntry->data;
 }
 
+void AssetLoadingThread::CreateDefaultResources()
+{}
 
-bool AssetLoadingThread::IsUploadFinished(UploadStagingHandle uploadStagingHandle)
+
+void AssetLoadingThread::RemoveFinishedUploadStaging(std::vector<UploadStagingHandle>& uploadStagingHandles)
 {
-    if (uploadStagingGenerations[uploadStagingHandle.index] > uploadStagingHandle.generation) {
-        return true;
-    }
+    for (size_t i = 0; i < uploadStagingHandles.size();) {
+        UploadStagingHandle handle = uploadStagingHandles[i];
 
-    VkResult fenceStatus = vkGetFenceStatus(context->device, uploadStagingDatas[uploadStagingHandle.index].fence);
-    return fenceStatus == VK_SUCCESS;
+        if (!uploadStagingHandleAllocator.IsValid(handle) || vkGetFenceStatus(context->device, uploadStagingDatas[handle.index].fence) == VK_SUCCESS) {
+            if (uploadStagingHandleAllocator.IsValid(handle)) {
+                uploadStagingHandleAllocator.Remove(handle);
+                activeUploadHandles.erase(std::ranges::remove(activeUploadHandles, handle).begin(), activeUploadHandles.end());
+            }
+
+            uploadStagingHandles.erase(uploadStagingHandles.begin() + i);
+        }
+        else {
+            ++i;
+        }
+    }
 }
 
-void AssetLoadingThread::LoadGltfImages(UploadStaging& uploadStaging, const fastgltf::Asset& asset, const std::filesystem::path& parentFolder, std::vector<AllocatedImage>& outAllocatedImages)
+bool AssetLoadingThread::IsUploadFinished(const std::vector<UploadStagingHandle>& uploadStagingHandles)
+{
+    for (UploadStagingHandle handle : uploadStagingHandles) {
+        if (uploadStagingHandleAllocator.IsValid(handle)) {
+            VkResult fenceStatus = vkGetFenceStatus(context->device, uploadStagingDatas[handle.index].fence);
+            if (fenceStatus != VK_SUCCESS) {
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
+void AssetLoadingThread::ReleaseUploadStaging(std::vector<UploadStagingHandle>& uploadStagingHandles)
+{
+    for (auto handle : uploadStagingHandles) {
+        uploadStagingHandleAllocator.Remove(handle);
+        activeUploadHandles.erase(activeUploadHandles.begin());
+    }
+
+    uploadStagingHandles.clear();
+}
+
+void AssetLoadingThread::StartUploadStaging(const UploadStaging& uploadStaging)
+{
+    VK_CHECK(vkEndCommandBuffer(uploadStaging.commandBuffer));
+    VkCommandBufferSubmitInfo cmdSubmitInfo = VkHelpers::CommandBufferSubmitInfo(uploadStaging.commandBuffer);
+    const VkSubmitInfo2 submitInfo = VkHelpers::SubmitInfo(&cmdSubmitInfo, nullptr, nullptr);
+    VK_CHECK(vkQueueSubmit2(context->transferQueue, 1, &submitInfo, uploadStaging.fence));
+}
+
+void AssetLoadingThread::LoadGltfImages(UploadStaging*& currentUploadStaging, std::vector<UploadStagingHandle>& uploadStagingHandles,
+                                        const fastgltf::Asset& asset, const std::filesystem::path& parentFolder, std::vector<AllocatedImage>& outAllocatedImages)
 {
     unsigned char* stbiData{nullptr};
     int32_t width{};
@@ -770,49 +917,20 @@ void AssetLoadingThread::LoadGltfImages(UploadStaging& uploadStaging, const fast
             fastgltf::visitor{
                 [&](auto& arg) {},
                 [&](const fastgltf::sources::URI& fileName) {
-                    assert(fileName.fileByteOffset == 0); // We don't support offsets with stbi.
-                    assert(fileName.uri.isLocalPath()); // We're only capable of loading
-                    // local files.
+                    assert(fileName.fileByteOffset == 0);
+                    assert(fileName.uri.isLocalPath());
                     const std::wstring widePath(fileName.uri.path().begin(), fileName.uri.path().end());
                     const std::filesystem::path fullPath = parentFolder / widePath;
 
-                    // if (fullPath.extension() == ".ktx") {
-                    //     ktxTexture1* kTexture;
-                    //     const ktx_error_code_e ktxResult = ktxTexture1_CreateFromNamedFile(fullPath.string().c_str(),
-                    //                                                                        KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT,
-                    //                                                                        &kTexture);
-                    //
-                    //     if (ktxResult == KTX_SUCCESS) {
-                    //         newImage = processKtxVector(resourceManager, kTexture);
-                    //     }
-                    //
-                    //     ktxTexture1_Destroy(kTexture);
-                    // }
-                    // else if (fullPath.extension() == ".ktx2") {
-                    //     ktxTexture2* kTexture;
-                    //     const ktx_error_code_e ktxResult = ktxTexture2_CreateFromNamedFile(fullPath.string().c_str(),
-                    //                                                                        KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT,
-                    //                                                                        &kTexture);
-                    //
-                    //     if (ktxResult == KTX_SUCCESS) {
-                    //         newImage = processKtxVector(resourceManager, kTexture);
-                    //     }
-                    //
-                    //     ktxTexture2_Destroy(kTexture);
-                    // }
-                    // else {
                     stbiData = stbi_load(fullPath.string().c_str(), &width, &height, &nrChannels, 4);
-
-                    // }
                 },
                 [&](const fastgltf::sources::Array& vector) {
                     bool bPass = true;
                     if (vector.bytes.size() > 30) {
-                        // Minimum size for a meaningful check
                         std::string_view strData(reinterpret_cast<const char*>(vector.bytes.data()), std::min(size_t(100), vector.bytes.size()));
 
                         if (strData.find("https://git-lfs.github.com/spec") != std::string_view::npos) {
-                            LOG_ERROR("Git LFS pointer detected instead of actual texture data for image: {}. ""Please run 'git lfs pull' to retrieve the actual files.", gltfImage.name.c_str());
+                            LOG_ERROR("Git LFS pointer detected instead of actual texture data for image: {}. Please run 'git lfs pull' to retrieve the actual files.", gltfImage.name.c_str());
                             bPass = false;
                         }
                     }
@@ -820,123 +938,22 @@ void AssetLoadingThread::LoadGltfImages(UploadStaging& uploadStaging, const fast
                     if (bPass) {
                         stbiData = stbi_load_from_memory(reinterpret_cast<const unsigned char*>(vector.bytes.data()), static_cast<int>(vector.bytes.size()), &width, &height, &nrChannels, 4);
                     }
-
-                    //const int32_t ktxVersion = isKtxTexture(vector);
-                    //switch (ktxVersion) {
-                    // case 1:
-                    // {
-                    //     if (validateVector(vector, 0, vector.bytes.size())) {
-                    //         ktxTexture1* kTexture;
-                    //         const ktx_error_code_e ktxResult = ktxTexture1_CreateFromMemory(
-                    //             reinterpret_cast<const unsigned char*>(vector.bytes.data()),
-                    //             vector.bytes.size(),
-                    //             KTX_TEXTURE_CREATE_NO_FLAGS,
-                    //             &kTexture);
-                    //
-                    //
-                    //         if (ktxResult == KTX_SUCCESS) {
-                    //             newImage = processKtxVector(resourceManager, kTexture);
-                    //         }
-                    //
-                    //         ktxTexture1_Destroy(kTexture);
-                    //     }
-                    //     else {
-                    //         fmt::print("Error: Failed to validate vector data that contains ktx data\n");
-                    //     }
-                    // }
-                    // break;
-                    // case 2:
-                    // {
-                    //     if (validateVector(vector, 0, vector.bytes.size())) {
-                    //         ktxTexture2* kTexture;
-                    //
-                    //         const KTX_error_code ktxResult = ktxTexture2_CreateFromMemory(
-                    //             reinterpret_cast<const unsigned char*>(vector.bytes.data()),
-                    //             vector.bytes.size(),
-                    //             KTX_TEXTURE_CREATE_NO_FLAGS,
-                    //             &kTexture);
-                    //
-                    //         if (ktxResult == KTX_SUCCESS) {
-                    //             newImage = processKtxVector(resourceManager, kTexture);
-                    //         }
-                    //
-                    //         ktxTexture2_Destroy(kTexture);
-                    //     }
-                    // }
-                    // break;
-                    // default:
-                    // {
-                    // }
-                    // break;
-                    //}
                 },
                 [&](const fastgltf::sources::BufferView& view) {
                     const fastgltf::BufferView& bufferView = asset.bufferViews[view.bufferViewIndex];
                     const fastgltf::Buffer& buffer = asset.buffers[bufferView.bufferIndex];
-                    // We only care about VectorWithMime here, because we
-                    // specify LoadExternalBuffers, meaning all buffers
-                    // are already loaded into a vector.
+
                     std::visit(fastgltf::visitor{
                                    [](auto&) {},
                                    [&](const fastgltf::sources::Array& vector) {
-                                       // const int32_t ktxVersion = isKtxTexture(vector);
-                                       // switch (ktxVersion) {
-                                       //     case 1:
-                                       //     {
-                                       //         if (validateVector(vector, 0, vector.bytes.size())) {
-                                       //             ktxTexture1* kTexture;
-                                       //             const KTX_error_code ktxResult = ktxTexture1_CreateFromMemory(
-                                       //                 reinterpret_cast<const unsigned char*>(vector.bytes.data() + bufferView.byteOffset),
-                                       //                 bufferView.byteLength,
-                                       //                 KTX_TEXTURE_CREATE_NO_FLAGS,
-                                       //                 &kTexture);
-                                       //
-                                       //
-                                       //             if (ktxResult == KTX_SUCCESS) {
-                                       //                 newImage = processKtxVector(resourceManager, kTexture);
-                                       //             }
-                                       //
-                                       //             ktxTexture1_Destroy(kTexture);
-                                       //         }
-                                       //         else {
-                                       //             fmt::print("Error: Failed to validate vector data that contains ktx data\n");
-                                       //         }
-                                       //     }
-                                       //     break;
-                                       //     case 2:
-                                       //     {
-                                       //         if (validateVector(vector, 0, vector.bytes.size())) {
-                                       //             ktxTexture2* kTexture;
-                                       //
-                                       //             const KTX_error_code ktxResult = ktxTexture2_CreateFromMemory(
-                                       //                 reinterpret_cast<const unsigned char*>(vector.bytes.data() + bufferView.byteOffset),
-                                       //                 bufferView.byteLength,
-                                       //                 KTX_TEXTURE_CREATE_NO_FLAGS,
-                                       //                 &kTexture);
-                                       //
-                                       //             if (ktxResult == KTX_SUCCESS) {
-                                       //                 newImage = processKtxVector(resourceManager, kTexture);
-                                       //             }
-                                       //
-                                       //             ktxTexture2_Destroy(kTexture);
-                                       //         }
-                                       //         else {
-                                       //             fmt::print("Error: Failed to validate vector data that contains ktx data\n");
-                                       //         }
-                                       //     }
-                                       //     break;
-                                       //     default:
-                                       stbiData = stbi_load_from_memory(reinterpret_cast<const stbi_uc*>(vector.bytes.data() + bufferView.byteOffset), static_cast<int>(bufferView.byteLength), &width,
-                                                                        &height,
-                                                                        &nrChannels, 4);
-                                       //
-                                       //         break;
-                                       // }
+                                       stbiData = stbi_load_from_memory(
+                                           reinterpret_cast<const stbi_uc*>(vector.bytes.data() + bufferView.byteOffset),
+                                           static_cast<int>(bufferView.byteLength),
+                                           &width, &height, &nrChannels, 4);
                                    }
                                }, buffer.data);
                 }
             }, gltfImage.data);
-
 
         if (stbiData) {
             VkExtent3D imagesize;
@@ -945,20 +962,33 @@ void AssetLoadingThread::LoadGltfImages(UploadStaging& uploadStaging, const fast
             imagesize.depth = 1;
             const size_t size = width * height * 4;
 
-            OffsetAllocator::Allocation allocation = uploadStaging.stagingAllocator.allocate(size);
-            if (allocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
-                LOG_ERROR("Texture too large to fit in staging buffer. Increase staging buffer size or do not load this texture.");
-                CrashHandler::TriggerManualDump("Texture too large to fit in staging buffer. Increase staging buffer size or do not load this texture.");
-                outAllocatedImages.push_back(std::move(newImage));
+            if (size > STAGING_BUFFER_SIZE) {
+                LOG_WARN("[AssetLoadingThread::LoadGltfImages] Texture too large to fit in staging buffer: {}x{} ({}), using default error image", width, height, size);
+                stbi_image_free(stbiData);
+                stbiData = nullptr;
+                outAllocatedImages.push_back(AllocatedImage{}); // VK_NULL_HANDLE
                 continue;
             }
 
-            char* bufferOffset = static_cast<char*>(uploadStaging.stagingBuffer.allocationInfo.pMappedData) + allocation.offset;
+            OffsetAllocator::Allocation allocation = currentUploadStaging->stagingAllocator.allocate(size);
+            if (allocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
+                StartUploadStaging(*currentUploadStaging);
+                UploadStagingHandle uploadStagingHandle = GetAvailableStaging();
+                currentUploadStaging = &uploadStagingDatas[uploadStagingHandle.index];
+                uploadStagingHandles.push_back(uploadStagingHandle);
+
+                const VkCommandBufferBeginInfo cmdBeginInfo = VkHelpers::CommandBufferBeginInfo();
+                VK_CHECK(vkBeginCommandBuffer(currentUploadStaging->commandBuffer, &cmdBeginInfo));
+                allocation = currentUploadStaging->stagingAllocator.allocate(size);
+            }
+
+            char* bufferOffset = static_cast<char*>(currentUploadStaging->stagingBuffer.allocationInfo.pMappedData) + allocation.offset;
             memcpy(bufferOffset, stbiData, size);
 
-            VkImageCreateInfo imageCreateInfo = VkHelpers::ImageCreateInfo(VK_FORMAT_R8G8B8A8_UNORM, imagesize,
-                                                                           VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
-            // transfer src for mipmap only
+            VkImageCreateInfo imageCreateInfo = VkHelpers::ImageCreateInfo(
+                VK_FORMAT_R8G8B8A8_UNORM, imagesize,
+                VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
+
             newImage = VkResources::CreateAllocatedImage(context, imageCreateInfo);
 
             VkImageMemoryBarrier2 barrier = VkHelpers::ImageMemoryBarrier(
@@ -967,10 +997,11 @@ void AssetLoadingThread::LoadGltfImages(UploadStaging& uploadStaging, const fast
                 VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_UNDEFINED,
                 VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
             );
+
             VkDependencyInfo depInfo{.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
             depInfo.imageMemoryBarrierCount = 1;
             depInfo.pImageMemoryBarriers = &barrier;
-            vkCmdPipelineBarrier2(uploadStaging.commandBuffer, &depInfo);
+            vkCmdPipelineBarrier2(currentUploadStaging->commandBuffer, &depInfo);
 
             VkBufferImageCopy copyRegion = {};
             copyRegion.bufferOffset = allocation.offset;
@@ -982,14 +1013,8 @@ void AssetLoadingThread::LoadGltfImages(UploadStaging& uploadStaging, const fast
             copyRegion.imageSubresource.layerCount = 1;
             copyRegion.imageExtent = imagesize;
 
-            vkCmdCopyBufferToImage(uploadStaging.commandBuffer, uploadStaging.stagingBuffer.handle, newImage.handle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
+            vkCmdCopyBufferToImage(currentUploadStaging->commandBuffer, currentUploadStaging->stagingBuffer.handle, newImage.handle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
 
-            // todo: mipmapping
-            // if (mipmapped) {
-            //     vk_helpers::generateMipmaps(cmd, newImage->image, VkExtent2D{newImage->imageExtent.width, newImage->imageExtent.height});
-            // }
-            // else {
-            // }
             barrier = VkHelpers::ImageMemoryBarrier(
                 newImage.handle,
                 VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT),
@@ -998,7 +1023,8 @@ void AssetLoadingThread::LoadGltfImages(UploadStaging& uploadStaging, const fast
             );
             barrier.srcQueueFamilyIndex = context->transferQueueFamily;
             barrier.dstQueueFamilyIndex = context->graphicsQueueFamily;
-            vkCmdPipelineBarrier2(uploadStaging.commandBuffer, &depInfo);
+            vkCmdPipelineBarrier2(currentUploadStaging->commandBuffer, &depInfo);
+
             newImage.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
             stbi_image_free(stbiData);
@@ -1009,31 +1035,34 @@ void AssetLoadingThread::LoadGltfImages(UploadStaging& uploadStaging, const fast
     }
 }
 
-UploadStaging& AssetLoadingThread::GetAvailableTextureStaging()
+UploadStagingHandle AssetLoadingThread::GetAvailableStaging()
 {
-    for (uint32_t i = 0; i < ASSET_LOAD_ASYNC_COUNT; ++i) {
-        uint32_t checkIndex = (currentIndex + i) % ASSET_LOAD_ASYNC_COUNT;
-        auto& staging = uploadStagingDatas[checkIndex];
-
-        if (vkGetFenceStatus(context->device, staging.fence) == VK_SUCCESS) {
-            staging.stagingAllocator.reset();
-            VK_CHECK(vkResetFences(context->device, 1, &staging.fence));
-            VK_CHECK(vkResetCommandBuffer(staging.commandBuffer, 0));
-            uploadStagingGenerations[checkIndex].fetch_add(1);
-            currentIndex = checkIndex;
-            return staging;
-        }
+    UploadStagingHandle uploadStagingHandle = uploadStagingHandleAllocator.Add();
+    if (uploadStagingHandle.IsValid()) {
+        activeUploadHandles.push_back(uploadStagingHandle);
+        auto& stagingUpload = uploadStagingDatas[uploadStagingHandle.index];
+        stagingUpload.stagingAllocator.reset();
+        VK_CHECK(vkResetFences(context->device, 1, &stagingUpload.fence));
+        VK_CHECK(vkResetCommandBuffer(stagingUpload.commandBuffer, 0));
+        return uploadStagingHandle;
     }
 
-    // All busy, wait on next buffer
-    currentIndex = (currentIndex + 1) % ASSET_LOAD_ASYNC_COUNT;
-    auto& nextStaging = uploadStagingDatas[currentIndex];
-    vkWaitForFences(context->device, 1, &nextStaging.fence, true, UINT64_MAX);
-    nextStaging.stagingAllocator.reset();
-    VK_CHECK(vkResetFences(context->device, 1, &nextStaging.fence));
-    VK_CHECK(vkResetCommandBuffer(nextStaging.commandBuffer, 0));
-    uploadStagingGenerations[currentIndex].fetch_add(1);
-    return nextStaging;
+    // No available in list, wait for oldest upload staging to free up
+    UploadStagingHandle oldestHandle = activeUploadHandles.front();
+    auto& oldestStaging = uploadStagingDatas[oldestHandle.index];
+    vkWaitForFences(context->device, 1, &oldestStaging.fence, true, UINT64_MAX);
+    uploadStagingHandleAllocator.Remove(oldestHandle);
+    activeUploadHandles.erase(activeUploadHandles.begin());
+
+    uploadStagingHandle = uploadStagingHandleAllocator.Add();
+    activeUploadHandles.push_back(uploadStagingHandle);
+    assert(uploadStagingHandle.IsValid());
+
+    auto& stagingUpload = uploadStagingDatas[uploadStagingHandle.index];
+    stagingUpload.stagingAllocator.reset();
+    VK_CHECK(vkResetFences(context->device, 1, &stagingUpload.fence));
+    VK_CHECK(vkResetCommandBuffer(stagingUpload.commandBuffer, 0));
+    return uploadStagingHandle;
 }
 
 void AssetLoadingThread::TopologicalSortNodes(std::vector<Node>& nodes, std::vector<uint32_t>& oldToNew)

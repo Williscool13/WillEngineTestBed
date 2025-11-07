@@ -39,13 +39,14 @@ public:
 
     void ProcessOperations(char* pMappedData, uint32_t discardCount)
     {
+        uint32_t newCount = count;
+        uint32_t newTail = tail;
         for (size_t i = 0; i < count; ++i) {
             const uint32_t opIndex = (tail + i) % capacity;
             ModelMatrixOperation& op = buffer[opIndex];
 
             if (op.frames == 0) {
-                memcpy(pMappedData + op.index * sizeof(Model) + offsetof(Model, modelMatrix),
-                       &op.modelMatrix, sizeof(glm::mat4));
+                memcpy(pMappedData + op.index * sizeof(Model) + offsetof(Model, modelMatrix), &op.modelMatrix, sizeof(glm::mat4));
             }
             else {
                 memcpy(pMappedData + op.index * sizeof(Model) + offsetof(Model, prevModelMatrix), &op.modelMatrix, sizeof(glm::mat4));
@@ -54,10 +55,12 @@ public:
 
             op.frames++;
             if (op.frames == discardCount) {
-                tail = (tail + 1) % capacity;
-                count--;
+                newTail = (tail + 1) % capacity;
+                newCount--;
             }
         }
+        count = newCount;
+        tail = newTail;
     }
 
 private:
@@ -94,6 +97,8 @@ public:
 
     void ProcessOperations(char* pMappedData, uint32_t discardCount, uint32_t& highestInstanceIndex)
     {
+        uint32_t newCount = count;
+        uint32_t newTail = tail;
         for (size_t i = 0; i < count; ++i) {
             const uint32_t opIndex = (tail + i) % capacity;
             InstanceOperation& op = buffer[opIndex];
@@ -103,10 +108,12 @@ public:
 
             op.frames++;
             if (op.frames == discardCount) {
-                tail = (tail + 1) % capacity;
-                count--;
+                newTail = (newTail + 1) % capacity;
+                newCount--;
             }
         }
+        count = newCount;
+        tail = newTail;
     }
 
 private:
@@ -143,6 +150,8 @@ public:
 
     void ProcessOperations(char* pMappedData, uint32_t discardCount)
     {
+        uint32_t newCount = count;
+        uint32_t newTail = tail;
         for (size_t i = 0; i < count; ++i) {
             const uint32_t opIndex = (tail + i) % capacity;
             JointMatrixOperation& op = buffer[opIndex];
@@ -157,10 +166,12 @@ public:
 
             op.frames++;
             if (op.frames == discardCount) {
-                tail = (tail + 1) % capacity;
-                count--;
+                newTail = (newTail + 1) % capacity;
+                newCount--;
             }
         }
+        count = newCount;
+        tail = newTail;
     }
 
 private:

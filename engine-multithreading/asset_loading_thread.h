@@ -13,6 +13,7 @@
 #include "LockFreeQueue/LockFreeQueueCpp11.h"
 #include "render/render_constants.h"
 #include "render/model/model_data.h"
+#include "utils/handle_allocator.h"
 
 template<typename T>
 using LockFreeQueue = LockFreeQueueCpp11<T>;
@@ -64,19 +65,28 @@ private:
 
     std::atomic<bool> bShouldExit{false};
 
+    void CreateDefaultResources();
+
 private: // Staging data structures
     uint32_t currentIndex{0};
 
     VkCommandPool commandPool{};
     std::array<UploadStaging, ASSET_LOAD_ASYNC_COUNT> uploadStagingDatas;
-    std::array<std::atomic<uint32_t>, ASSET_LOAD_ASYNC_COUNT> uploadStagingGenerations{};
+    HandleAllocator<UploadStaging, ASSET_LOAD_ASYNC_COUNT> uploadStagingHandleAllocator{};
+    std::vector<UploadStagingHandle> activeUploadHandles;
 
-    bool IsUploadFinished(UploadStagingHandle uploadStagingHandle);
+
+    void RemoveFinishedUploadStaging(std::vector<UploadStagingHandle>& uploadStagingHandles);
+    bool IsUploadFinished(const std::vector<UploadStagingHandle>& uploadStagingHandles);
+    void ReleaseUploadStaging(std::vector<UploadStagingHandle>& uploadStagingHandles);
+    void StartUploadStaging(const UploadStaging& uploadStaging);
+    UploadStagingHandle GetAvailableStaging();
 
 private: // Texture loading
-    void LoadGltfImages(UploadStaging& uploadStaging, const fastgltf::Asset& asset, const std::filesystem::path& parentFolder, std::vector<AllocatedImage>& outAllocatedImages);
+    void LoadGltfImages(UploadStaging*& currentUploadStaging, std::vector<UploadStagingHandle>& uploadStagingHandles, const fastgltf::Asset& asset, const std::filesystem::path& parentFolder, std::vector<AllocatedImage>&
+                        outAllocatedImages);
 
-    UploadStaging& GetAvailableTextureStaging();
+
 
 private: // Nodes
     std::vector<Node> sortedNodes;

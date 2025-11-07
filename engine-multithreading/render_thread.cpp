@@ -32,7 +32,16 @@
 
 namespace Renderer
 {
-RenderThread::RenderThread() = default;
+RenderThread::RenderThread()
+{
+    indirectCountBuffers.reserve(3);
+    skeletalIndirectCountBuffers.reserve(3);
+    modelBuffers.reserve(3);
+    instanceBuffers.reserve(3);
+    jointMatrixBuffers.reserve(3);
+    sceneDataBuffers.reserve(3);
+    frameSynchronization.reserve(3);
+}
 
 RenderThread::~RenderThread()
 {
@@ -61,35 +70,33 @@ void RenderThread::Initialize(EngineMultithreading* engineMultithreading_, SDL_W
         renderTargets = std::make_unique<RenderTargets>(vulkanContext.get(), w, h);
         resourceManager = std::make_unique<ResourceManager>(vulkanContext.get());
         Input::Input::Get().Init(window, swapchain->extent.width, swapchain->extent.height);
-
-
-        VkBufferCreateInfo bufferInfo = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
-        bufferInfo.pNext = nullptr;
-        VmaAllocationCreateInfo vmaAllocInfo = {};
-        vmaAllocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
-        vmaAllocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
-        bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
-        bufferInfo.size = sizeof(SceneData);
-
-        sceneDataBuffers.reserve(swapchain->imageCount);
-        frameSynchronization.reserve(swapchain->imageCount);
-        for (int32_t i = 0; i < swapchain->imageCount; ++i) {
-            frameSynchronization.emplace_back(vulkanContext.get());
-            frameSynchronization.back().Initialize();
-
-            sceneDataBuffers.push_back(std::move(VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo)));
-        }
     }
 
-    InitializeBuffers();
+    renderBufferCount = swapchain->imageCount;
+    CreateBuffers(renderBufferCount);
     InitializeResources();
 }
 
-void RenderThread::InitializeBuffers()
+void RenderThread::CreateBuffers(uint32_t count)
 {
     VkBufferCreateInfo bufferInfo = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
     bufferInfo.pNext = nullptr;
     VmaAllocationCreateInfo vmaAllocInfo = {};
+    vmaAllocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+    vmaAllocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+    bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
+    bufferInfo.size = sizeof(SceneData);
+
+    // Assume that even if swapchain is remade, imageCount will be exactly the same.
+    //todo: runtime make it easy to change between 2buff and 3buff
+
+    for (int32_t i = 0; i < count; ++i) {
+        frameSynchronization.emplace_back(vulkanContext.get());
+        frameSynchronization.back().Initialize();
+
+        sceneDataBuffers.push_back(std::move(VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo)));
+    }
+
     vmaAllocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
     vmaAllocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
@@ -101,12 +108,7 @@ void RenderThread::InitializeBuffers()
     bufferInfo.size = sizeof(VkDrawIndexedIndirectCommand) * BINDLESS_INSTANCE_COUNT;
     opaqueSkeletalIndexedIndirectBuffer = VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
 
-    indirectCountBuffers.reserve(swapchain->imageCount);
-    skeletalIndirectCountBuffers.reserve(swapchain->imageCount);
-    modelBuffers.reserve(swapchain->imageCount);
-    instanceBuffers.reserve(swapchain->imageCount);
-    jointMatrixBuffers.reserve(swapchain->imageCount);
-    for (int32_t i = 0; i < swapchain->imageCount; ++i) {
+    for (int32_t i = 0; i < count; ++i) {
         bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
         bufferInfo.size = sizeof(IndirectCount);
         indirectCountBuffers.push_back(VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo));
@@ -216,7 +218,7 @@ void RenderThread::ThreadMain()
         if (bShouldExit.load()) { break; }
 
         const uint32_t currentGameFrameInFlight = frameNumber % Core::FRAMES_IN_FLIGHT;
-        const uint32_t currentRenderFrameInFlight = frameNumber % swapchain->imageCount;
+        const uint32_t currentRenderFrameInFlight = frameNumber % renderBufferCount;
         FrameBuffer& currentFrameBuffer = engineMultithreading->frameBuffers[currentGameFrameInFlight];
         FrameSynchronization& currentFrameSynchronization = frameSynchronization[currentRenderFrameInFlight];
 
@@ -255,15 +257,15 @@ void RenderThread::ProcessOperations(FrameBuffer& currentFrameBuffer, uint32_t c
 
     modelMatrixOperationRingBuffer.Enqueue(currentFrameBuffer.modelMatrixOperations);
     currentFrameBuffer.modelMatrixOperations.clear();
-    modelMatrixOperationRingBuffer.ProcessOperations(static_cast<char*>(currentModelBuffer.allocationInfo.pMappedData), swapchain->imageCount + 1);
+    modelMatrixOperationRingBuffer.ProcessOperations(static_cast<char*>(currentModelBuffer.allocationInfo.pMappedData), renderBufferCount + 1);
 
     instanceOperationRingBuffer.Enqueue(currentFrameBuffer.instanceOperations);
     currentFrameBuffer.instanceOperations.clear();
-    instanceOperationRingBuffer.ProcessOperations(static_cast<char*>(currentInstanceBuffer.allocationInfo.pMappedData), swapchain->imageCount, highestInstanceIndex);
+    instanceOperationRingBuffer.ProcessOperations(static_cast<char*>(currentInstanceBuffer.allocationInfo.pMappedData), renderBufferCount, highestInstanceIndex);
 
     jointMatrixOperationRingBuffer.Enqueue(currentFrameBuffer.jointMatrixOperations);
     currentFrameBuffer.jointMatrixOperations.clear();
-    jointMatrixOperationRingBuffer.ProcessOperations(static_cast<char*>(currentJointMatrixBuffers.allocationInfo.pMappedData), swapchain->imageCount + 1);
+    jointMatrixOperationRingBuffer.ProcessOperations(static_cast<char*>(currentJointMatrixBuffers.allocationInfo.pMappedData), renderBufferCount + 1);
 }
 
 RenderThread::RenderResponse RenderThread::Render(uint32_t currentRenderFrameInFlight, FrameSynchronization& currentFrameData, FrameBuffer& currentFrameBuffer)

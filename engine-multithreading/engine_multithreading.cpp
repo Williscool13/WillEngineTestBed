@@ -90,9 +90,6 @@ void EngineMultithreading::Run()
         renderFrames.release();
         frameNumber++;
     }
-
-    renderThread.Join();
-    assetLoadingThread.Join();
 }
 
 void EngineMultithreading::ThreadMain()
@@ -176,6 +173,14 @@ void EngineMultithreading::ThreadMain()
             LOG_INFO("Sent upload command to the GPU");
         }
     }
+    if (input.IsKeyPressed(Key::W)) {
+        if (structureModelEntryHandle != Renderer::ModelEntryHandle::Invalid && structureRuntimeMesh.modelEntryHandle == Renderer::ModelEntryHandle::Invalid) {
+            structureRuntimeMesh = GenerateModel(structureModelEntryHandle, Transform::Identity);
+            UpdateTransforms(structureRuntimeMesh.nodes, structureRuntimeMesh.transform);
+            InitialUploadRuntimeMesh(structureRuntimeMesh, currentFrameBuffer.modelMatrixOperations, currentFrameBuffer.instanceOperations, currentFrameBuffer.jointMatrixOperations);
+            LOG_INFO("Sent upload command to the GPU");
+        }
+    }
 
     static bool bStartMoving = false;
     if (input.IsKeyPressed(Key::A)) {
@@ -216,6 +221,9 @@ void EngineMultithreading::ThreadMain()
 
 void EngineMultithreading::Cleanup()
 {
+    renderThread.Join();
+    assetLoadingThread.Join();
+
     SDL_DestroyWindow(window);
 }
 

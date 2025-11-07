@@ -49,7 +49,7 @@ public:
 
     void Initialize(EngineMultithreading* engineMultithreading_, SDL_Window* window_, uint32_t w, uint32_t h);
 
-    void InitializeBuffers();
+    void CreateBuffers(uint32_t count);
 
     void InitializeResources();
 
@@ -101,6 +101,9 @@ private:
 
 private: // Frame Draw Resources
     uint64_t frameNumber{0};
+
+
+    uint32_t renderBufferCount{0};
     std::vector<FrameSynchronization> frameSynchronization;
 
     std::vector<AllocatedBuffer> sceneDataBuffers;
