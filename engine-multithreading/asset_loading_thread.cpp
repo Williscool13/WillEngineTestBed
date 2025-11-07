@@ -79,16 +79,7 @@ void AssetLoadingThread::ThreadMain()
     Utils::SetThreadName("Asset Loading Thread");
 
     while (!bShouldExit.load()) {
-        AssetLoadRequest loadRequest;
-        while (requestQueue.pop(loadRequest)) {
-            ModelEntryHandle newModelHandle = LoadGltf(loadRequest.path);
-            if (newModelHandle == ModelEntryHandle::Invalid) {
-                completeQueue.push({newModelHandle, std::move(loadRequest.onComplete)});
-            }
-            else {
-                modelsInProgress.push_back({newModelHandle, std::move(loadRequest.onComplete)});
-            }
-        }
+        bool didWork = false;
 
         for (int i = static_cast<int>(modelsInProgress.size()) - 1; i >= 0; --i) {
             AssetLoadInProgress& inProgress = modelsInProgress[i];
@@ -97,6 +88,7 @@ void AssetLoadingThread::ThreadMain()
             if (!modelEntry) {
                 LOG_ERROR("Model handle became invalid while loading");
                 modelsInProgress.erase(modelsInProgress.begin() + i);
+                didWork = true;
                 continue;
             }
 
@@ -109,27 +101,47 @@ void AssetLoadingThread::ThreadMain()
                     modelEntry->loadEndTime = std::chrono::steady_clock::now();
                     modelEntry->state.store(ModelEntry::State::Ready);
 
-                    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(modelEntry->loadEndTime - modelEntry->loadStartTime);
-                    LOG_INFO("[Asset Loading Thread] Model '{}' loaded in {} ms", modelEntry->data.name, duration.count());
+                    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(modelEntry->loadEndTime - modelEntry->loadStartTime);
+                    LOG_INFO("[Asset Loading Thread] Model '{}' loaded in {:.3f} ms", modelEntry->data.name, duration.count() / 1000.0);
                 }
 
                 completeQueue.push({inProgress.modelEntryHandle, std::move(inProgress.onComplete)});
                 modelsInProgress.erase(modelsInProgress.begin() + i);
-                // todo: add acquire barrier command list to be sent from the game thread to the render thread
+                didWork = true;
             }
+        }
+
+        if (uploadStagingHandleAllocator.IsAnyFree()) {
+            AssetLoadRequest loadRequest;
+            while (requestQueue.pop(loadRequest)) {
+                ModelEntryHandle newModelHandle = LoadGltf(loadRequest.path);
+                if (newModelHandle == ModelEntryHandle::Invalid) {
+                    completeQueue.push({newModelHandle, std::move(loadRequest.onComplete)});
+                }
+                else {
+                    modelsInProgress.push_back({newModelHandle, std::move(loadRequest.onComplete)});
+                }
+                didWork = true;
+            }
+        }
+
+        if (!didWork) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
     }
 }
+
 
 void AssetLoadingThread::RequestLoad(const std::filesystem::path& path, const std::function<void(ModelEntryHandle)>& callback)
 {
     requestQueue.push({path, callback});
 }
 
-void AssetLoadingThread::ResolveLoads()
+void AssetLoadingThread::ResolveLoads(std::vector<ModelEntryHandle>& loadedModelsToAcquire)
 {
     AssetLoadComplete loadComplete{};
     while (completeQueue.pop(loadComplete)) {
+        loadedModelsToAcquire.push_back(loadComplete.handle);
         loadComplete.onComplete(loadComplete.handle);
     }
 }
@@ -145,6 +157,7 @@ ModelEntryHandle AssetLoadingThread::LoadGltf(const std::filesystem::path& path)
     ModelEntry* newModel = models.Get(newModelHandle);
     newModel->refCount = 1;
     newModel->loadStartTime = std::chrono::steady_clock::now();
+    newModel->modelAcquires.bRequiresAcquisition = true;
 
     fastgltf::Parser parser{fastgltf::Extensions::KHR_texture_basisu | fastgltf::Extensions::KHR_mesh_quantization | fastgltf::Extensions::KHR_texture_transform};
     constexpr auto gltfOptions = fastgltf::Options::DontRequireValidAssetMember
@@ -591,7 +604,7 @@ ModelEntryHandle AssetLoadingThread::LoadGltf(const std::filesystem::path& path)
     VK_CHECK(vkBeginCommandBuffer(currentUploadStaging->commandBuffer, &cmdBeginInfo));
 
     newModel->data.images.reserve(gltf.images.size());
-    LoadGltfImages(currentUploadStaging, newModel->uploadStagingHandles, gltf, path.parent_path(), newModel->data.images);
+    LoadGltfImages(newModel, currentUploadStaging, newModel->uploadStagingHandles, gltf, path.parent_path());
 
     newModel->data.imageViews.reserve(gltf.images.size());
     for (const AllocatedImage& image : newModel->data.images) {
@@ -674,6 +687,19 @@ ModelEntryHandle AssetLoadingThread::LoadGltf(const std::filesystem::path& path)
         depInfo.bufferMemoryBarrierCount = 1;
         depInfo.pBufferMemoryBarriers = &vertexBarrier;
         vkCmdPipelineBarrier2(currentUploadStaging->commandBuffer, &depInfo);
+        newModel->modelAcquires.bufferAcquireOps.push_back(VkHelpers::BufferMemoryBarrier(
+                resourceManager->megaVertexBuffer.handle,
+                newModel->data.vertexAllocation.offset,
+                sizeVertices,
+                VK_PIPELINE_STAGE_2_NONE,
+                VK_ACCESS_2_NONE,
+                VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT,
+                VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT
+            )
+        );
+        VkBufferMemoryBarrier2& acquireBarrier = newModel->modelAcquires.bufferAcquireOps.back();
+        acquireBarrier.srcQueueFamilyIndex = context->transferQueueFamily;
+        acquireBarrier.dstQueueFamilyIndex = context->graphicsQueueFamily;
     }
 
     // Indices
@@ -716,6 +742,18 @@ ModelEntryHandle AssetLoadingThread::LoadGltf(const std::filesystem::path& path)
         depInfo.bufferMemoryBarrierCount = 1;
         depInfo.pBufferMemoryBarriers = &indexBarrier;
         vkCmdPipelineBarrier2(currentUploadStaging->commandBuffer, &depInfo);
+        newModel->modelAcquires.bufferAcquireOps.push_back(VkHelpers::BufferMemoryBarrier(
+            resourceManager->megaIndexBuffer.handle,
+            newModel->data.indexAllocation.offset,
+            sizeIndices,
+            VK_PIPELINE_STAGE_2_NONE,
+            VK_ACCESS_2_NONE,
+            VK_PIPELINE_STAGE_2_INDEX_INPUT_BIT,
+            VK_ACCESS_2_INDEX_READ_BIT
+        ));
+        VkBufferMemoryBarrier2& acquireBarrier = newModel->modelAcquires.bufferAcquireOps.back();
+        acquireBarrier.srcQueueFamilyIndex = context->transferQueueFamily;
+        acquireBarrier.dstQueueFamilyIndex = context->graphicsQueueFamily;
     }
 
 
@@ -759,6 +797,18 @@ ModelEntryHandle AssetLoadingThread::LoadGltf(const std::filesystem::path& path)
         depInfo.bufferMemoryBarrierCount = 1;
         depInfo.pBufferMemoryBarriers = &materialBarrier;
         vkCmdPipelineBarrier2(currentUploadStaging->commandBuffer, &depInfo);
+        newModel->modelAcquires.bufferAcquireOps.push_back(VkHelpers::BufferMemoryBarrier(
+            resourceManager->materialBuffer.handle,
+            newModel->data.materialAllocation.offset,
+            sizeMaterials,
+            VK_PIPELINE_STAGE_2_NONE,
+            VK_ACCESS_2_NONE,
+            VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+            VK_ACCESS_2_SHADER_STORAGE_READ_BIT
+        ));
+        VkBufferMemoryBarrier2& acquireBarrier = newModel->modelAcquires.bufferAcquireOps.back();
+        acquireBarrier.srcQueueFamilyIndex = context->transferQueueFamily;
+        acquireBarrier.dstQueueFamilyIndex = context->graphicsQueueFamily;
     }
 
 
@@ -817,6 +867,19 @@ ModelEntryHandle AssetLoadingThread::LoadGltf(const std::filesystem::path& path)
         depInfo.bufferMemoryBarrierCount = 1;
         depInfo.pBufferMemoryBarriers = &primitiveBarrier;
         vkCmdPipelineBarrier2(currentUploadStaging->commandBuffer, &depInfo);
+        newModel->modelAcquires.bufferAcquireOps.push_back(VkHelpers::BufferMemoryBarrier(
+                resourceManager->primitiveBuffer.handle,
+                newModel->data.primitiveAllocation.offset,
+                sizePrimitives,
+                VK_PIPELINE_STAGE_2_NONE,
+                VK_ACCESS_2_NONE,
+                VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+                VK_ACCESS_2_SHADER_STORAGE_READ_BIT
+            )
+        );
+        VkBufferMemoryBarrier2& acquireBarrier = newModel->modelAcquires.bufferAcquireOps.back();
+        acquireBarrier.srcQueueFamilyIndex = context->transferQueueFamily;
+        acquireBarrier.dstQueueFamilyIndex = context->graphicsQueueFamily;
     }
 
 
@@ -841,10 +904,24 @@ void AssetLoadingThread::UnloadModel(ModelEntryHandle handle)
 ModelData* AssetLoadingThread::GetModelData(ModelEntryHandle handle)
 {
     ModelEntry* modelEntry = models.Get(handle);
-    if (modelEntry->state != ModelEntry::State::Ready) {
+    if (modelEntry->state.load(std::memory_order::memory_order_acquire) != ModelEntry::State::Ready) {
         return nullptr;
     }
     return &modelEntry->data;
+}
+
+ModelAcquires* AssetLoadingThread::GetModelAcquires(ModelEntryHandle handle)
+{
+    ModelEntry* modelEntry = models.Get(handle);
+    if (modelEntry->state.load(std::memory_order::memory_order_acquire) != ModelEntry::State::Ready) {
+        return nullptr;
+    }
+
+    if (!modelEntry->modelAcquires.bRequiresAcquisition) {
+        return nullptr;
+    }
+
+    return &modelEntry->modelAcquires;
 }
 
 void AssetLoadingThread::CreateDefaultResources()
@@ -902,8 +979,8 @@ void AssetLoadingThread::StartUploadStaging(const UploadStaging& uploadStaging)
     VK_CHECK(vkQueueSubmit2(context->transferQueue, 1, &submitInfo, uploadStaging.fence));
 }
 
-void AssetLoadingThread::LoadGltfImages(UploadStaging*& currentUploadStaging, std::vector<UploadStagingHandle>& uploadStagingHandles,
-                                        const fastgltf::Asset& asset, const std::filesystem::path& parentFolder, std::vector<AllocatedImage>& outAllocatedImages)
+void AssetLoadingThread::LoadGltfImages(ModelEntry* newModelEntry, UploadStaging*& currentUploadStaging, std::vector<UploadStagingHandle>& uploadStagingHandles, const fastgltf::Asset& asset,
+                                        const std::filesystem::path& parentFolder)
 {
     unsigned char* stbiData{nullptr};
     int32_t width{};
@@ -966,7 +1043,7 @@ void AssetLoadingThread::LoadGltfImages(UploadStaging*& currentUploadStaging, st
                 LOG_WARN("[AssetLoadingThread::LoadGltfImages] Texture too large to fit in staging buffer: {}x{} ({}), using default error image", width, height, size);
                 stbi_image_free(stbiData);
                 stbiData = nullptr;
-                outAllocatedImages.push_back(AllocatedImage{}); // VK_NULL_HANDLE
+                newModelEntry->data.images.push_back(AllocatedImage{}); // VK_NULL_HANDLE
                 continue;
             }
 
@@ -1024,14 +1101,23 @@ void AssetLoadingThread::LoadGltfImages(UploadStaging*& currentUploadStaging, st
             barrier.srcQueueFamilyIndex = context->transferQueueFamily;
             barrier.dstQueueFamilyIndex = context->graphicsQueueFamily;
             vkCmdPipelineBarrier2(currentUploadStaging->commandBuffer, &depInfo);
-
+            newModelEntry->modelAcquires.imageAcquireOps.push_back(
+                VkHelpers::ImageMemoryBarrier(
+                    newImage.handle,
+                    VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT),
+                    VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                    VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+                ));
+            VkImageMemoryBarrier2& acquireBarrier = newModelEntry->modelAcquires.imageAcquireOps.back();
+            acquireBarrier.srcQueueFamilyIndex = context->transferQueueFamily;
+            acquireBarrier.dstQueueFamilyIndex = context->graphicsQueueFamily;
             newImage.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
             stbi_image_free(stbiData);
             stbiData = nullptr;
         }
 
-        outAllocatedImages.push_back(std::move(newImage));
+        newModelEntry->data.images.push_back(std::move(newImage));
     }
 }
 

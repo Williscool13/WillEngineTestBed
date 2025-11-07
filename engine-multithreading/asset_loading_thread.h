@@ -22,6 +22,7 @@ namespace Renderer
 {
 class ResourceManager;
 
+
 class AssetLoadingThread
 {
 public:
@@ -51,13 +52,15 @@ private: // Threading
 public:
     void RequestLoad(const std::filesystem::path& path, const std::function<void(ModelEntryHandle)>& callback);
 
-    void ResolveLoads();
+    void ResolveLoads(std::vector<ModelEntryHandle>& loadedModelsToAcquire);
 
     ModelEntryHandle LoadGltf(const std::filesystem::path& path);
 
     void UnloadModel(ModelEntryHandle handle);
 
     ModelData* GetModelData(ModelEntryHandle handle);
+
+    ModelAcquires* GetModelAcquires(ModelEntryHandle handle);
 
 private:
     VulkanContext* context{};
@@ -83,8 +86,7 @@ private: // Staging data structures
     UploadStagingHandle GetAvailableStaging();
 
 private: // Texture loading
-    void LoadGltfImages(UploadStaging*& currentUploadStaging, std::vector<UploadStagingHandle>& uploadStagingHandles, const fastgltf::Asset& asset, const std::filesystem::path& parentFolder, std::vector<AllocatedImage>&
-                        outAllocatedImages);
+    void LoadGltfImages(ModelEntry* newModelEntry, UploadStaging*& currentUploadStaging, std::vector<UploadStagingHandle>& uploadStagingHandles, const fastgltf::Asset& asset, const std::filesystem::path& parentFolder);
 
 
 

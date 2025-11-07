@@ -26,20 +26,21 @@ using UploadStagingHandle = Handle<UploadStaging>;
 struct ModelEntry
 {
     enum State { Loading, Ready };
-
-    ModelData data{};
-    uint32_t refCount = 0;
+    /**
+     * When entry is marked as `Ready`, asset thread will not modify the contents of this struct further.
+     */
     std::atomic<State> state{};
 
-    bool bRequiresAcquisition{false};
-    std::vector<BufferAcquireOperation> bufferAcquireOps{};
-    std::vector<ImageAcquireOperation> imageAcquireOps{};
+    // Inserted into by asset loading thread. Used by game thread
+    ModelData data{};
+    ModelAcquires modelAcquires{};
+
 
     // Only accessed by asset loading thread
+    uint32_t refCount = 0;
     std::vector<UploadStagingHandle> uploadStagingHandles;
     std::chrono::steady_clock::time_point loadStartTime;
     std::chrono::steady_clock::time_point loadEndTime;
-
 
     ModelEntry() = default;
 

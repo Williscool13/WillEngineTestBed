@@ -86,6 +86,7 @@ public:
     std::counting_semaphore<Core::FRAMES_IN_FLIGHT> renderFrames{0};
 
     std::array<Renderer::FrameBuffer, Core::FRAMES_IN_FLIGHT> frameBuffers{};
+    std::vector<Renderer::ModelEntryHandle> loadedModelsToAcquire;
 
 private:
     std::chrono::time_point<std::chrono::steady_clock> start{};

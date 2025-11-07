@@ -40,6 +40,8 @@ void EngineMultithreading::Initialize()
     assetLoadingThread.Initialize(renderThread.GetVulkanContext(), renderThread.GetResourceManager());
 
     Input::Get().Init(window, Core::DEFAULT_WINDOW_WIDTH, Core::DEFAULT_WINDOW_HEIGHT);
+
+    loadedModelsToAcquire.reserve(10);
 }
 
 void EngineMultithreading::Run()
@@ -82,8 +84,7 @@ void EngineMultithreading::Run()
         //
         {
             //LOG_INFO("[Game Thread] Processed frame {}", frameNumber);
-            assetLoadingThread.ResolveLoads();
-
+            assetLoadingThread.ResolveLoads(loadedModelsToAcquire);
             ThreadMain();
         }
 
@@ -104,15 +105,36 @@ void EngineMultithreading::ThreadMain()
     uint32_t currentFrameInFlight = frameNumber % Core::FRAMES_IN_FLIGHT;
     Renderer::FrameBuffer& currentFrameBuffer = frameBuffers[currentFrameInFlight];
 
+    for (Renderer::ModelEntryHandle loadedModel : loadedModelsToAcquire) {
+        if (Renderer::ModelAcquires* modelAcquires = assetLoadingThread.GetModelAcquires(loadedModel)) {
+            currentFrameBuffer.bufferAcquireOperations.insert(
+                currentFrameBuffer.bufferAcquireOperations.end(),
+                modelAcquires->bufferAcquireOps.begin(),
+                modelAcquires->bufferAcquireOps.end()
+            );
+            modelAcquires->bufferAcquireOps.clear();
+
+            currentFrameBuffer.imageAcquireOperations.insert(
+                currentFrameBuffer.imageAcquireOperations.end(),
+                modelAcquires->imageAcquireOps.begin(),
+                modelAcquires->imageAcquireOps.end()
+            );
+            modelAcquires->imageAcquireOps.clear();
+
+            modelAcquires->bRequiresAcquisition = false;
+        }
+    }
+
+
     if (input.IsKeyPressed(Key::NUM_1)) {
         auto suzannePath = std::filesystem::path("../assets/Suzanne/glTF/Suzanne.gltf");
         assetLoadingThread.RequestLoad(suzannePath, [this](Renderer::ModelEntryHandle handle) {
             if (handle == Renderer::ModelEntryHandle::Invalid) {
-                LOG_ERROR("Failed to load Suzanne model");
+                LOG_ERROR("Failed to load 'Suzanne'");
                 return;
             }
 
-            LOG_INFO("Successfully to load Suzanne model");
+            LOG_INFO("Successfully loaded 'Suzanne'");
             suzanneModelEntryHandle = handle;
 
             // Model is loaded and ready to use
@@ -127,11 +149,11 @@ void EngineMultithreading::ThreadMain()
         auto structurePath = std::filesystem::path("../assets/structure.glb");
         assetLoadingThread.RequestLoad(structurePath, [this](Renderer::ModelEntryHandle handle) {
             if (handle == Renderer::ModelEntryHandle::Invalid) {
-                LOG_ERROR("Failed to load Structure model");
+                LOG_ERROR("Failed to load 'Structure model'");
                 return;
             }
 
-            LOG_INFO("Successfully to load Structure model");
+            LOG_INFO("Successfully loaded 'Structure model'");
 
             structureModelEntryHandle = handle;
         });
@@ -141,11 +163,11 @@ void EngineMultithreading::ThreadMain()
 
         assetLoadingThread.RequestLoad(riggedFigurePath, [this](Renderer::ModelEntryHandle handle) {
             if (handle == Renderer::ModelEntryHandle::Invalid) {
-                LOG_ERROR("Failed to load Rigged Figure model");
+                LOG_ERROR("Failed to load 'Rigged Figure'");
                 return;
             }
 
-            LOG_INFO("Successfully to load Rigged Figure model");
+            LOG_INFO("Successfully loaded 'Rigged Figure'");
 
             riggedFigureModelEntryHandle = handle;
         });
@@ -155,11 +177,11 @@ void EngineMultithreading::ThreadMain()
 
         assetLoadingThread.RequestLoad(boxPath, [this](Renderer::ModelEntryHandle handle) {
             if (handle == Renderer::ModelEntryHandle::Invalid) {
-                LOG_ERROR("Failed to load Textured Box model");
+                LOG_ERROR("Failed to load 'Textured Box model'");
                 return;
             }
 
-            LOG_INFO("Successfully to load Textured Box model");
+            LOG_INFO("Successfully loaded 'Textured Box'");
 
             texturedBoxModelEntryHandle = handle;
         });
@@ -170,7 +192,7 @@ void EngineMultithreading::ThreadMain()
             suzanneRuntimeMesh = GenerateModel(suzanneModelEntryHandle, Transform::Identity);
             UpdateTransforms(suzanneRuntimeMesh.nodes, suzanneRuntimeMesh.transform);
             InitialUploadRuntimeMesh(suzanneRuntimeMesh, currentFrameBuffer.modelMatrixOperations, currentFrameBuffer.instanceOperations, currentFrameBuffer.jointMatrixOperations);
-            LOG_INFO("Sent upload command to the GPU");
+            LOG_INFO("Sent Suzanne to be drawn by GPU");
         }
     }
     if (input.IsKeyPressed(Key::W)) {
@@ -178,7 +200,7 @@ void EngineMultithreading::ThreadMain()
             structureRuntimeMesh = GenerateModel(structureModelEntryHandle, Transform::Identity);
             UpdateTransforms(structureRuntimeMesh.nodes, structureRuntimeMesh.transform);
             InitialUploadRuntimeMesh(structureRuntimeMesh, currentFrameBuffer.modelMatrixOperations, currentFrameBuffer.instanceOperations, currentFrameBuffer.jointMatrixOperations);
-            LOG_INFO("Sent upload command to the GPU");
+            LOG_INFO("Sent Structure to be drawn by GPU");
         }
     }
 

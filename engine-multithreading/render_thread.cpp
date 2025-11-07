@@ -207,7 +207,7 @@ void RenderThread::ThreadMain()
             std::array<uint32_t, 2> newExtents = renderContext->GetRenderExtent();
             renderTargets->Recreate(newExtents[0], newExtents[1]);
 
-            // // Upload to descriptor buffer
+            // Upload to descriptor buffer
             VkDescriptorImageInfo drawDescriptorInfo;
             drawDescriptorInfo.imageView = renderTargets->drawImageView.handle;
             drawDescriptorInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
@@ -222,11 +222,9 @@ void RenderThread::ThreadMain()
         FrameBuffer& currentFrameBuffer = engineMultithreading->frameBuffers[currentGameFrameInFlight];
         FrameSynchronization& currentFrameSynchronization = frameSynchronization[currentRenderFrameInFlight];
 
-
+        auto frameStartTime = std::chrono::high_resolution_clock::now();
         // Wait for the GPU to finish the last frame that used this frame-in-flight's resources (N - imageCount).
         VK_CHECK(vkWaitForFences(vulkanContext->device, 1, &currentFrameSynchronization.renderFence, true, 1000000000));
-
-        auto frameStartTime = std::chrono::high_resolution_clock::now();
 
         ProcessOperations(currentFrameBuffer, currentRenderFrameInFlight);
         RenderResponse renderResponse = Render(currentRenderFrameInFlight, currentFrameSynchronization, currentFrameBuffer);
@@ -249,6 +247,27 @@ void RenderThread::ThreadMain()
     vkDeviceWaitIdle(vulkanContext->device);
 }
 
+void RenderThread::ProcessAcquisitions(VkCommandBuffer cmd, FrameBuffer& currentFrameBuffer)
+{
+    if (currentFrameBuffer.bufferAcquireOperations.empty() && currentFrameBuffer.imageAcquireOperations.empty()) {
+        return;
+    }
+
+    VkDependencyInfo depInfo{};
+    depInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+    depInfo.pNext = nullptr;
+    depInfo.dependencyFlags = 0;
+    depInfo.bufferMemoryBarrierCount = currentFrameBuffer.bufferAcquireOperations.size();
+    depInfo.pBufferMemoryBarriers = currentFrameBuffer.bufferAcquireOperations.data();
+    depInfo.imageMemoryBarrierCount = currentFrameBuffer.imageAcquireOperations.size();
+    depInfo.pImageMemoryBarriers = currentFrameBuffer.imageAcquireOperations.data();
+    vkCmdPipelineBarrier2(cmd, &depInfo);
+
+
+    currentFrameBuffer.bufferAcquireOperations.clear();
+    currentFrameBuffer.imageAcquireOperations.clear();
+}
+
 void RenderThread::ProcessOperations(FrameBuffer& currentFrameBuffer, uint32_t currentFrameInFlight)
 {
     const AllocatedBuffer& currentModelBuffer = modelBuffers[currentFrameInFlight];
@@ -268,28 +287,31 @@ void RenderThread::ProcessOperations(FrameBuffer& currentFrameBuffer, uint32_t c
     jointMatrixOperationRingBuffer.ProcessOperations(static_cast<char*>(currentJointMatrixBuffers.allocationInfo.pMappedData), renderBufferCount + 1);
 }
 
-RenderThread::RenderResponse RenderThread::Render(uint32_t currentRenderFrameInFlight, FrameSynchronization& currentFrameData, FrameBuffer& currentFrameBuffer)
+RenderThread::RenderResponse RenderThread::Render(uint32_t currentRenderFrameInFlight, FrameSynchronization& currentFrameSynchronization, FrameBuffer& currentFrameBuffer)
 {
+    // Un-signal fence, essentially saying "I'm using this frame-in-flight's resources, hands off".
+    VK_CHECK(vkResetFences(vulkanContext->device, 1, &currentFrameSynchronization.renderFence));
+
     //auto timer = Utils::ScopedTimer(fmt::format("[Render Thread] Frame time (Frame {})", frameNumber));
     std::array<uint32_t, 2> scaledRenderExtent = renderContext->GetScaledRenderExtent();
     uint32_t swapchainImageIndex;
+
     // (Non-Blocking) Acquire swapchain image index. Signal semaphore when the actual image is ready for use.
-    VkResult e = vkAcquireNextImageKHR(vulkanContext->device, swapchain->handle, 1000000000, currentFrameData.swapchainSemaphore, nullptr, &swapchainImageIndex);
+    VkResult e = vkAcquireNextImageKHR(vulkanContext->device, swapchain->handle, 1000000000, currentFrameSynchronization.swapchainSemaphore, nullptr, &swapchainImageIndex);
     if (e == VK_ERROR_OUT_OF_DATE_KHR || e == VK_SUBOPTIMAL_KHR) {
         LOG_WARN("Swapchain out of date or suboptimal (Acquire)");
         return RenderResponse::SWAPCHAIN_OUTDATED;
     }
 
-    // Un-signal fence, essentially saying "I'm using this frame-in-flight's resources, hands off".
-    VK_CHECK(vkResetFences(vulkanContext->device, 1, &currentFrameData.renderFence));
-
     VkImage currentSwapchainImage = swapchain->swapchainImages[swapchainImageIndex];
     VkImageView currentSwapchainImageView = swapchain->swapchainImageViews[swapchainImageIndex];
 
-    VkCommandBuffer cmd = currentFrameData.commandBuffer;
+    VkCommandBuffer cmd = currentFrameSynchronization.commandBuffer;
     VK_CHECK(vkResetCommandBuffer(cmd, 0));
     VkCommandBufferBeginInfo commandBufferBeginInfo = VkHelpers::CommandBufferBeginInfo();
     VK_CHECK(vkBeginCommandBuffer(cmd, &commandBufferBeginInfo));
+
+    ProcessAcquisitions(cmd, currentFrameBuffer);
 
     AllocatedBuffer& currentSceneDataBuffer = sceneDataBuffers[currentRenderFrameInFlight];
     auto* currentSceneData = static_cast<SceneData*>(currentSceneDataBuffer.allocationInfo.pMappedData);
@@ -498,17 +520,17 @@ RenderThread::RenderResponse RenderThread::Render(uint32_t currentRenderFrameInF
 
     VK_CHECK(vkEndCommandBuffer(cmd));
 
-    VkCommandBufferSubmitInfo commandBufferSubmitInfo = VkHelpers::CommandBufferSubmitInfo(currentFrameData.commandBuffer);
-    VkSemaphoreSubmitInfo swapchainSemaphoreWaitInfo = VkHelpers::SemaphoreSubmitInfo(currentFrameData.swapchainSemaphore, VK_PIPELINE_STAGE_2_BLIT_BIT);
-    VkSemaphoreSubmitInfo renderSemaphoreSignalInfo = VkHelpers::SemaphoreSubmitInfo(currentFrameData.renderSemaphore, VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT);
+    VkCommandBufferSubmitInfo commandBufferSubmitInfo = VkHelpers::CommandBufferSubmitInfo(currentFrameSynchronization.commandBuffer);
+    VkSemaphoreSubmitInfo swapchainSemaphoreWaitInfo = VkHelpers::SemaphoreSubmitInfo(currentFrameSynchronization.swapchainSemaphore, VK_PIPELINE_STAGE_2_BLIT_BIT);
+    VkSemaphoreSubmitInfo renderSemaphoreSignalInfo = VkHelpers::SemaphoreSubmitInfo(currentFrameSynchronization.renderSemaphore, VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT);
     VkSubmitInfo2 submitInfo = VkHelpers::SubmitInfo(&commandBufferSubmitInfo, &swapchainSemaphoreWaitInfo, &renderSemaphoreSignalInfo);
 
     // Wait for swapchain semaphore, then submit command buffer. When finished, signal render semaphore and render fence.
-    VK_CHECK(vkQueueSubmit2(vulkanContext->graphicsQueue, 1, &submitInfo, currentFrameData.renderFence));
+    VK_CHECK(vkQueueSubmit2(vulkanContext->graphicsQueue, 1, &submitInfo, currentFrameSynchronization.renderFence));
 
     // Wait for render semaphore, then present frame.
     VkPresentInfoKHR presentInfo = VkHelpers::PresentInfo(&swapchain->handle, nullptr, &swapchainImageIndex);
-    presentInfo.pWaitSemaphores = &currentFrameData.renderSemaphore;
+    presentInfo.pWaitSemaphores = &currentFrameSynchronization.renderSemaphore;
     const VkResult presentResult = vkQueuePresentKHR(vulkanContext->graphicsQueue, &presentInfo);
 
     if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR) {

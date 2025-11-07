@@ -38,31 +38,11 @@ struct JointMatrixOperation
     uint32_t frames{};
 };
 
-struct BufferAcquireOperation
+struct ModelAcquires
 {
-    VkPipelineStageFlags2 srcStageMask;
-    VkAccessFlags2 srcAccessMask;
-    VkPipelineStageFlags2 dstStageMask;
-    VkAccessFlags2 dstAccessMask;
-    uint32_t srcQueueFamilyIndex;
-
-    VkBuffer buffer;
-    VkDeviceSize offset;
-    VkDeviceSize size;
-};
-
-struct ImageAcquireOperation
-{
-    VkPipelineStageFlags2 srcStageMask;
-    VkAccessFlags2 srcAccessMask;
-    VkImageLayout oldLayout;
-    VkPipelineStageFlags2 dstStageMask;
-    VkAccessFlags2 dstAccessMask;
-    VkImageLayout newLayout;
-    uint32_t srcQueueFamilyIndex;
-
-    VkImage image;
-    VkImageSubresourceRange subresourceRange;
+    bool bRequiresAcquisition{false};
+    std::vector<VkBufferMemoryBarrier2> bufferAcquireOps{};
+    std::vector<VkImageMemoryBarrier2> imageAcquireOps{};
 };
 
 struct FrameBuffer
@@ -70,8 +50,8 @@ struct FrameBuffer
     RawSceneData rawSceneData{};
     uint64_t currentFrame{};
 
-    std::vector<BufferAcquireOperation> bufferAcquireOperations;
-    std::vector<ImageAcquireOperation> imageAcquireOperations;
+    std::vector<VkBufferMemoryBarrier2> bufferAcquireOperations;
+    std::vector<VkImageMemoryBarrier2> imageAcquireOperations;
 
     std::vector<ModelMatrixOperation> modelMatrixOperations;
     std::vector<InstanceOperation> instanceOperations;

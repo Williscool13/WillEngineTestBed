@@ -69,6 +69,11 @@ public:
         if (generations[handle.index] != handle.generation) { return false; }
         return true;
     }
+
+    bool IsAnyFree() const
+    {
+        return !freeIndices.empty();
+    }
 };
 
 #endif //WILLENGINETESTBED_HANDLE_ALLOCATOR_H

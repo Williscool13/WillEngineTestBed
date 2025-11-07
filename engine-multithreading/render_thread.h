@@ -72,9 +72,11 @@ private:
 
     void ThreadMain();
 
+    void ProcessAcquisitions(VkCommandBuffer cmd, FrameBuffer& currentFrameBuffer);
+
     void ProcessOperations(FrameBuffer& currentFrameBuffer, uint32_t currentFrameInFlight);
 
-    RenderResponse Render(uint32_t currentRenderFrameInFlight, FrameSynchronization& currentFrameData, FrameBuffer& currentFrameBuffer);
+    RenderResponse Render(uint32_t currentRenderFrameInFlight, FrameSynchronization& currentFrameSynchronization, FrameBuffer& currentFrameBuffer);
 
 private:
     void ConstructSceneData(RawSceneData& raw, SceneData& scene, float aspectRatio, glm::vec2 renderTargetSize, glm::vec2 texelSize);
