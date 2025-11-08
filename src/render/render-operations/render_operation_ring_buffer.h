@@ -55,7 +55,7 @@ public:
 
             op.frames++;
             if (op.frames == discardCount) {
-                newTail = (tail + 1) % capacity;
+                newTail = (newTail + 1) % capacity;
                 newCount--;
             }
         }

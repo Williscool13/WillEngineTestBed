@@ -4,6 +4,8 @@
 
 #include "engine_multithreading.h"
 
+#include <SDL3/SDL.h>
+
 #include "core/constants.h"
 #include "core/time.h"
 #include "crash-handling/crash_handler.h"
@@ -26,20 +28,35 @@ void EngineMultithreading::Initialize()
         return;
     }
 
-    constexpr auto window_flags = SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE;
-    window = SDL_CreateWindow(
-        "Engine Multithreading Tests",
-        Core::DEFAULT_WINDOW_WIDTH,
-        Core::DEFAULT_WINDOW_HEIGHT,
-        window_flags);
+    constexpr bool fullscreen = true;
+    if (fullscreen) {
+        SDL_DisplayID primaryDisplay = SDL_GetPrimaryDisplay();
+        const SDL_DisplayMode* displayMode = SDL_GetCurrentDisplayMode(primaryDisplay);
+        constexpr auto window_flags = SDL_WINDOW_VULKAN | SDL_WINDOW_FULLSCREEN;
+        window = SDL_CreateWindow(
+            "Engine Multithreading Tests",
+            displayMode->w,
+            displayMode->h,
+            window_flags);
+    }
+    else {
+        constexpr auto window_flags = SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE;
+        window = SDL_CreateWindow(
+            "Engine Multithreading Tests",
+            Core::DEFAULT_WINDOW_WIDTH,
+            Core::DEFAULT_WINDOW_HEIGHT,
+            window_flags);
+        SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+    }
 
-    SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
     SDL_ShowWindow(window);
-
-    renderThread.Initialize(this, window, Core::DEFAULT_WINDOW_WIDTH, Core::DEFAULT_WINDOW_HEIGHT);
+    int32_t w;
+    int32_t h;
+    SDL_GetWindowSize(window, &w, &h);
+    renderThread.Initialize(this, window, w, h);
     assetLoadingThread.Initialize(renderThread.GetVulkanContext(), renderThread.GetResourceManager());
 
-    Input::Get().Init(window, Core::DEFAULT_WINDOW_WIDTH, Core::DEFAULT_WINDOW_HEIGHT);
+    Input::Get().Init(window, w, h);
 
     loadedModelsToAcquire.reserve(10);
 }

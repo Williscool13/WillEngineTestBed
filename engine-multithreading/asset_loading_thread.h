@@ -79,16 +79,19 @@ private: // Staging data structures
     std::vector<UploadStagingHandle> activeUploadHandles;
 
 
+    void FinishUploadsInProgress();
     void RemoveFinishedUploadStaging(std::vector<UploadStagingHandle>& uploadStagingHandles);
-    bool IsUploadFinished(const std::vector<UploadStagingHandle>& uploadStagingHandles);
-    void ReleaseUploadStaging(std::vector<UploadStagingHandle>& uploadStagingHandles);
     void StartUploadStaging(const UploadStaging& uploadStaging);
     UploadStagingHandle GetAvailableStaging();
 
 private: // Texture loading
     void LoadGltfImages(ModelEntry* newModelEntry, UploadStaging*& currentUploadStaging, std::vector<UploadStagingHandle>& uploadStagingHandles, const fastgltf::Asset& asset, const std::filesystem::path& parentFolder);
 
-
+    AllocatedImage whiteImage{};
+    ImageView whiteImageView{};
+    AllocatedImage errorCheckerboardImage{};
+    ImageView errorCheckerboardImageView{};
+    Sampler defaultSamplerLinear{};
 
 private: // Nodes
     std::vector<Node> sortedNodes;

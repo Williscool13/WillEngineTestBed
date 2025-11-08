@@ -81,6 +81,8 @@ void AssetLoadingThread::ThreadMain()
     while (!bShouldExit.load()) {
         bool didWork = false;
 
+        FinishUploadsInProgress();
+
         for (int i = static_cast<int>(modelsInProgress.size()) - 1; i >= 0; --i) {
             AssetLoadInProgress& inProgress = modelsInProgress[i];
             ModelEntry* modelEntry = models.Get(inProgress.modelEntryHandle);
@@ -92,9 +94,8 @@ void AssetLoadingThread::ThreadMain()
                 continue;
             }
 
-            if (modelEntry->uploadStagingHandles.size() > 0) {
-                RemoveFinishedUploadStaging(modelEntry->uploadStagingHandles);
-            }
+
+            RemoveFinishedUploadStaging(modelEntry->uploadStagingHandles);
 
             if (modelEntry->uploadStagingHandles.empty()) {
                 if (modelEntry->state.load() != ModelEntry::State::Ready) {
@@ -925,47 +926,120 @@ ModelAcquires* AssetLoadingThread::GetModelAcquires(ModelEntryHandle handle)
 }
 
 void AssetLoadingThread::CreateDefaultResources()
-{}
+{
+    const uint32_t white = packUnorm4x8(glm::vec4(1, 1, 1, 1));
+    const uint32_t black = glm::packUnorm4x8(glm::vec4(0, 0, 0, 0));
+    const uint32_t magenta = glm::packUnorm4x8(glm::vec4(1, 0, 1, 1));
+    std::array<uint32_t, 16 * 16> pixels{}; //for 16x16 checkerboard texture
+    for (int x = 0; x < 16; x++) {
+        for (int y = 0; y < 16; y++) {
+            pixels[y * 16 + x] = ((x % 2) ^ (y % 2)) ? magenta : black;
+        }
+    }
 
+    // UploadStagingHandle uploadStagingHandle = GetAvailableStaging();
+    // currentUploadStaging = &uploadStagingDatas[uploadStagingHandle.index];
+    // newModel->uploadStagingHandles.push_back(uploadStagingHandle);
+    // VK_CHECK(vkBeginCommandBuffer(currentUploadStaging->commandBuffer, &cmdBeginInfo));
+    //
+    // VkExtent3D imagesize;
+    // constexpr size_t whiteSize = 1;
+    //
+    // OffsetAllocator::Allocation allocation = currentUploadStaging->stagingAllocator.allocate(size);
+    // if (allocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
+    //     StartUploadStaging(*currentUploadStaging);
+    //     UploadStagingHandle uploadStagingHandle = GetAvailableStaging();
+    //     currentUploadStaging = &uploadStagingDatas[uploadStagingHandle.index];
+    //     uploadStagingHandles.push_back(uploadStagingHandle);
+    //
+    //     const VkCommandBufferBeginInfo cmdBeginInfo = VkHelpers::CommandBufferBeginInfo();
+    //     VK_CHECK(vkBeginCommandBuffer(currentUploadStaging->commandBuffer, &cmdBeginInfo));
+    //     allocation = currentUploadStaging->stagingAllocator.allocate(size);
+    // }
+    //
+    // char* bufferOffset = static_cast<char*>(currentUploadStaging->stagingBuffer.allocationInfo.pMappedData) + allocation.offset;
+    // memcpy(bufferOffset, stbiData, size);
+    //
+    // VkImageCreateInfo imageCreateInfo = VkHelpers::ImageCreateInfo(
+    //     VK_FORMAT_R8G8B8A8_UNORM, imagesize,
+    //     VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
+    //
+    // newImage = VkResources::CreateAllocatedImage(context, imageCreateInfo);
+    //
+    // VkImageMemoryBarrier2 barrier = VkHelpers::ImageMemoryBarrier(
+    //     newImage.handle,
+    //     VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT),
+    //     VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_UNDEFINED,
+    //     VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
+    // );
+    //
+    // VkDependencyInfo depInfo{.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+    // depInfo.imageMemoryBarrierCount = 1;
+    // depInfo.pImageMemoryBarriers = &barrier;
+    // vkCmdPipelineBarrier2(currentUploadStaging->commandBuffer, &depInfo);
+    //
+    // VkBufferImageCopy copyRegion = {};
+    // copyRegion.bufferOffset = allocation.offset;
+    // copyRegion.bufferRowLength = 0;
+    // copyRegion.bufferImageHeight = 0;
+    // copyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    // copyRegion.imageSubresource.mipLevel = 0;
+    // copyRegion.imageSubresource.baseArrayLayer = 0;
+    // copyRegion.imageSubresource.layerCount = 1;
+    // copyRegion.imageExtent = imagesize;
+    //
+    // vkCmdCopyBufferToImage(currentUploadStaging->commandBuffer, currentUploadStaging->stagingBuffer.handle, newImage.handle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
+    //
+    // barrier = VkHelpers::ImageMemoryBarrier(
+    //     newImage.handle,
+    //     VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT),
+    //     VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+    //     VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+    // );
+    // barrier.srcQueueFamilyIndex = context->transferQueueFamily;
+    // barrier.dstQueueFamilyIndex = context->graphicsQueueFamily;
+    // vkCmdPipelineBarrier2(currentUploadStaging->commandBuffer, &depInfo);
+    // newModelEntry->modelAcquires.imageAcquireOps.push_back(
+    //     VkHelpers::ImageMemoryBarrier(
+    //         newImage.handle,
+    //         VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT),
+    //         VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+    //         VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+    //     ));
+    // VkImageMemoryBarrier2& acquireBarrier = newModelEntry->modelAcquires.imageAcquireOps.back();
+    // acquireBarrier.srcQueueFamilyIndex = context->transferQueueFamily;
+    // acquireBarrier.dstQueueFamilyIndex = context->graphicsQueueFamily;
+    // newImage.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+}
+
+
+void AssetLoadingThread::FinishUploadsInProgress()
+{
+    for (int32_t i = activeUploadHandles.size() - 1; i >= 0; --i) {
+        if (!uploadStagingHandleAllocator.IsValid(activeUploadHandles[i])) {
+            activeUploadHandles.erase(activeUploadHandles.begin() + i);
+            continue;
+        }
+
+        VkResult fenceStatus = vkGetFenceStatus(context->device, uploadStagingDatas[activeUploadHandles[i].index].fence);
+        if (fenceStatus == VK_SUCCESS) {
+            uint32_t index = activeUploadHandles[i].index;
+            LOG_INFO("Upload staging {} has fully executed their command buffer", index);
+            uploadStagingHandleAllocator.Remove(activeUploadHandles[i]);
+            activeUploadHandles.erase(activeUploadHandles.begin() + i);
+        }
+    }
+}
 
 void AssetLoadingThread::RemoveFinishedUploadStaging(std::vector<UploadStagingHandle>& uploadStagingHandles)
 {
-    for (size_t i = 0; i < uploadStagingHandles.size();) {
+    if (uploadStagingHandles.empty()) { return; }
+
+    for (size_t i = 0; i < uploadStagingHandles.size(); ++i) {
         UploadStagingHandle handle = uploadStagingHandles[i];
-
-        if (!uploadStagingHandleAllocator.IsValid(handle) || vkGetFenceStatus(context->device, uploadStagingDatas[handle.index].fence) == VK_SUCCESS) {
-            if (uploadStagingHandleAllocator.IsValid(handle)) {
-                uploadStagingHandleAllocator.Remove(handle);
-                activeUploadHandles.erase(std::ranges::remove(activeUploadHandles, handle).begin(), activeUploadHandles.end());
-            }
-
-            uploadStagingHandles.erase(uploadStagingHandles.begin() + i);
-        }
-        else {
-            ++i;
-        }
-    }
-}
-
-bool AssetLoadingThread::IsUploadFinished(const std::vector<UploadStagingHandle>& uploadStagingHandles)
-{
-    for (UploadStagingHandle handle : uploadStagingHandles) {
         if (uploadStagingHandleAllocator.IsValid(handle)) {
-            VkResult fenceStatus = vkGetFenceStatus(context->device, uploadStagingDatas[handle.index].fence);
-            if (fenceStatus != VK_SUCCESS) {
-                return false;
-            }
+            return;
         }
-    }
-
-    return true;
-}
-
-void AssetLoadingThread::ReleaseUploadStaging(std::vector<UploadStagingHandle>& uploadStagingHandles)
-{
-    for (auto handle : uploadStagingHandles) {
-        uploadStagingHandleAllocator.Remove(handle);
-        activeUploadHandles.erase(activeUploadHandles.begin());
     }
 
     uploadStagingHandles.clear();
@@ -1130,6 +1204,9 @@ UploadStagingHandle AssetLoadingThread::GetAvailableStaging()
         stagingUpload.stagingAllocator.reset();
         VK_CHECK(vkResetFences(context->device, 1, &stagingUpload.fence));
         VK_CHECK(vkResetCommandBuffer(stagingUpload.commandBuffer, 0));
+
+        uint32_t index = uploadStagingHandle.index;
+        LOG_INFO("Upload staging {} has been retrieved", index);
         return uploadStagingHandle;
     }
 
@@ -1137,6 +1214,9 @@ UploadStagingHandle AssetLoadingThread::GetAvailableStaging()
     UploadStagingHandle oldestHandle = activeUploadHandles.front();
     auto& oldestStaging = uploadStagingDatas[oldestHandle.index];
     vkWaitForFences(context->device, 1, &oldestStaging.fence, true, UINT64_MAX);
+
+    uint32_t finishedIndex = oldestHandle.index;
+    LOG_INFO("Upload staging {} has fully executed their command buffer", finishedIndex);
     uploadStagingHandleAllocator.Remove(oldestHandle);
     activeUploadHandles.erase(activeUploadHandles.begin());
 
@@ -1148,6 +1228,9 @@ UploadStagingHandle AssetLoadingThread::GetAvailableStaging()
     stagingUpload.stagingAllocator.reset();
     VK_CHECK(vkResetFences(context->device, 1, &stagingUpload.fence));
     VK_CHECK(vkResetCommandBuffer(stagingUpload.commandBuffer, 0));
+
+    uint32_t index = uploadStagingHandle.index;
+    LOG_INFO("Upload staging {} has been retrieved", index);
     return uploadStagingHandle;
 }
 
