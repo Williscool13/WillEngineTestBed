@@ -64,6 +64,8 @@ public:
 
     AcquireOperations* GetModelAcquires(ModelEntryHandle handle);
 
+    static void UploadTexture(const VulkanContext* context, ModelEntry* newModel, const UploadStaging* currentUploadStaging, AllocatedImage& image, VkExtent3D extents, uint32_t stagingOffset);
+
 private:
     VulkanContext* context{};
     ResourceManager* resourceManager{};
@@ -92,9 +94,12 @@ private: // Texture loading
     ModelEntryHandle defaultResourcesHandle{};
     AllocatedImage whiteImage{};
     ImageView whiteImageView{};
-    AllocatedImage errorCheckerboardImage{};
-    ImageView errorCheckerboardImageView{};
+    int32_t whiteImageDescriptorIndex;
+    AllocatedImage errorImage{};
+    ImageView errorImageView{};
+    int32_t errorImageDescriptorIndex;
     Sampler defaultSamplerLinear{};
+    int32_t samplerLinearDescriptorIndex;
 
 private: // Nodes
     std::vector<Node> sortedNodes;

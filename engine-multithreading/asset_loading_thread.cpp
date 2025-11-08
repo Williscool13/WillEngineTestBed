@@ -182,7 +182,6 @@ ModelEntryHandle AssetLoadingThread::LoadGltf(const std::filesystem::path& path)
 
     fastgltf::Asset gltf = std::move(load.get());
 
-    //model.bSuccessfullyLoaded = true;
     newModel->data.samplers.reserve(gltf.samplers.size());
     for (const fastgltf::Sampler& gltfSampler : gltf.samplers) {
         VkSamplerCreateInfo samplerInfo = {.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO, .pNext = nullptr};
@@ -460,7 +459,7 @@ ModelEntryHandle AssetLoadingThread::LoadGltf(const std::filesystem::path& path)
             if (outputAccessor.type == fastgltf::AccessorType::Vec3) {
                 fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec3>(gltf, outputAccessor,
                                                                           [&](const fastgltf::math::fvec3& value, size_t idx) {
-                                                                              size_t baseIdx = idx * 3; // Calculate flat base index
+                                                                              size_t baseIdx = idx * 3;
                                                                               sampler.values[baseIdx + 0] = value.x();
                                                                               sampler.values[baseIdx + 1] = value.y();
                                                                               sampler.values[baseIdx + 2] = value.z();
@@ -469,7 +468,7 @@ ModelEntryHandle AssetLoadingThread::LoadGltf(const std::filesystem::path& path)
             else if (outputAccessor.type == fastgltf::AccessorType::Vec4) {
                 fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec4>(gltf, outputAccessor,
                                                                           [&](const fastgltf::math::fvec4& value, size_t idx) {
-                                                                              size_t baseIdx = idx * 4; // Calculate flat base index
+                                                                              size_t baseIdx = idx * 4;
                                                                               sampler.values[baseIdx + 0] = value.x();
                                                                               sampler.values[baseIdx + 1] = value.y();
                                                                               sampler.values[baseIdx + 2] = value.z();
@@ -479,7 +478,7 @@ ModelEntryHandle AssetLoadingThread::LoadGltf(const std::filesystem::path& path)
             else if (outputAccessor.type == fastgltf::AccessorType::Scalar) {
                 fastgltf::iterateAccessorWithIndex<float>(gltf, outputAccessor,
                                                           [&](float value, size_t idx) {
-                                                              sampler.values[idx] = value; // This one is fine since it's 1 component
+                                                              sampler.values[idx] = value;
                                                           });
             }
 
@@ -611,16 +610,15 @@ ModelEntryHandle AssetLoadingThread::LoadGltf(const std::filesystem::path& path)
     for (const AllocatedImage& image : newModel->data.images) {
         VkImageViewCreateInfo imageViewCreateInfo = VkHelpers::ImageViewCreateInfo(image.handle, image.format, VK_IMAGE_ASPECT_COLOR_BIT);
         newModel->data.imageViews.push_back(VkResources::CreateImageView(context, imageViewCreateInfo));
-        // todo: if image is vk_null_handle, replace with default white image index
     }
 
-
-    // Descriptor assignment can happen here. Resource upload, will need to be staged and
-    auto remapIndices = [](auto& indices_, const std::vector<int32_t>& map) {
-        indices_.x = indices_.x >= 0 ? map[indices_.x] : -1;
-        indices_.y = indices_.y >= 0 ? map[indices_.y] : -1;
-        indices_.z = indices_.z >= 0 ? map[indices_.z] : -1;
-        indices_.w = indices_.w >= 0 ? map[indices_.w] : -1;
+    // Remap index to the real index in the descriptor
+    uint32_t defaultIndex{0};
+    auto remapIndices = [defaultIndex](auto& indices_, const std::vector<int32_t>& map) {
+        indices_.x = indices_.x >= 0 ? map[indices_.x] : defaultIndex;
+        indices_.y = indices_.y >= 0 ? map[indices_.y] : defaultIndex;
+        indices_.z = indices_.z >= 0 ? map[indices_.z] : defaultIndex;
+        indices_.w = indices_.w >= 0 ? map[indices_.w] : defaultIndex;
     };
 
     // Samplers
@@ -629,6 +627,7 @@ ModelEntryHandle AssetLoadingThread::LoadGltf(const std::filesystem::path& path)
         newModel->data.samplerIndexToDescriptorBufferIndexMap[i] = resourceManager->bindlessResourcesDescriptorBuffer.AllocateSampler(newModel->data.samplers[i].handle);
     }
 
+    defaultIndex = samplerLinearDescriptorIndex;
     for (MaterialProperties& material : materials) {
         remapIndices(material.textureSamplerIndices, newModel->data.samplerIndexToDescriptorBufferIndexMap);
         remapIndices(material.textureSamplerIndices2, newModel->data.samplerIndexToDescriptorBufferIndexMap);
@@ -643,6 +642,7 @@ ModelEntryHandle AssetLoadingThread::LoadGltf(const std::filesystem::path& path)
         });
     }
 
+    defaultIndex = errorImageDescriptorIndex;
     for (MaterialProperties& material : materials) {
         remapIndices(material.textureImageIndices, newModel->data.textureIndexToDescriptorBufferIndexMap);
         remapIndices(material.textureImageIndices2, newModel->data.textureIndexToDescriptorBufferIndexMap);
@@ -925,6 +925,58 @@ AcquireOperations* AssetLoadingThread::GetModelAcquires(ModelEntryHandle handle)
     return &modelEntry->modelAcquires;
 }
 
+
+void AssetLoadingThread::UploadTexture(const VulkanContext* context, ModelEntry* newModel, const UploadStaging* currentUploadStaging, AllocatedImage& image, const VkExtent3D extents,
+                                       const uint32_t stagingOffset)
+{
+    VkImageMemoryBarrier2 barrier = VkHelpers::ImageMemoryBarrier(
+        image.handle,
+        VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT),
+        VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_UNDEFINED,
+        VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
+    );
+
+    VkDependencyInfo depInfo{.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+    depInfo.imageMemoryBarrierCount = 1;
+    depInfo.pImageMemoryBarriers = &barrier;
+    vkCmdPipelineBarrier2(currentUploadStaging->commandBuffer, &depInfo);
+
+    VkBufferImageCopy copyRegion = {};
+    copyRegion.bufferOffset = stagingOffset;
+    copyRegion.bufferRowLength = 0;
+    copyRegion.bufferImageHeight = 0;
+    copyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    copyRegion.imageSubresource.mipLevel = 0;
+    copyRegion.imageSubresource.baseArrayLayer = 0;
+    copyRegion.imageSubresource.layerCount = 1;
+    copyRegion.imageExtent = extents;
+
+    vkCmdCopyBufferToImage(currentUploadStaging->commandBuffer, currentUploadStaging->stagingBuffer.handle, image.handle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
+
+    barrier = VkHelpers::ImageMemoryBarrier(
+        image.handle,
+        VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT),
+        VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+    );
+    barrier.srcQueueFamilyIndex = context->transferQueueFamily;
+    barrier.dstQueueFamilyIndex = context->graphicsQueueFamily;
+    vkCmdPipelineBarrier2(currentUploadStaging->commandBuffer, &depInfo);
+
+
+    newModel->modelAcquires.imageAcquireOps.push_back(
+        VkHelpers::ImageMemoryBarrier(
+            image.handle,
+            VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT),
+            VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+        ));
+    VkImageMemoryBarrier2& acquireBarrier = newModel->modelAcquires.imageAcquireOps.back();
+    acquireBarrier.srcQueueFamilyIndex = context->transferQueueFamily;
+    acquireBarrier.dstQueueFamilyIndex = context->graphicsQueueFamily;
+    image.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+}
+
 void AssetLoadingThread::CreateDefaultResources()
 {
     const uint32_t white = packUnorm4x8(glm::vec4(1, 1, 1, 1));
@@ -950,66 +1002,69 @@ void AssetLoadingThread::CreateDefaultResources()
     const VkCommandBufferBeginInfo cmdBeginInfo = VkHelpers::CommandBufferBeginInfo();
     VK_CHECK(vkBeginCommandBuffer(currentUploadStaging->commandBuffer, &cmdBeginInfo));
 
-    constexpr size_t whiteSize = 1;
-    constexpr VkExtent3D whiteExtent = {1,1,1};
+    // White texture
+    constexpr size_t whiteSize = 4;
+    constexpr VkExtent3D whiteExtent = {1, 1, 1};
     OffsetAllocator::Allocation whiteImageAllocation = currentUploadStaging->stagingAllocator.allocate(whiteSize);
-    char* bufferOffset = static_cast<char*>(currentUploadStaging->stagingBuffer.allocationInfo.pMappedData) + whiteImageAllocation.offset;
-    memcpy(bufferOffset, &white, whiteSize);
-
-    VkImageCreateInfo imageCreateInfo = VkHelpers::ImageCreateInfo(
+    char* whiteBufferOffset = static_cast<char*>(currentUploadStaging->stagingBuffer.allocationInfo.pMappedData) + whiteImageAllocation.offset;
+    memcpy(whiteBufferOffset, &white, whiteSize);
+    VkImageCreateInfo whiteImageCreateInfo = VkHelpers::ImageCreateInfo(
         VK_FORMAT_R8G8B8A8_UNORM, whiteExtent,
         VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
+    whiteImage = VkResources::CreateAllocatedImage(context, whiteImageCreateInfo);
+    UploadTexture(context, newModel, currentUploadStaging, whiteImage, whiteExtent, whiteImageAllocation.offset);
+    VkImageViewCreateInfo whiteImageViewCreateInfo = VkHelpers::ImageViewCreateInfo(whiteImage.handle, whiteImage.format, VK_IMAGE_ASPECT_COLOR_BIT);
+    whiteImageView = VkResources::CreateImageView(context, whiteImageViewCreateInfo);
+    whiteImageDescriptorIndex = resourceManager->bindlessResourcesDescriptorBuffer.AllocateTexture({
+        .imageView = whiteImageView.handle,
+        .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+    });
+    assert(whiteImageDescriptorIndex == 0);
 
-    whiteImage = VkResources::CreateAllocatedImage(context, imageCreateInfo);
-    VkImageMemoryBarrier2 whiteBarrier = VkHelpers::ImageMemoryBarrier(
-        whiteImage.handle,
-        VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT),
-        VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_UNDEFINED,
-        VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
-    );
+    // Error texture (magenta/black checkerboard)
+    constexpr size_t errorSize = sizeof(pixels);
+    constexpr VkExtent3D errorExtent = {16, 16, 1};
+    OffsetAllocator::Allocation errorImageAllocation = currentUploadStaging->stagingAllocator.allocate(errorSize);
+    char* errorBufferOffset = static_cast<char*>(currentUploadStaging->stagingBuffer.allocationInfo.pMappedData) + errorImageAllocation.offset;
+    memcpy(errorBufferOffset, pixels.data(), errorSize);
+    VkImageCreateInfo errorImageCreateInfo = VkHelpers::ImageCreateInfo(
+        VK_FORMAT_R8G8B8A8_UNORM, errorExtent,
+        VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
+    errorImage = VkResources::CreateAllocatedImage(context, errorImageCreateInfo);
+    UploadTexture(context, newModel, currentUploadStaging, errorImage, errorExtent, errorImageAllocation.offset);
+    VkImageViewCreateInfo errorImageViewCreateInfo = VkHelpers::ImageViewCreateInfo(errorImage.handle, errorImage.format, VK_IMAGE_ASPECT_COLOR_BIT);
+    errorImageView = VkResources::CreateImageView(context, errorImageViewCreateInfo);
+    errorImageDescriptorIndex = resourceManager->bindlessResourcesDescriptorBuffer.AllocateTexture({
+        .imageView = errorImageView.handle,
+        .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+    });
+    assert(errorImageDescriptorIndex == 1);
 
-    VkDependencyInfo depInfo{.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
-    depInfo.imageMemoryBarrierCount = 1;
-    depInfo.pImageMemoryBarriers = &whiteBarrier;
-    vkCmdPipelineBarrier2(currentUploadStaging->commandBuffer, &depInfo);
-
-    VkBufferImageCopy copyRegion = {};
-    copyRegion.bufferOffset = whiteImageAllocation.offset;
-    copyRegion.bufferRowLength = 0;
-    copyRegion.bufferImageHeight = 0;
-    copyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    copyRegion.imageSubresource.mipLevel = 0;
-    copyRegion.imageSubresource.baseArrayLayer = 0;
-    copyRegion.imageSubresource.layerCount = 1;
-    copyRegion.imageExtent = whiteExtent;
-
-    vkCmdCopyBufferToImage(currentUploadStaging->commandBuffer, currentUploadStaging->stagingBuffer.handle, whiteImage.handle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
-
-    whiteBarrier = VkHelpers::ImageMemoryBarrier(
-        whiteImage.handle,
-        VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT),
-        VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-        VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-    );
-    whiteBarrier.srcQueueFamilyIndex = context->transferQueueFamily;
-    whiteBarrier.dstQueueFamilyIndex = context->graphicsQueueFamily;
-    vkCmdPipelineBarrier2(currentUploadStaging->commandBuffer, &depInfo);
-
-
-    newModel->modelAcquires.imageAcquireOps.push_back(
-        VkHelpers::ImageMemoryBarrier(
-            whiteImage.handle,
-            VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT),
-            VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-            VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-        ));
-    VkImageMemoryBarrier2& acquireBarrier = newModel->modelAcquires.imageAcquireOps.back();
-    acquireBarrier.srcQueueFamilyIndex = context->transferQueueFamily;
-    acquireBarrier.dstQueueFamilyIndex = context->graphicsQueueFamily;
-    whiteImage.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    VkSamplerCreateInfo samplerInfo = {
+        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .pNext = nullptr,
+        .magFilter = VK_FILTER_LINEAR,
+        .minFilter = VK_FILTER_LINEAR,
+        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+        .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .mipLodBias = 0.0f,
+        .anisotropyEnable = VK_TRUE,
+        .maxAnisotropy = 16.0f,
+        .compareEnable = VK_FALSE,
+        .compareOp = VK_COMPARE_OP_ALWAYS,
+        .minLod = 0.0f,
+        .maxLod = VK_LOD_CLAMP_NONE,
+        .borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
+        .unnormalizedCoordinates = VK_FALSE
+    };
+    defaultSamplerLinear = VkResources::CreateSampler(context, samplerInfo);
+    samplerLinearDescriptorIndex =resourceManager->bindlessResourcesDescriptorBuffer.AllocateSampler(defaultSamplerLinear.handle);
+    assert(samplerLinearDescriptorIndex == 0);
 
     StartUploadStaging(*currentUploadStaging);
-    modelsInProgress.push_back({defaultResourcesHandle, [](ModelEntryHandle modelEntryHandle){}});
+    modelsInProgress.push_back({defaultResourcesHandle, [](ModelEntryHandle modelEntryHandle) {}});
 }
 
 
