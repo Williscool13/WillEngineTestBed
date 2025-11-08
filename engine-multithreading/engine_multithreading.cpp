@@ -123,7 +123,7 @@ void EngineMultithreading::ThreadMain()
     Renderer::FrameBuffer& currentFrameBuffer = frameBuffers[currentFrameInFlight];
 
     for (Renderer::ModelEntryHandle loadedModel : loadedModelsToAcquire) {
-        if (Renderer::ModelAcquires* modelAcquires = assetLoadingThread.GetModelAcquires(loadedModel)) {
+        if (Renderer::AcquireOperations* modelAcquires = assetLoadingThread.GetModelAcquires(loadedModel)) {
             currentFrameBuffer.bufferAcquireOperations.insert(
                 currentFrameBuffer.bufferAcquireOperations.end(),
                 modelAcquires->bufferAcquireOps.begin(),

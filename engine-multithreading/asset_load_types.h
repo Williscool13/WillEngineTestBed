@@ -33,7 +33,7 @@ struct ModelEntry
 
     // Inserted into by asset loading thread. Used by game thread
     ModelData data{};
-    ModelAcquires modelAcquires{};
+    AcquireOperations modelAcquires{};
 
 
     // Only accessed by asset loading thread

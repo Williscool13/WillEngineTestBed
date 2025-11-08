@@ -38,7 +38,7 @@ struct JointMatrixOperation
     uint32_t frames{};
 };
 
-struct ModelAcquires
+struct AcquireOperations
 {
     bool bRequiresAcquisition{false};
     std::vector<VkBufferMemoryBarrier2> bufferAcquireOps{};

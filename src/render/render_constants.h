@@ -37,6 +37,7 @@ inline static constexpr int32_t BINDLESS_SAMPLED_IMAGE_COUNT = 8192;
 
 inline static constexpr int32_t ASSET_LOAD_ASYNC_COUNT = 4;
 inline static constexpr int32_t ASSET_LOAD_QUEUE_COUNT = 64;
+inline static constexpr int32_t ASSET_LOAD_INDEPENDENT_BARRIER_COUNT = 64;
 inline static constexpr int32_t STAGING_BUFFER_SIZE = 2 * 64 * 1024 * 1024; // 2 x 64 MB (1x uncompressed 4k rgba8, or 4x 4k BC7)
 
 // Swapchain / Render Context

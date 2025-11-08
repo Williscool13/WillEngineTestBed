@@ -911,7 +911,7 @@ ModelData* AssetLoadingThread::GetModelData(ModelEntryHandle handle)
     return &modelEntry->data;
 }
 
-ModelAcquires* AssetLoadingThread::GetModelAcquires(ModelEntryHandle handle)
+AcquireOperations* AssetLoadingThread::GetModelAcquires(ModelEntryHandle handle)
 {
     ModelEntry* modelEntry = models.Get(handle);
     if (modelEntry->state.load(std::memory_order::memory_order_acquire) != ModelEntry::State::Ready) {
@@ -937,79 +937,79 @@ void AssetLoadingThread::CreateDefaultResources()
         }
     }
 
-    // UploadStagingHandle uploadStagingHandle = GetAvailableStaging();
-    // currentUploadStaging = &uploadStagingDatas[uploadStagingHandle.index];
-    // newModel->uploadStagingHandles.push_back(uploadStagingHandle);
-    // VK_CHECK(vkBeginCommandBuffer(currentUploadStaging->commandBuffer, &cmdBeginInfo));
-    //
-    // VkExtent3D imagesize;
-    // constexpr size_t whiteSize = 1;
-    //
-    // OffsetAllocator::Allocation allocation = currentUploadStaging->stagingAllocator.allocate(size);
-    // if (allocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
-    //     StartUploadStaging(*currentUploadStaging);
-    //     UploadStagingHandle uploadStagingHandle = GetAvailableStaging();
-    //     currentUploadStaging = &uploadStagingDatas[uploadStagingHandle.index];
-    //     uploadStagingHandles.push_back(uploadStagingHandle);
-    //
-    //     const VkCommandBufferBeginInfo cmdBeginInfo = VkHelpers::CommandBufferBeginInfo();
-    //     VK_CHECK(vkBeginCommandBuffer(currentUploadStaging->commandBuffer, &cmdBeginInfo));
-    //     allocation = currentUploadStaging->stagingAllocator.allocate(size);
-    // }
-    //
-    // char* bufferOffset = static_cast<char*>(currentUploadStaging->stagingBuffer.allocationInfo.pMappedData) + allocation.offset;
-    // memcpy(bufferOffset, stbiData, size);
-    //
-    // VkImageCreateInfo imageCreateInfo = VkHelpers::ImageCreateInfo(
-    //     VK_FORMAT_R8G8B8A8_UNORM, imagesize,
-    //     VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
-    //
-    // newImage = VkResources::CreateAllocatedImage(context, imageCreateInfo);
-    //
-    // VkImageMemoryBarrier2 barrier = VkHelpers::ImageMemoryBarrier(
-    //     newImage.handle,
-    //     VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT),
-    //     VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_UNDEFINED,
-    //     VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
-    // );
-    //
-    // VkDependencyInfo depInfo{.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
-    // depInfo.imageMemoryBarrierCount = 1;
-    // depInfo.pImageMemoryBarriers = &barrier;
-    // vkCmdPipelineBarrier2(currentUploadStaging->commandBuffer, &depInfo);
-    //
-    // VkBufferImageCopy copyRegion = {};
-    // copyRegion.bufferOffset = allocation.offset;
-    // copyRegion.bufferRowLength = 0;
-    // copyRegion.bufferImageHeight = 0;
-    // copyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    // copyRegion.imageSubresource.mipLevel = 0;
-    // copyRegion.imageSubresource.baseArrayLayer = 0;
-    // copyRegion.imageSubresource.layerCount = 1;
-    // copyRegion.imageExtent = imagesize;
-    //
-    // vkCmdCopyBufferToImage(currentUploadStaging->commandBuffer, currentUploadStaging->stagingBuffer.handle, newImage.handle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
-    //
-    // barrier = VkHelpers::ImageMemoryBarrier(
-    //     newImage.handle,
-    //     VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT),
-    //     VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-    //     VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-    // );
-    // barrier.srcQueueFamilyIndex = context->transferQueueFamily;
-    // barrier.dstQueueFamilyIndex = context->graphicsQueueFamily;
-    // vkCmdPipelineBarrier2(currentUploadStaging->commandBuffer, &depInfo);
-    // newModelEntry->modelAcquires.imageAcquireOps.push_back(
-    //     VkHelpers::ImageMemoryBarrier(
-    //         newImage.handle,
-    //         VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT),
-    //         VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-    //         VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-    //     ));
-    // VkImageMemoryBarrier2& acquireBarrier = newModelEntry->modelAcquires.imageAcquireOps.back();
-    // acquireBarrier.srcQueueFamilyIndex = context->transferQueueFamily;
-    // acquireBarrier.dstQueueFamilyIndex = context->graphicsQueueFamily;
-    // newImage.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    defaultResourcesHandle = models.Add();
+    ModelEntry* newModel = models.Get(defaultResourcesHandle);
+    newModel->refCount = 1;
+    newModel->loadStartTime = std::chrono::steady_clock::now();
+    newModel->modelAcquires.bRequiresAcquisition = true;
+    newModel->data.name = "Default Resources";
+
+    UploadStagingHandle uploadStagingHandle = GetAvailableStaging();
+    UploadStaging* currentUploadStaging = &uploadStagingDatas[uploadStagingHandle.index];
+    newModel->uploadStagingHandles.push_back(uploadStagingHandle);
+    const VkCommandBufferBeginInfo cmdBeginInfo = VkHelpers::CommandBufferBeginInfo();
+    VK_CHECK(vkBeginCommandBuffer(currentUploadStaging->commandBuffer, &cmdBeginInfo));
+
+    constexpr size_t whiteSize = 1;
+    constexpr VkExtent3D whiteExtent = {1,1,1};
+    OffsetAllocator::Allocation whiteImageAllocation = currentUploadStaging->stagingAllocator.allocate(whiteSize);
+    char* bufferOffset = static_cast<char*>(currentUploadStaging->stagingBuffer.allocationInfo.pMappedData) + whiteImageAllocation.offset;
+    memcpy(bufferOffset, &white, whiteSize);
+
+    VkImageCreateInfo imageCreateInfo = VkHelpers::ImageCreateInfo(
+        VK_FORMAT_R8G8B8A8_UNORM, whiteExtent,
+        VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
+
+    whiteImage = VkResources::CreateAllocatedImage(context, imageCreateInfo);
+    VkImageMemoryBarrier2 whiteBarrier = VkHelpers::ImageMemoryBarrier(
+        whiteImage.handle,
+        VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT),
+        VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_UNDEFINED,
+        VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
+    );
+
+    VkDependencyInfo depInfo{.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+    depInfo.imageMemoryBarrierCount = 1;
+    depInfo.pImageMemoryBarriers = &whiteBarrier;
+    vkCmdPipelineBarrier2(currentUploadStaging->commandBuffer, &depInfo);
+
+    VkBufferImageCopy copyRegion = {};
+    copyRegion.bufferOffset = whiteImageAllocation.offset;
+    copyRegion.bufferRowLength = 0;
+    copyRegion.bufferImageHeight = 0;
+    copyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    copyRegion.imageSubresource.mipLevel = 0;
+    copyRegion.imageSubresource.baseArrayLayer = 0;
+    copyRegion.imageSubresource.layerCount = 1;
+    copyRegion.imageExtent = whiteExtent;
+
+    vkCmdCopyBufferToImage(currentUploadStaging->commandBuffer, currentUploadStaging->stagingBuffer.handle, whiteImage.handle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
+
+    whiteBarrier = VkHelpers::ImageMemoryBarrier(
+        whiteImage.handle,
+        VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT),
+        VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+    );
+    whiteBarrier.srcQueueFamilyIndex = context->transferQueueFamily;
+    whiteBarrier.dstQueueFamilyIndex = context->graphicsQueueFamily;
+    vkCmdPipelineBarrier2(currentUploadStaging->commandBuffer, &depInfo);
+
+
+    newModel->modelAcquires.imageAcquireOps.push_back(
+        VkHelpers::ImageMemoryBarrier(
+            whiteImage.handle,
+            VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT),
+            VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+        ));
+    VkImageMemoryBarrier2& acquireBarrier = newModel->modelAcquires.imageAcquireOps.back();
+    acquireBarrier.srcQueueFamilyIndex = context->transferQueueFamily;
+    acquireBarrier.dstQueueFamilyIndex = context->graphicsQueueFamily;
+    whiteImage.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    StartUploadStaging(*currentUploadStaging);
+    modelsInProgress.push_back({defaultResourcesHandle, [](ModelEntryHandle modelEntryHandle){}});
 }
 
 
