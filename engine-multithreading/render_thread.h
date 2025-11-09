@@ -103,7 +103,7 @@ private:
 
 private: // Frame Draw Resources
     uint64_t frameNumber{0};
-
+    std::chrono::steady_clock::time_point lastFrameTime;
 
     uint32_t renderBufferCount{0};
     std::vector<FrameSynchronization> frameSynchronization;

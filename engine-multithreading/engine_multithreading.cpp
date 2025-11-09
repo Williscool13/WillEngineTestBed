@@ -28,7 +28,7 @@ void EngineMultithreading::Initialize()
         return;
     }
 
-    constexpr bool fullscreen = true;
+    constexpr bool fullscreen = false;
     if (fullscreen) {
         SDL_DisplayID primaryDisplay = SDL_GetPrimaryDisplay();
         const SDL_DisplayMode* displayMode = SDL_GetCurrentDisplayMode(primaryDisplay);
@@ -97,51 +97,33 @@ void EngineMultithreading::Run()
         }
 
 
-        gameFrames.acquire();
-        //
-        {
-            //LOG_INFO("[Game Thread] Processed frame {}", frameNumber);
-            assetLoadingThread.ResolveLoads(loadedModelsToAcquire);
-            ThreadMain();
+        assetLoadingThread.ResolveLoads(loadedModelsToAcquire);
+
+        bool canTransmit = gameFrames.try_acquire();
+        if (canTransmit) {
+            uint64_t currentRenderFrame = renderFrame % Core::FRAMES_IN_FLIGHT;
+            PrepareFrameDataForRender(currentRenderFrame);
+            renderFrame++;
+            renderFrames.release();
         }
 
-        renderFrames.release();
-        frameNumber++;
+
+        ThreadMain();
+        gameFrame++;
     }
 }
 
 void EngineMultithreading::ThreadMain()
 {
+    auto gameThreadTime = std::chrono::milliseconds(5);
+    std::this_thread::sleep_for(gameThreadTime);
+
     Input& input = Input::Input::Get();
     Time& time = Time::Get();
     const float deltaTime = time.GetDeltaTime();
     const float timeElapsed = time.GetTime();
 
     freeCamera.Update(deltaTime);
-
-    uint32_t currentFrameInFlight = frameNumber % Core::FRAMES_IN_FLIGHT;
-    Renderer::FrameBuffer& currentFrameBuffer = frameBuffers[currentFrameInFlight];
-
-    for (Renderer::ModelEntryHandle loadedModel : loadedModelsToAcquire) {
-        if (Renderer::AcquireOperations* modelAcquires = assetLoadingThread.GetModelAcquires(loadedModel)) {
-            currentFrameBuffer.bufferAcquireOperations.insert(
-                currentFrameBuffer.bufferAcquireOperations.end(),
-                modelAcquires->bufferAcquireOps.begin(),
-                modelAcquires->bufferAcquireOps.end()
-            );
-            modelAcquires->bufferAcquireOps.clear();
-
-            currentFrameBuffer.imageAcquireOperations.insert(
-                currentFrameBuffer.imageAcquireOperations.end(),
-                modelAcquires->imageAcquireOps.begin(),
-                modelAcquires->imageAcquireOps.end()
-            );
-            modelAcquires->imageAcquireOps.clear();
-
-            modelAcquires->bRequiresAcquisition = false;
-        }
-    }
-
 
     if (input.IsKeyPressed(Key::NUM_1)) {
         auto suzannePath = std::filesystem::path("../assets/Suzanne/glTF/Suzanne.gltf");
@@ -207,16 +189,14 @@ void EngineMultithreading::ThreadMain()
     if (input.IsKeyPressed(Key::Q)) {
         if (suzanneModelEntryHandle != Renderer::ModelEntryHandle::Invalid && suzanneRuntimeMesh.modelEntryHandle == Renderer::ModelEntryHandle::Invalid) {
             suzanneRuntimeMesh = GenerateModel(suzanneModelEntryHandle, Transform::Identity);
-            UpdateTransforms(suzanneRuntimeMesh.nodes, suzanneRuntimeMesh.transform);
-            InitialUploadRuntimeMesh(suzanneRuntimeMesh, currentFrameBuffer.modelMatrixOperations, currentFrameBuffer.instanceOperations, currentFrameBuffer.jointMatrixOperations);
+            UpdateTransforms(suzanneRuntimeMesh);
             LOG_INFO("Sent Suzanne to be drawn by GPU");
         }
     }
     if (input.IsKeyPressed(Key::W)) {
         if (structureModelEntryHandle != Renderer::ModelEntryHandle::Invalid && structureRuntimeMesh.modelEntryHandle == Renderer::ModelEntryHandle::Invalid) {
             structureRuntimeMesh = GenerateModel(structureModelEntryHandle, Transform::Identity);
-            UpdateTransforms(structureRuntimeMesh.nodes, structureRuntimeMesh.transform);
-            InitialUploadRuntimeMesh(structureRuntimeMesh, currentFrameBuffer.modelMatrixOperations, currentFrameBuffer.instanceOperations, currentFrameBuffer.jointMatrixOperations);
+            UpdateTransforms(structureRuntimeMesh);
             LOG_INFO("Sent Structure to be drawn by GPU");
         }
     }
@@ -233,8 +213,7 @@ void EngineMultithreading::ThreadMain()
         _time += deltaTime;
         float yOffset = 1.0f * sinf(_time * 0.5f);
         suzanneRuntimeMesh.transform.translation = {0.0f, yOffset, 0.0f};
-        UpdateTransforms(suzanneRuntimeMesh.nodes, suzanneRuntimeMesh.transform);
-        UpdateRuntimeMesh(suzanneRuntimeMesh, currentFrameBuffer.modelMatrixOperations, currentFrameBuffer.instanceOperations, currentFrameBuffer.jointMatrixOperations);
+        UpdateTransforms(suzanneRuntimeMesh);
     }
 
     const glm::vec3 cameraPos = freeCamera.GetPosition();
@@ -253,9 +232,6 @@ void EngineMultithreading::ThreadMain()
     rawSceneData.farPlane = freeCamera.GetFarPlane();
     rawSceneData.timeElapsed = timeElapsed;
     rawSceneData.deltaTime = deltaTime;
-
-    currentFrameBuffer.currentFrame = frameNumber;
-    currentFrameBuffer.rawSceneData = rawSceneData;
 }
 
 void EngineMultithreading::Cleanup()
@@ -265,6 +241,47 @@ void EngineMultithreading::Cleanup()
 
     SDL_DestroyWindow(window);
 }
+
+void EngineMultithreading::PrepareFrameDataForRender(uint64_t currentRenderFrame)
+{
+    Renderer::FrameBuffer& currentFrameBuffer = frameBuffers[currentRenderFrame];
+
+    for (Renderer::ModelEntryHandle loadedModel : loadedModelsToAcquire) {
+        if (Renderer::AcquireOperations* modelAcquires = assetLoadingThread.GetModelAcquires(loadedModel)) {
+            currentFrameBuffer.bufferAcquireOperations.insert(
+                currentFrameBuffer.bufferAcquireOperations.end(),
+                modelAcquires->bufferAcquireOps.begin(),
+                modelAcquires->bufferAcquireOps.end()
+            );
+            modelAcquires->bufferAcquireOps.clear();
+
+            currentFrameBuffer.imageAcquireOperations.insert(
+                currentFrameBuffer.imageAcquireOperations.end(),
+                modelAcquires->imageAcquireOps.begin(),
+                modelAcquires->imageAcquireOps.end()
+            );
+            modelAcquires->imageAcquireOps.clear();
+
+            modelAcquires->bRequiresAcquisition = false;
+        }
+    }
+
+    loadedModelsToAcquire.clear();
+
+    currentFrameBuffer.currentFrame = gameFrame;
+    currentFrameBuffer.rawSceneData = rawSceneData;
+
+    for (Renderer::InstanceOperation& instanceOp : instanceOperations) {
+        currentFrameBuffer.instanceOperations.push_back(instanceOp);
+    }
+    instanceOperations.clear();
+
+    UpdateRuntimeMesh(suzanneRuntimeMesh, currentFrameBuffer.modelMatrixOperations, currentFrameBuffer.jointMatrixOperations);
+    UpdateRuntimeMesh(structureRuntimeMesh, currentFrameBuffer.modelMatrixOperations, currentFrameBuffer.jointMatrixOperations);
+    UpdateRuntimeMesh(riggedFigureRuntimeMesh, currentFrameBuffer.modelMatrixOperations, currentFrameBuffer.jointMatrixOperations);
+    UpdateRuntimeMesh(texturedBoxRuntimeMesh, currentFrameBuffer.modelMatrixOperations, currentFrameBuffer.jointMatrixOperations);
+}
+
 
 Renderer::RuntimeMesh EngineMultithreading::GenerateModel(Renderer::ModelEntryHandle modelEntryHandle, const Transform& topLevelTransform)
 {
@@ -294,66 +311,56 @@ Renderer::RuntimeMesh EngineMultithreading::GenerateModel(Renderer::ModelEntryHa
         }
     }
 
+    for (Renderer::RuntimeNode& node : rm.nodes) {
+        if (node.meshIndex != ~0u) {
+            node.modelMatrixHandle = resourceManager->modelMatrixAllocator.Add();
+
+            for (uint32_t primitiveIndex : modelData->meshes[node.meshIndex].primitiveIndices) {
+                Renderer::InstanceEntryHandle instanceEntry = resourceManager->instanceEntryAllocator.Add();
+                node.instanceEntryHandles.push_back(instanceEntry);
+
+                Renderer::Instance inst;
+                inst.modelIndex = node.modelMatrixHandle.index;
+                inst.primitiveIndex = primitiveIndex;
+                inst.jointMatrixOffset = rm.jointMatrixOffset;
+                inst.bIsAllocated = 1;
+
+                instanceOperations.push_back({instanceEntry.index, inst});
+            }
+        }
+    }
+
+    UpdateTransforms(rm);
     return rm;
 }
 
-void EngineMultithreading::UpdateTransforms(std::vector<Renderer::RuntimeNode>& runtimeNodes, const Transform& topLevelTransform)
+void EngineMultithreading::UpdateTransforms(Renderer::RuntimeMesh& runtimeMesh)
 {
-    glm::mat4 baseTopLevel = topLevelTransform.GetMatrix();
+    glm::mat4 baseTopLevel = runtimeMesh.transform.GetMatrix();
 
     // Nodes are sorted
-    for (Renderer::RuntimeNode& rn : runtimeNodes) {
+    for (Renderer::RuntimeNode& rn : runtimeMesh.nodes) {
         glm::mat4 localTransform = rn.transform.GetMatrix();
 
         if (rn.parent == ~0u) {
             rn.cachedWorldTransform = baseTopLevel * localTransform;
         }
         else {
-            rn.cachedWorldTransform = runtimeNodes[rn.parent].cachedWorldTransform * localTransform;
+            rn.cachedWorldTransform = runtimeMesh.nodes[rn.parent].cachedWorldTransform * localTransform;
         }
     }
-}
 
-void EngineMultithreading::InitialUploadRuntimeMesh(Renderer::RuntimeMesh& runtimeMesh,
-                                                    std::vector<Renderer::ModelMatrixOperation>& modelMatrixOperations,
-                                                    std::vector<Renderer::InstanceOperation>& instanceOperations,
-                                                    std::vector<Renderer::JointMatrixOperation>& jointMatrixOperations)
-{
-    Renderer::ResourceManager* resourceManager = renderThread.GetResourceManager();
-    for (Renderer::RuntimeNode& node : runtimeMesh.nodes) {
-        if (node.meshIndex != ~0u) {
-            node.modelMatrixHandle = resourceManager->modelMatrixAllocator.Add();
-            modelMatrixOperations.push_back({node.modelMatrixHandle.index, node.cachedWorldTransform});
-
-            if (Renderer::ModelData* modelData = assetLoadingThread.GetModelData(runtimeMesh.modelEntryHandle)) {
-                for (uint32_t primitiveIndex : modelData->meshes[node.meshIndex].primitiveIndices) {
-                    Renderer::InstanceEntryHandle instanceEntry = resourceManager->instanceEntryAllocator.Add();
-                    node.instanceEntryHandles.push_back(instanceEntry);
-
-                    Renderer::Instance inst;
-                    inst.modelIndex = node.modelMatrixHandle.index;
-                    inst.primitiveIndex = primitiveIndex;
-                    inst.jointMatrixOffset = runtimeMesh.jointMatrixOffset;
-                    inst.bIsAllocated = 1;
-
-                    instanceOperations.push_back({instanceEntry.index, inst});
-                }
-            }
-        }
-
-        if (node.jointMatrixIndex != ~0u) {
-            glm::mat4 jointMatrix = node.cachedWorldTransform * node.inverseBindMatrix;
-            const uint32_t jointMatrixFinalIndex = node.jointMatrixIndex + runtimeMesh.jointMatrixOffset;
-            jointMatrixOperations.push_back({jointMatrixFinalIndex, jointMatrix});
-        }
-    }
+    runtimeMesh.bNeedToSendToRender = true;
 }
 
 void EngineMultithreading::UpdateRuntimeMesh(Renderer::RuntimeMesh& runtimeMesh,
                                              std::vector<Renderer::ModelMatrixOperation>& modelMatrixOperations,
-                                             std::vector<Renderer::InstanceOperation>& instanceOperations,
                                              std::vector<Renderer::JointMatrixOperation>& jointMatrixOperations)
 {
+    if (!runtimeMesh.bNeedToSendToRender) {
+        return;
+    }
+
     for (Renderer::RuntimeNode& node : runtimeMesh.nodes) {
         if (node.meshIndex != ~0u) {
             modelMatrixOperations.push_back({node.modelMatrixHandle.index, node.cachedWorldTransform});
@@ -365,12 +372,11 @@ void EngineMultithreading::UpdateRuntimeMesh(Renderer::RuntimeMesh& runtimeMesh,
             jointMatrixOperations.push_back({jointMatrixFinalIndex, jointMatrix});
         }
     }
+
+    runtimeMesh.bNeedToSendToRender = false;
 }
 
-void EngineMultithreading::DeleteRuntimeMesh(Renderer::RuntimeMesh& runtimeMesh,
-                                             std::vector<Renderer::ModelMatrixOperation>& modelMatrixOperations,
-                                             std::vector<Renderer::InstanceOperation>& instanceOperations,
-                                             std::vector<Renderer::JointMatrixOperation>& jointMatrixOperations)
+void EngineMultithreading::DeleteRuntimeMesh(Renderer::RuntimeMesh& runtimeMesh, std::vector<Renderer::InstanceOperation>& instanceOperations)
 {
     Renderer::ResourceManager* resourceManager = renderThread.GetResourceManager();
     for (Renderer::RuntimeNode& node : runtimeMesh.nodes) {
@@ -382,4 +388,6 @@ void EngineMultithreading::DeleteRuntimeMesh(Renderer::RuntimeMesh& runtimeMesh,
             }
         }
     }
+
+    resourceManager->jointMatrixAllocator.free(runtimeMesh.jointMatrixAllocation);
 }

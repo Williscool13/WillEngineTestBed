@@ -12,6 +12,18 @@
 
 namespace Renderer
 {
+inline void SetObjectName(VkDevice device, uint64_t objectHandle, VkObjectType objectType, const char* name)
+{
+    VkDebugUtilsObjectNameInfoEXT nameInfo = {};
+    nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
+    nameInfo.pNext = nullptr;
+    nameInfo.objectType = objectType;
+    nameInfo.objectHandle = objectHandle;
+    nameInfo.pObjectName = name;
+
+    vkSetDebugUtilsObjectNameEXT(device, &nameInfo);
+}
+
 #define VK_CHECK(x)                                                          \
     do {                                                                     \
         VkResult err = x;                                                    \

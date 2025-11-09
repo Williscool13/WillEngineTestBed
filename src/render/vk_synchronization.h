@@ -5,6 +5,7 @@
 #ifndef WILLENGINETESTBED_SYNCHRONIZATION_H
 #define WILLENGINETESTBED_SYNCHRONIZATION_H
 
+#include <chrono>
 #include <volk/volk.h>
 
 namespace Renderer

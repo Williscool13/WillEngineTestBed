@@ -73,6 +73,7 @@ void RenderThread::Initialize(EngineMultithreading* engineMultithreading_, SDL_W
     }
 
     renderBufferCount = swapchain->imageCount;
+    lastFrameTime = std::chrono::high_resolution_clock::now();
     CreateBuffers(renderBufferCount);
     InitializeResources();
 }
@@ -222,9 +223,15 @@ void RenderThread::ThreadMain()
         FrameBuffer& currentFrameBuffer = engineMultithreading->frameBuffers[currentGameFrameInFlight];
         FrameSynchronization& currentFrameSynchronization = frameSynchronization[currentRenderFrameInFlight];
 
-        auto frameStartTime = std::chrono::high_resolution_clock::now();
         // Wait for the GPU to finish the last frame that used this frame-in-flight's resources (N - imageCount).
         VK_CHECK(vkWaitForFences(vulkanContext->device, 1, &currentFrameSynchronization.renderFence, true, 1000000000));
+
+        auto currentTime = std::chrono::high_resolution_clock::now();
+        auto diff = currentTime - lastFrameTime;
+        lastFrameTime = currentTime;
+
+        float frameTimeMs = std::chrono::duration<float, std::milli>(diff).count();
+        UpdateFrameTimeStats(frameTimeMs);
 
         ProcessOperations(currentFrameBuffer, currentRenderFrameInFlight);
         RenderResponse renderResponse = Render(currentRenderFrameInFlight, currentFrameSynchronization, currentFrameBuffer);
@@ -233,9 +240,7 @@ void RenderThread::ThreadMain()
                 bSwapchainOutdated = true;
                 break;
             default:
-                auto frameEndTime = std::chrono::high_resolution_clock::now();
-                float frameTimeMs = std::chrono::duration<float, std::milli>(frameEndTime - frameStartTime).count();
-                UpdateFrameTimeStats(frameTimeMs);
+
                 break;
         }
 
@@ -296,7 +301,7 @@ RenderThread::RenderResponse RenderThread::Render(uint32_t currentRenderFrameInF
     std::array<uint32_t, 2> scaledRenderExtent = renderContext->GetScaledRenderExtent();
     uint32_t swapchainImageIndex;
 
-    // (Non-Blocking) Acquire swapchain image index. Signal semaphore when the actual image is ready for use.
+    // Acquire swapchain image index. Signal semaphore when the actual image is ready for use.
     VkResult e = vkAcquireNextImageKHR(vulkanContext->device, swapchain->handle, 1000000000, currentFrameSynchronization.swapchainSemaphore, nullptr, &swapchainImageIndex);
     if (e == VK_ERROR_OUT_OF_DATE_KHR || e == VK_SUBOPTIMAL_KHR) {
         LOG_WARN("Swapchain out of date or suboptimal (Acquire)");

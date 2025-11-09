@@ -91,6 +91,7 @@ struct RuntimeMesh
 
     std::vector<uint32_t> nodeRemap{};
 
+    bool bNeedToSendToRender{false};
     Transform transform;
     OffsetAllocator::Allocation jointMatrixAllocation{};
     uint32_t jointMatrixOffset{0};

@@ -37,6 +37,8 @@ public:
 
     void Run();
 
+    void PrepareFrameDataForRender(uint64_t currentRenderFrame);
+
     void ThreadMain();
 
     void Cleanup();
@@ -44,22 +46,13 @@ public:
 private:
     Renderer::RuntimeMesh GenerateModel(Renderer::ModelEntryHandle modelEntryHandle, const Transform& topLevelTransform);
 
-    void UpdateTransforms(std::vector<Renderer::RuntimeNode>& runtimeNodes, const Transform& topLevelTransform);
-
-    void InitialUploadRuntimeMesh(Renderer::RuntimeMesh& runtimeMesh,
-                                  std::vector<Renderer::ModelMatrixOperation>& modelMatrixOperations,
-                                  std::vector<Renderer::InstanceOperation>& instanceOperations,
-                                  std::vector<Renderer::JointMatrixOperation>& jointMatrixOperations);
+    void UpdateTransforms(Renderer::RuntimeMesh& runtimeMesh);
 
     void UpdateRuntimeMesh(Renderer::RuntimeMesh& runtimeMesh,
                            std::vector<Renderer::ModelMatrixOperation>& modelMatrixOperations,
-                           std::vector<Renderer::InstanceOperation>& instanceOperations,
                            std::vector<Renderer::JointMatrixOperation>& jointMatrixOperations);
 
-    void DeleteRuntimeMesh(Renderer::RuntimeMesh& runtimeMesh,
-                           std::vector<Renderer::ModelMatrixOperation>& modelMatrixOperations,
-                           std::vector<Renderer::InstanceOperation>& instanceOperations,
-                           std::vector<Renderer::JointMatrixOperation>& jointMatrixOperations);
+    void DeleteRuntimeMesh(Renderer::RuntimeMesh& runtimeMesh, std::vector<Renderer::InstanceOperation>& instanceOperations);
 
 private:
     Renderer::ModelEntryHandle suzanneModelEntryHandle{Renderer::ModelEntryHandle::Invalid};
@@ -77,9 +70,11 @@ private:
     Renderer::RenderThread renderThread{};
     Renderer::AssetLoadingThread assetLoadingThread{};
 
-    uint64_t frameNumber{0};
+    uint64_t gameFrame{0};
+    uint64_t renderFrame{0};
     Renderer::RawSceneData rawSceneData;
     Game::FreeCamera freeCamera{{0.0f, 0.0f, 5.0f}, {0.0f, 0.0f, 0.0f}};
+    std::vector<Renderer::InstanceOperation> instanceOperations;
 
 public:
     std::counting_semaphore<Core::FRAMES_IN_FLIGHT> gameFrames{Core::FRAMES_IN_FLIGHT};
