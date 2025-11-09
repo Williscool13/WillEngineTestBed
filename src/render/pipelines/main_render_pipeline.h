@@ -15,7 +15,7 @@ public:
 
     ~MainRenderPipeline();
 
-    explicit MainRenderPipeline(VulkanContext* context, VkDescriptorSetLayout renderTargetSetLayout);
+    explicit MainRenderPipeline(VulkanContext* context, VkDescriptorSetLayout bindlessDescriptorSet);
 
     MainRenderPipeline(const MainRenderPipeline&) = delete;
 
@@ -27,8 +27,8 @@ public:
 
 
 public:
-    PipelineLayout renderPipelineLayout;
-    Pipeline renderPipeline;
+    PipelineLayout pipelineLayout;
+    Pipeline pipeline;
 
 private:
     VulkanContext* context;

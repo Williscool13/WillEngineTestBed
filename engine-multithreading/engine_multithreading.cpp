@@ -98,6 +98,7 @@ void EngineMultithreading::Run()
 
 
         assetLoadingThread.ResolveLoads(loadedModelsToAcquire);
+        ThreadMain();
 
         bool canTransmit = gameFrames.try_acquire();
         if (canTransmit) {
@@ -107,17 +108,12 @@ void EngineMultithreading::Run()
             renderFrames.release();
         }
 
-
-        ThreadMain();
         gameFrame++;
     }
 }
 
 void EngineMultithreading::ThreadMain()
 {
-    auto gameThreadTime = std::chrono::milliseconds(5);
-    std::this_thread::sleep_for(gameThreadTime);
-
     Input& input = Input::Input::Get();
     Time& time = Time::Get();
     const float deltaTime = time.GetDeltaTime();
@@ -201,6 +197,14 @@ void EngineMultithreading::ThreadMain()
         }
     }
 
+    if (input.IsKeyPressed(Key::E)) {
+        if (riggedFigureModelEntryHandle != Renderer::ModelEntryHandle::Invalid && riggedFigureRuntimeMesh.modelEntryHandle == Renderer::ModelEntryHandle::Invalid) {
+            riggedFigureRuntimeMesh = GenerateModel(riggedFigureModelEntryHandle, Transform::Identity);
+            UpdateTransforms(riggedFigureRuntimeMesh);
+            LOG_INFO("Sent Structure to be drawn by GPU");
+        }
+    }
+
     static bool bStartMoving = false;
     if (input.IsKeyPressed(Key::A)) {
         if (suzanneRuntimeMesh.modelEntryHandle != Renderer::ModelEntryHandle::Invalid) {
@@ -215,6 +219,22 @@ void EngineMultithreading::ThreadMain()
         suzanneRuntimeMesh.transform.translation = {0.0f, yOffset, 0.0f};
         UpdateTransforms(suzanneRuntimeMesh);
     }
+
+    static bool bStartAnimating = false;
+    if (bStartAnimating) {
+        animationPlayer.Update(deltaTime, riggedFigureRuntimeMesh.nodes, riggedFigureRuntimeMesh.nodeRemap);
+        UpdateTransforms(riggedFigureRuntimeMesh);
+    }
+
+    if (input.IsKeyPressed(Key::D) && !bStartAnimating) {
+        if (riggedFigureRuntimeMesh.modelEntryHandle != Renderer::ModelEntryHandle::Invalid) {
+            if (Renderer::ModelData* modelData = assetLoadingThread.GetModelData(riggedFigureRuntimeMesh.modelEntryHandle)) {
+                animationPlayer.Play(modelData->animations[0], true);
+            }
+            bStartAnimating = true;
+        }
+    }
+
 
     const glm::vec3 cameraPos = freeCamera.GetPosition();
     const glm::quat cameraRot = freeCamera.GetRotation();
@@ -231,7 +251,7 @@ void EngineMultithreading::ThreadMain()
     rawSceneData.nearPlane = freeCamera.GetNearPlane();
     rawSceneData.farPlane = freeCamera.GetFarPlane();
     rawSceneData.timeElapsed = timeElapsed;
-    rawSceneData.deltaTime = deltaTime;
+    rawSceneData.deltaTime += deltaTime;
 }
 
 void EngineMultithreading::Cleanup()
@@ -270,6 +290,7 @@ void EngineMultithreading::PrepareFrameDataForRender(uint64_t currentRenderFrame
 
     currentFrameBuffer.currentFrame = gameFrame;
     currentFrameBuffer.rawSceneData = rawSceneData;
+    rawSceneData.deltaTime = 0;
 
     for (Renderer::InstanceOperation& instanceOp : instanceOperations) {
         currentFrameBuffer.instanceOperations.push_back(instanceOp);

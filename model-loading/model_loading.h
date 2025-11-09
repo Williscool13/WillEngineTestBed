@@ -20,6 +20,7 @@
 #include "render/model/model_data.h"
 #include "render/pipelines/draw_cull_compute_pipeline.h"
 #include "render/pipelines/main_render_pipeline.h"
+#include "render/pipelines/main_skeletal_render_pipeline.h"
 #include "utils/handle_allocator.h"
 
 namespace Renderer
@@ -129,8 +130,7 @@ private:
 
     DrawCullComputePipeline drawCullComputePipeline;
     MainRenderPipeline mainRenderPipeline;
-    PipelineLayout skeletalPipelineLayout;
-    Pipeline skeletalPipeline;
+    MainSkeletalRenderPipeline mainSkeletalRenderPipeline;
 
 
 

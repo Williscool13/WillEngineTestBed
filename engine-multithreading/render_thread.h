@@ -4,16 +4,14 @@
 
 #ifndef WILLENGINETESTBED_RENDER_THREAD_H
 #define WILLENGINETESTBED_RENDER_THREAD_H
-#include <array>
+
 #include <memory>
 #include <semaphore>
 #include <thread>
 
 #include <SDL3/SDL.h>
 
-#include "core/constants.h"
-#include "render/render_constants.h"
-#include "../src/render/render-operations/render_operations.h"
+#include "render/render-operations/render_operations.h"
 #include "render/vk_resources.h"
 #include "render/vk_synchronization.h"
 #include "render/vk_types.h"
@@ -21,10 +19,9 @@
 #include "render/descriptor_buffer/descriptor_buffer_storage_image.h"
 #include "render/model/model_data.h"
 #include "render/pipelines/draw_cull_compute_pipeline.h"
-#include "render/pipelines/gradient_compute_pipeline.h"
 #include "render/pipelines/main_render_pipeline.h"
+#include "render/pipelines/main_skeletal_render_pipeline.h"
 #include "render/render-operations/render_operation_ring_buffer.h"
-#include "utils/handle_allocator.h"
 #include "utils/utils.h"
 
 class EngineMultithreading;
@@ -97,9 +94,9 @@ private:
     DescriptorSetLayout renderTargetSetLayout{};
     DescriptorBufferStorageImage renderTargetDescriptors{};
 
-    GradientComputePipeline gradientComputePipeline{};
     DrawCullComputePipeline drawCullComputePipeline{};
     MainRenderPipeline mainRenderPipeline{};
+    MainSkeletalRenderPipeline mainSkeletalRenderPipeline{};
 
 private: // Frame Draw Resources
     uint64_t frameNumber{0};

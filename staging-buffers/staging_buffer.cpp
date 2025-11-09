@@ -396,7 +396,7 @@ void StagingBuffer::Render()
 
 
             vkCmdBeginRendering(cmd, &renderInfo);
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainRenderPipeline.renderPipeline.handle);
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainRenderPipeline.pipeline.handle);
 
             VkViewport viewport = Renderer::VkHelpers::GenerateViewport(scaledRenderExtent[0], scaledRenderExtent[1]);
             vkCmdSetViewport(cmd, 0, 1, &viewport);
@@ -411,14 +411,14 @@ void StagingBuffer::Render()
                 instanceBuffers[currentFrameInFlight].address,
             };
 
-            vkCmdPushConstants(cmd, mainRenderPipeline.renderPipelineLayout.handle, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(Renderer::BindlessAddressPushConstant), &pushData);
+            vkCmdPushConstants(cmd, mainRenderPipeline.pipelineLayout.handle, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(Renderer::BindlessAddressPushConstant), &pushData);
 
             VkDescriptorBufferBindingInfoEXT bindingInfo = bindlessResourcesDescriptorBuffer.GetBindingInfo();
             vkCmdBindDescriptorBuffersEXT(cmd, 1, &bindingInfo);
 
             uint32_t bufferIndexImage = 0;
             VkDeviceSize bufferOffset = 0;
-            vkCmdSetDescriptorBufferOffsetsEXT(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainRenderPipeline.renderPipelineLayout.handle, 0, 1, &bufferIndexImage, &bufferOffset);
+            vkCmdSetDescriptorBufferOffsetsEXT(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainRenderPipeline.pipelineLayout.handle, 0, 1, &bufferIndexImage, &bufferOffset);
 
 
             const VkBuffer vertexBuffers[2] = {megaVertexBuffer.handle, megaVertexBuffer.handle};

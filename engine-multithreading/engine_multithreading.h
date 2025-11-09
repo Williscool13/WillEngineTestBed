@@ -11,8 +11,10 @@
 
 #include "asset_loading_thread.h"
 #include "render_thread.h"
+#include "core/constants.h"
 
 #include "game/camera/free_camera.h"
+#include "render/animation/animation_player.h"
 
 namespace Renderer
 {
@@ -75,6 +77,7 @@ private:
     Renderer::RawSceneData rawSceneData;
     Game::FreeCamera freeCamera{{0.0f, 0.0f, 5.0f}, {0.0f, 0.0f, 0.0f}};
     std::vector<Renderer::InstanceOperation> instanceOperations;
+    Renderer::AnimationPlayer animationPlayer{};
 
 public:
     std::counting_semaphore<Core::FRAMES_IN_FLIGHT> gameFrames{Core::FRAMES_IN_FLIGHT};

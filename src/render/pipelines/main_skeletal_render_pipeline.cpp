@@ -1,8 +1,8 @@
 //
-// Created by William on 2025-11-05.
+// Created by William on 2025-11-09.
 //
 
-#include "main_render_pipeline.h"
+#include "main_skeletal_render_pipeline.h"
 
 #include <filesystem>
 
@@ -13,33 +13,37 @@
 
 namespace Renderer
 {
-MainRenderPipeline::MainRenderPipeline() = default;
+MainSkeletalRenderPipeline::MainSkeletalRenderPipeline() = default;
 
-MainRenderPipeline::~MainRenderPipeline() = default;
+MainSkeletalRenderPipeline::~MainSkeletalRenderPipeline() = default;
 
-MainRenderPipeline::MainRenderPipeline(VulkanContext* context, VkDescriptorSetLayout bindlessDescriptorSet) : context(context)
+MainSkeletalRenderPipeline::MainSkeletalRenderPipeline(VulkanContext* context, VkDescriptorSetLayout bindlessDescriptorSet)
+    : context(context)
 {
-    VkPushConstantRange renderPushConstantRange{};
-    renderPushConstantRange.offset = 0;
-    renderPushConstantRange.size = sizeof(BindlessAddressPushConstant);
-    renderPushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 
-    VkPipelineLayoutCreateInfo renderPipelineLayoutCreateInfo{};
-    renderPipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    renderPipelineLayoutCreateInfo.pSetLayouts = &bindlessDescriptorSet;
-    renderPipelineLayoutCreateInfo.setLayoutCount = 1;
-    renderPipelineLayoutCreateInfo.pPushConstantRanges = &renderPushConstantRange;
-    renderPipelineLayoutCreateInfo.pushConstantRangeCount = 1;
+    VkPushConstantRange skeletalPushConstantRange{};
+    skeletalPushConstantRange.offset = 0;
+    skeletalPushConstantRange.size = sizeof(BindlessAddressSkeletalPushConstant);
+    skeletalPushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 
-    pipelineLayout = VkResources::CreatePipelineLayout(context, renderPipelineLayoutCreateInfo);
+    VkPipelineLayoutCreateInfo skeletalPipelineLayoutCreateInfo{};
+    skeletalPipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    skeletalPipelineLayoutCreateInfo.pSetLayouts = &bindlessDescriptorSet;
+    skeletalPipelineLayoutCreateInfo.setLayoutCount = 1;
+    //renderPipelineLayoutCreateInfo.pSetLayouts = nullptr;
+    //renderPipelineLayoutCreateInfo.setLayoutCount = 0;
+    skeletalPipelineLayoutCreateInfo.pPushConstantRanges = &skeletalPushConstantRange;
+    skeletalPipelineLayoutCreateInfo.pushConstantRangeCount = 1;
+
+    pipelineLayout = VkResources::CreatePipelineLayout(context, skeletalPipelineLayoutCreateInfo);
 
     VkShaderModule vertShader;
     VkShaderModule fragShader;
-    if (!VkHelpers::LoadShaderModule("shaders\\indirectDraw_vertex.spv", context->device, &vertShader)) {
-        throw std::runtime_error("Error when building the vertex shader (indirectDraw_vertex.spv)");
+    if (!VkHelpers::LoadShaderModule("shaders\\skeletalIndirectDraw_vertex.spv", context->device, &vertShader)) {
+        throw std::runtime_error("Error when building the vertex shader (skeletalIndirectDraw_vertex.spv)");
     }
-    if (!VkHelpers::LoadShaderModule("shaders\\indirectDraw_fragment.spv", context->device, &fragShader)) {
-        throw std::runtime_error("Error when building the fragment shader (indirectDraw_fragment.spv)");
+    if (!VkHelpers::LoadShaderModule("shaders\\skeletalIndirectDraw_fragment.spv", context->device, &fragShader)) {
+        throw std::runtime_error("Error when building the fragment shader (skeletalIndirectDraw_fragment.spv)");
     }
 
 
@@ -89,6 +93,18 @@ MainRenderPipeline::MainRenderPipeline(VulkanContext* context, VkDescriptorSetLa
             .format = VK_FORMAT_R32G32_SFLOAT,
             .offset = offsetof(Vertex, uv),
         },
+        {
+            .location = 5,
+            .binding = 1,
+            .format = VK_FORMAT_R32G32B32A32_UINT,
+            .offset = offsetof(Vertex, joints),
+        },
+        {
+            .location = 6,
+            .binding = 1,
+            .format = VK_FORMAT_R32G32B32A32_SFLOAT,
+            .offset = offsetof(Vertex, weights),
+        }
     };
 
     renderPipelineBuilder.setupVertexInput(vertexBindings, vertexAttributes);
@@ -107,7 +123,7 @@ MainRenderPipeline::MainRenderPipeline(VulkanContext* context, VkDescriptorSetLa
     vkDestroyShaderModule(context->device, fragShader, nullptr);
 }
 
-MainRenderPipeline::MainRenderPipeline(MainRenderPipeline&& other) noexcept
+MainSkeletalRenderPipeline::MainSkeletalRenderPipeline(MainSkeletalRenderPipeline&& other) noexcept
 {
     pipelineLayout = std::move(other.pipelineLayout);
     pipeline = std::move(other.pipeline);
@@ -115,7 +131,7 @@ MainRenderPipeline::MainRenderPipeline(MainRenderPipeline&& other) noexcept
     other.context = nullptr;
 }
 
-MainRenderPipeline& MainRenderPipeline::operator=(MainRenderPipeline&& other) noexcept
+MainSkeletalRenderPipeline& MainSkeletalRenderPipeline::operator=(MainSkeletalRenderPipeline&& other) noexcept
 {
     if (this != &other) {
         pipelineLayout = std::move(other.pipelineLayout);

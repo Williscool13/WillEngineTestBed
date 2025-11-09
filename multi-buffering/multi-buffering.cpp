@@ -100,6 +100,9 @@ void MultiBuffering::Run()
 
         auto frameStartTime = std::chrono::high_resolution_clock::now();
 
+        auto wait = std::chrono::milliseconds(8);
+        std::this_thread::sleep_for(wait);
+
         if (exit) {
             bShouldExit = true;
             break;

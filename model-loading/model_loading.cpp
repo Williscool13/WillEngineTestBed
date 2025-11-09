@@ -66,113 +66,7 @@ void ModelLoading::CreateResources()
 
     drawCullComputePipeline = DrawCullComputePipeline(vulkanContext.get());
     mainRenderPipeline = MainRenderPipeline(vulkanContext.get(), bindlessResourcesDescriptorBuffer.descriptorSetLayout.handle);
-    //
-    {
-        RenderPipelineBuilder renderPipelineBuilder;
-
-        const std::vector<VkVertexInputBindingDescription> vertexBindings{
-            {
-                .binding = 0,
-                .stride = sizeof(Vertex),
-                .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
-            },
-            {
-                .binding = 1,
-                .stride = sizeof(Vertex),
-                .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
-            }
-        };
-
-        const std::vector<VkVertexInputAttributeDescription> vertexAttributes{
-            {
-                .location = 0,
-                .binding = 0,
-                .format = VK_FORMAT_R32G32B32_SFLOAT,
-                .offset = offsetof(Vertex, position),
-            },
-            {
-                .location = 1,
-                .binding = 1,
-                .format = VK_FORMAT_R32G32B32_SFLOAT,
-                .offset = offsetof(Vertex, normal),
-            },
-            {
-                .location = 2,
-                .binding = 1,
-                .format = VK_FORMAT_R32G32B32A32_SFLOAT,
-                .offset = offsetof(Vertex, tangent),
-            },
-            {
-                .location = 3,
-                .binding = 1,
-                .format = VK_FORMAT_R32G32B32A32_SFLOAT,
-                .offset = offsetof(Vertex, color),
-            },
-            {
-                .location = 4,
-                .binding = 1,
-                .format = VK_FORMAT_R32G32_SFLOAT,
-                .offset = offsetof(Vertex, uv),
-            },
-            // todo: different vertex input attribute for normal vs skeletal pipelines
-            {
-                .location = 5,
-                .binding = 1,
-                .format = VK_FORMAT_R32G32B32A32_UINT,
-                .offset = offsetof(Vertex, joints),
-            },
-            {
-                .location = 6,
-                .binding = 1,
-                .format = VK_FORMAT_R32G32B32A32_SFLOAT,
-                .offset = offsetof(Vertex, weights),
-            }
-        };
-
-        renderPipelineBuilder.setupVertexInput(vertexBindings, vertexAttributes);
-
-        renderPipelineBuilder.setupInputAssembly(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-        renderPipelineBuilder.setupRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_BACK_BIT, VK_FRONT_FACE_COUNTER_CLOCKWISE);
-        renderPipelineBuilder.disableMultisampling();
-        renderPipelineBuilder.enableDepthTest(true, VK_COMPARE_OP_GREATER_OR_EQUAL);
-        renderPipelineBuilder.setupRenderer({DRAW_IMAGE_FORMAT}, DEPTH_IMAGE_FORMAT);
-        VkGraphicsPipelineCreateInfo pipelineCreateInfo = renderPipelineBuilder.generatePipelineCreateInfo();
-
-
-        VkPushConstantRange skeletalPushConstantRange{};
-        skeletalPushConstantRange.offset = 0;
-        skeletalPushConstantRange.size = sizeof(BindlessAddressSkeletalPushConstant);
-        skeletalPushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-
-        VkPipelineLayoutCreateInfo skeletalPipelineLayoutCreateInfo{};
-        skeletalPipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        skeletalPipelineLayoutCreateInfo.pSetLayouts = &bindlessResourcesDescriptorBuffer.descriptorSetLayout.handle;
-        skeletalPipelineLayoutCreateInfo.setLayoutCount = 1;
-        //renderPipelineLayoutCreateInfo.pSetLayouts = nullptr;
-        //renderPipelineLayoutCreateInfo.setLayoutCount = 0;
-        skeletalPipelineLayoutCreateInfo.pPushConstantRanges = &skeletalPushConstantRange;
-        skeletalPipelineLayoutCreateInfo.pushConstantRangeCount = 1;
-
-        skeletalPipelineLayout = VkResources::CreatePipelineLayout(vulkanContext.get(), skeletalPipelineLayoutCreateInfo);
-
-        VkShaderModule vertShader;
-        VkShaderModule fragShader;
-        if (!VkHelpers::LoadShaderModule("shaders\\skeletalIndirectDraw_vertex.spv", vulkanContext->device, &vertShader)) {
-            throw std::runtime_error("Error when building the vertex shader (skeletalIndirectDraw_vertex.spv)");
-        }
-        if (!VkHelpers::LoadShaderModule("shaders\\skeletalIndirectDraw_fragment.spv", vulkanContext->device, &fragShader)) {
-            throw std::runtime_error("Error when building the fragment shader (skeletalIndirectDraw_fragment.spv)");
-        }
-
-        renderPipelineBuilder.setShaders(vertShader, fragShader);
-        renderPipelineBuilder.setupPipelineLayout(skeletalPipelineLayout.handle);
-        pipelineCreateInfo = renderPipelineBuilder.generatePipelineCreateInfo();
-        skeletalPipeline = VkResources::CreateGraphicsPipeline(vulkanContext.get(), pipelineCreateInfo);
-
-
-        vkDestroyShaderModule(vulkanContext->device, vertShader, nullptr);
-        vkDestroyShaderModule(vulkanContext->device, fragShader, nullptr);
-    }
+    mainSkeletalRenderPipeline= MainSkeletalRenderPipeline(vulkanContext.get(), bindlessResourcesDescriptorBuffer.descriptorSetLayout.handle);
 }
 
 void ModelLoading::CreateModels()
@@ -633,7 +527,7 @@ void ModelLoading::Render()
 
 
             vkCmdBeginRendering(cmd, &renderInfo);
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainRenderPipeline.renderPipeline.handle);
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainRenderPipeline.pipeline.handle);
 
             VkViewport viewport = VkHelpers::GenerateViewport(scaledRenderExtent[0], scaledRenderExtent[1]);
             vkCmdSetViewport(cmd, 0, 1, &viewport);
@@ -648,14 +542,14 @@ void ModelLoading::Render()
                 instanceBuffers[currentFrameInFlight].address,
             };
 
-            vkCmdPushConstants(cmd, mainRenderPipeline.renderPipelineLayout.handle, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(BindlessAddressPushConstant), &pushData);
+            vkCmdPushConstants(cmd, mainRenderPipeline.pipelineLayout.handle, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(BindlessAddressPushConstant), &pushData);
 
             VkDescriptorBufferBindingInfoEXT bindingInfo = bindlessResourcesDescriptorBuffer.GetBindingInfo();
             vkCmdBindDescriptorBuffersEXT(cmd, 1, &bindingInfo);
 
             uint32_t bufferIndexImage = 0;
             VkDeviceSize bufferOffset = 0;
-            vkCmdSetDescriptorBufferOffsetsEXT(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainRenderPipeline.renderPipelineLayout.handle, 0, 1, &bufferIndexImage, &bufferOffset);
+            vkCmdSetDescriptorBufferOffsetsEXT(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainRenderPipeline.pipelineLayout.handle, 0, 1, &bufferIndexImage, &bufferOffset);
 
 
             const VkBuffer vertexBuffers[2] = {megaVertexBuffer.handle, megaVertexBuffer.handle};
@@ -667,7 +561,7 @@ void ModelLoading::Render()
                                           indirectCountBuffers[currentFrameInFlight].handle, offsetof(IndirectCount, opaqueCount),
                                           highestInstanceIndex, sizeof(VkDrawIndexedIndirectCommand));
 
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, skeletalPipeline.handle);
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainSkeletalRenderPipeline.pipeline.handle);
             BindlessAddressSkeletalPushConstant skeletalPushData{
                 currentSceneDataBuffer.address,
                 materialBuffer.address,
@@ -676,7 +570,7 @@ void ModelLoading::Render()
                 instanceBuffers[currentFrameInFlight].address,
                 jointMatrixBuffers[currentFrameInFlight].address,
             };
-            vkCmdPushConstants(cmd, skeletalPipelineLayout.handle, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(BindlessAddressSkeletalPushConstant), &skeletalPushData);
+            vkCmdPushConstants(cmd, mainSkeletalRenderPipeline.pipelineLayout.handle, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(BindlessAddressSkeletalPushConstant), &skeletalPushData);
 
             vkCmdDrawIndexedIndirectCount(cmd,
                                           opaqueSkeletalIndexedIndirectBuffer.handle, 0,
