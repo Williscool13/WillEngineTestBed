@@ -33,6 +33,7 @@ struct FrameSynchronization
     FrameSynchronization& operator=(FrameSynchronization&& other) noexcept;
 
     void Initialize();
+    void RecreateSynchronization();
 };
 } // Renderer
 

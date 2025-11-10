@@ -49,6 +49,7 @@ struct FrameBuffer
 {
     RawSceneData rawSceneData{};
     uint64_t currentFrame{};
+    bool bRequireSwapchainRecreate{};
 
     std::vector<VkBufferMemoryBarrier2> bufferAcquireOperations;
     std::vector<VkImageMemoryBarrier2> imageAcquireOperations;

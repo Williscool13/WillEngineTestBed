@@ -84,9 +84,17 @@ void EngineMultithreading::Run()
             Renderer::ImguiWrapper::HandleInput(e);
             if (e.type == SDL_EVENT_QUIT) { exit = true; }
             if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_ESCAPE) { exit = true; }
+            if (e.type == SDL_EVENT_WINDOW_MINIMIZED
+                || e.type == SDL_EVENT_WINDOW_RESTORED
+                || e.type == SDL_EVENT_WINDOW_MAXIMIZED
+                || e.type == SDL_EVENT_WINDOW_RESIZED
+                || e.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED) {
+                bRequireSwapchainRecreate |= true;
+            }
         }
 
-        input.UpdateFocus(SDL_GetWindowFlags(window));
+        SDL_WindowFlags windowFlags = SDL_GetWindowFlags(window);
+        input.UpdateFocus(windowFlags);
         time.Update();
 
         if (exit) {
@@ -290,7 +298,9 @@ void EngineMultithreading::PrepareFrameDataForRender(uint64_t currentRenderFrame
 
     currentFrameBuffer.currentFrame = gameFrame;
     currentFrameBuffer.rawSceneData = rawSceneData;
+    currentFrameBuffer.bRequireSwapchainRecreate = bRequireSwapchainRecreate;
     rawSceneData.deltaTime = 0;
+    bRequireSwapchainRecreate = false;
 
     for (Renderer::InstanceOperation& instanceOp : instanceOperations) {
         currentFrameBuffer.instanceOperations.push_back(instanceOp);

@@ -190,13 +190,27 @@ void RenderThread::ThreadMain()
         engineMultithreading->renderFrames.acquire();
         if (bShouldExit.load()) { break; }
 
-        if (bSwapchainOutdated) {
+        const uint32_t currentGameFrameInFlight = frameNumber % Core::FRAMES_IN_FLIGHT;
+        const uint32_t currentRenderFrameInFlight = frameNumber % renderBufferCount;
+
+        FrameBuffer& currentFrameBuffer = engineMultithreading->frameBuffers[currentGameFrameInFlight];
+        modelMatrixOperationRingBuffer.Enqueue(currentFrameBuffer.modelMatrixOperations);
+        currentFrameBuffer.modelMatrixOperations.clear();
+        instanceOperationRingBuffer.Enqueue(currentFrameBuffer.instanceOperations);
+        currentFrameBuffer.instanceOperations.clear();
+        jointMatrixOperationRingBuffer.Enqueue(currentFrameBuffer.jointMatrixOperations);
+        currentFrameBuffer.jointMatrixOperations.clear();
+
+        if (currentFrameBuffer.bRequireSwapchainRecreate || bSwapchainOutdated) {
             vkDeviceWaitIdle(vulkanContext->device);
 
             int32_t w, h;
             SDL_GetWindowSize(window, &w, &h);
 
             swapchain->Recreate(w, h);
+            for (FrameSynchronization& fs : frameSynchronization) {
+                fs.RecreateSynchronization();
+            }
 
             Input::Input::Get().UpdateWindowExtent(swapchain->extent.width, swapchain->extent.height);
             if (RENDER_TARGET_SIZE_EQUALS_SWAPCHAIN_SIZE) {
@@ -219,28 +233,17 @@ void RenderThread::ThreadMain()
             renderTargetDescriptors.UpdateDescriptor(drawDescriptorInfo, 0, 0, 0);
         }
 
-        const uint32_t currentGameFrameInFlight = frameNumber % Core::FRAMES_IN_FLIGHT;
-        const uint32_t currentRenderFrameInFlight = frameNumber % renderBufferCount;
-
-        FrameBuffer& currentFrameBuffer = engineMultithreading->frameBuffers[currentGameFrameInFlight];
-        modelMatrixOperationRingBuffer.Enqueue(currentFrameBuffer.modelMatrixOperations);
-        currentFrameBuffer.modelMatrixOperations.clear();
-        instanceOperationRingBuffer.Enqueue(currentFrameBuffer.instanceOperations);
-        currentFrameBuffer.instanceOperations.clear();
-        jointMatrixOperationRingBuffer.Enqueue(currentFrameBuffer.jointMatrixOperations);
-        currentFrameBuffer.jointMatrixOperations.clear();
 
         if (swapchain->extent.width > 0 && swapchain->extent.height > 0) {
             FrameSynchronization& currentFrameSynchronization = frameSynchronization[currentRenderFrameInFlight];
 
             // Wait for the GPU to finish the last frame that used this frame-in-flight's resources (N - imageCount).
-            VkResult fenceResult = vkWaitForFences(vulkanContext->device, 1, &currentFrameSynchronization.renderFence, true, 33333333);
-            if (fenceResult == VK_SUCCESS) {
-                ProcessOperations(currentRenderFrameInFlight);
-                RenderResponse renderResponse = Render(currentRenderFrameInFlight, currentFrameSynchronization, currentFrameBuffer);
-                if (renderResponse == RenderResponse::SWAPCHAIN_OUTDATED) {
-                    bSwapchainOutdated = true;
-                }
+            vkWaitForFences(vulkanContext->device, 1, &currentFrameSynchronization.renderFence, true, UINT64_MAX);
+
+            ProcessOperations(currentRenderFrameInFlight);
+            RenderResponse renderResponse = Render(currentRenderFrameInFlight, currentFrameSynchronization, currentFrameBuffer);
+            if (renderResponse == RenderResponse::SWAPCHAIN_OUTDATED) {
+                bSwapchainOutdated = true;
             }
 
             auto currentTime = std::chrono::high_resolution_clock::now();
@@ -249,6 +252,10 @@ void RenderThread::ThreadMain()
             float frameTimeMs = std::chrono::duration<float, std::milli>(diff).count();
             UpdateFrameTimeStats(frameTimeMs);
         }
+        else {
+            ProcessOperations(currentRenderFrameInFlight);
+        }
+
 
         frameNumber++;
         engineMultithreading->gameFrames.release();

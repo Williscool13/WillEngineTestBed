@@ -75,6 +75,7 @@ private:
     uint64_t gameFrame{0};
     uint64_t renderFrame{0};
     Renderer::RawSceneData rawSceneData;
+    bool bRequireSwapchainRecreate{};
     Game::FreeCamera freeCamera{{0.0f, 0.0f, 5.0f}, {0.0f, 0.0f, 0.0f}};
     std::vector<Renderer::InstanceOperation> instanceOperations;
     Renderer::AnimationPlayer animationPlayer{};

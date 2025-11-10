@@ -83,4 +83,17 @@ void FrameSynchronization::Initialize()
     VK_CHECK(vkCreateSemaphore(context->device, &semaphoreCreateInfo, nullptr, &swapchainSemaphore));
     VK_CHECK(vkCreateSemaphore(context->device, &semaphoreCreateInfo, nullptr, &renderSemaphore));
 }
+
+void FrameSynchronization::RecreateSynchronization()
+{
+    vkDestroyFence(context->device, renderFence, nullptr);
+    vkDestroySemaphore(context->device, swapchainSemaphore, nullptr);
+    vkDestroySemaphore(context->device, renderSemaphore, nullptr);
+
+    const VkFenceCreateInfo fenceCreateInfo = VkHelpers::FenceCreateInfo();
+    const VkSemaphoreCreateInfo semaphoreCreateInfo = VkHelpers::SemaphoreCreateInfo();
+    VK_CHECK(vkCreateFence(context->device, &fenceCreateInfo, nullptr, &renderFence));
+    VK_CHECK(vkCreateSemaphore(context->device, &semaphoreCreateInfo, nullptr, &swapchainSemaphore));
+    VK_CHECK(vkCreateSemaphore(context->device, &semaphoreCreateInfo, nullptr, &renderSemaphore));
+}
 } // Renderer
