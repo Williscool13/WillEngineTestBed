@@ -48,7 +48,7 @@ inline static constexpr uint32_t DEFAULT_RENDER_TARGET_HEIGHT = 900;
 inline static constexpr float DEFAULT_RENDER_SCALE = 1.0f;
 inline static constexpr bool RENDER_TARGET_SIZE_EQUALS_SWAPCHAIN_SIZE = true;
 
-inline static constexpr uint32_t FRAME_BUFFER_OPERATION_COUNT_LIMIT = 8192;
+inline static constexpr uint32_t FRAME_BUFFER_OPERATION_COUNT_LIMIT = 65536;
 
 
 }

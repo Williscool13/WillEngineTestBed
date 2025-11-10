@@ -71,7 +71,7 @@ private:
 
     void ProcessAcquisitions(VkCommandBuffer cmd, FrameBuffer& currentFrameBuffer);
 
-    void ProcessOperations(FrameBuffer& currentFrameBuffer, uint32_t currentFrameInFlight);
+    void ProcessOperations(uint32_t currentFrameInFlight);
 
     RenderResponse Render(uint32_t currentRenderFrameInFlight, FrameSynchronization& currentFrameSynchronization, FrameBuffer& currentFrameBuffer);
 

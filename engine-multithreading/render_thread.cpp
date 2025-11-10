@@ -221,22 +221,33 @@ void RenderThread::ThreadMain()
 
         const uint32_t currentGameFrameInFlight = frameNumber % Core::FRAMES_IN_FLIGHT;
         const uint32_t currentRenderFrameInFlight = frameNumber % renderBufferCount;
+
         FrameBuffer& currentFrameBuffer = engineMultithreading->frameBuffers[currentGameFrameInFlight];
-        FrameSynchronization& currentFrameSynchronization = frameSynchronization[currentRenderFrameInFlight];
+        modelMatrixOperationRingBuffer.Enqueue(currentFrameBuffer.modelMatrixOperations);
+        currentFrameBuffer.modelMatrixOperations.clear();
+        instanceOperationRingBuffer.Enqueue(currentFrameBuffer.instanceOperations);
+        currentFrameBuffer.instanceOperations.clear();
+        jointMatrixOperationRingBuffer.Enqueue(currentFrameBuffer.jointMatrixOperations);
+        currentFrameBuffer.jointMatrixOperations.clear();
 
-        // Wait for the GPU to finish the last frame that used this frame-in-flight's resources (N - imageCount).
-        vkWaitForFences(vulkanContext->device, 1, &currentFrameSynchronization.renderFence, true, 33333333);
+        if (swapchain->extent.width > 0 && swapchain->extent.height > 0) {
+            FrameSynchronization& currentFrameSynchronization = frameSynchronization[currentRenderFrameInFlight];
 
-        auto currentTime = std::chrono::high_resolution_clock::now();
-        auto diff = currentTime - lastFrameTime;
-        lastFrameTime = currentTime;
-        float frameTimeMs = std::chrono::duration<float, std::milli>(diff).count();
-        UpdateFrameTimeStats(frameTimeMs);
+            // Wait for the GPU to finish the last frame that used this frame-in-flight's resources (N - imageCount).
+            VkResult fenceResult = vkWaitForFences(vulkanContext->device, 1, &currentFrameSynchronization.renderFence, true, 33333333);
+            if (fenceResult == VK_SUCCESS) {
+                ProcessOperations(currentRenderFrameInFlight);
+                RenderResponse renderResponse = Render(currentRenderFrameInFlight, currentFrameSynchronization, currentFrameBuffer);
+                if (renderResponse == RenderResponse::SWAPCHAIN_OUTDATED) {
+                    bSwapchainOutdated = true;
+                }
+            }
 
-        ProcessOperations(currentFrameBuffer, currentRenderFrameInFlight);
-        RenderResponse renderResponse = Render(currentRenderFrameInFlight, currentFrameSynchronization, currentFrameBuffer);
-        if (renderResponse == RenderResponse::SWAPCHAIN_OUTDATED) {
-            bSwapchainOutdated = true;
+            auto currentTime = std::chrono::high_resolution_clock::now();
+            auto diff = currentTime - lastFrameTime;
+            lastFrameTime = currentTime;
+            float frameTimeMs = std::chrono::duration<float, std::milli>(diff).count();
+            UpdateFrameTimeStats(frameTimeMs);
         }
 
         frameNumber++;
@@ -267,22 +278,14 @@ void RenderThread::ProcessAcquisitions(VkCommandBuffer cmd, FrameBuffer& current
     currentFrameBuffer.imageAcquireOperations.clear();
 }
 
-void RenderThread::ProcessOperations(FrameBuffer& currentFrameBuffer, uint32_t currentFrameInFlight)
+void RenderThread::ProcessOperations(uint32_t currentFrameInFlight)
 {
     const AllocatedBuffer& currentModelBuffer = modelBuffers[currentFrameInFlight];
     const AllocatedBuffer& currentInstanceBuffer = instanceBuffers[currentFrameInFlight];
     const AllocatedBuffer& currentJointMatrixBuffers = jointMatrixBuffers[currentFrameInFlight];
 
-    modelMatrixOperationRingBuffer.Enqueue(currentFrameBuffer.modelMatrixOperations);
-    currentFrameBuffer.modelMatrixOperations.clear();
     modelMatrixOperationRingBuffer.ProcessOperations(static_cast<char*>(currentModelBuffer.allocationInfo.pMappedData), renderBufferCount + 1);
-
-    instanceOperationRingBuffer.Enqueue(currentFrameBuffer.instanceOperations);
-    currentFrameBuffer.instanceOperations.clear();
     instanceOperationRingBuffer.ProcessOperations(static_cast<char*>(currentInstanceBuffer.allocationInfo.pMappedData), renderBufferCount, highestInstanceIndex);
-
-    jointMatrixOperationRingBuffer.Enqueue(currentFrameBuffer.jointMatrixOperations);
-    currentFrameBuffer.jointMatrixOperations.clear();
     jointMatrixOperationRingBuffer.ProcessOperations(static_cast<char*>(currentJointMatrixBuffers.allocationInfo.pMappedData), renderBufferCount + 1);
 }
 
