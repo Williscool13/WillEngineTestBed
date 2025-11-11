@@ -1,17 +1,14 @@
 //
-// Created by William on 2025-10-09.
+// Created by William on 2025-11-11.
 //
 
-#ifndef WILLENGINETESTBED_MULTIBUFFERING_H
-#define WILLENGINETESTBED_MULTIBUFFERING_H
-
+#ifndef WILLENGINETESTBED_HOT_RELOADING_H
+#define WILLENGINETESTBED_HOT_RELOADING_H
 #include <memory>
 #include <SDL3/SDL.h>
 
 #include "render/vk_synchronization.h"
-#include "render/vk_resources.h"
 #include "utils/utils.h"
-
 
 namespace Renderer
 {
@@ -21,15 +18,19 @@ struct Swapchain;
 struct RenderTargets;
 }
 
-namespace Template
+
+namespace HotReloading
 {
-class ClassName
+namespace Game
+{
+    struct GameState;
+}
+
+class HotReloading
 {
 public:
-    ClassName();
-
-    ~ClassName();
-
+    HotReloading();
+    ~HotReloading();
     void Initialize();
 
     void Run();
@@ -39,6 +40,9 @@ public:
     void Cleanup();
 
 private:
+    std::unique_ptr<Game::GameState> gameState;
+
+private:
     SDL_Window* window{nullptr};
     std::unique_ptr<Renderer::VulkanContext> vulkanContext{};
     std::unique_ptr<Renderer::Swapchain> swapchain{};
@@ -46,10 +50,13 @@ private:
     uint64_t frameNumber{0};
     uint32_t renderFramesInFlight{0};
 
+
     bool bShouldExit{false};
     bool bSwapchainOutdated{false};
+
+    Utils::DllLoader gameDll;
 };
 }
 
 
-#endif //WILLENGINETESTBED_MULTIBUFFERING_H
+#endif //WILLENGINETESTBED_HOT_RELOADING_H

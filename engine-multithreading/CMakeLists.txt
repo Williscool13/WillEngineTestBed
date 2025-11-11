@@ -26,6 +26,14 @@ add_custom_command(TARGET engine-multithreading POST_BUILD
         $<TARGET_FILE_DIR:engine-multithreading>
 )
 
+if (CMAKE_BUILD_TYPE STREQUAL "Debug" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+    add_custom_command(TARGET engine-multithreading POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_PDB_FILE:SDL3::SDL3>
+            $<TARGET_FILE_DIR:engine-multithreading>
+    )
+endif()
+
 compile_shaders(engine-multithreading
         ${CMAKE_SOURCE_DIR}/shaders/indirectDraw.slang vertex vertexMain
         ${CMAKE_SOURCE_DIR}/shaders/indirectDraw.slang fragment fragmentMain

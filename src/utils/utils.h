@@ -32,7 +32,8 @@ private:
     std::chrono::high_resolution_clock::time_point start;
 };
 
-inline void SetThreadName(const char* name) {
+inline void SetThreadName(const char* name)
+{
     // Wide string conversion
     wchar_t wideName[256];
     MultiByteToWideChar(CP_UTF8, 0, name, -1, wideName, 256);
@@ -47,7 +48,9 @@ public:
     void RecordFrameTime(float frameTimeMs);
 
     float GetRollingAverage() const { return rollingAverage; }
+
     float GetLatestFrameTime() const;
+
     size_t GetSampleCount() const { return sampleCount; }
 
     void SetSpikeThreshold(float threshold) { spikeThreshold = threshold; }
@@ -64,9 +67,42 @@ private:
     float spikeThreshold;
 
     void UpdateRollingAverage();
+
     bool IsSpikeDetected(float frameTimeMs) const;
 };
 
+class DllLoader
+{
+public:
+    DllLoader() = default;
+
+    ~DllLoader() { Unload(); }
+
+    // Delete copy/move
+    DllLoader(const DllLoader&) = delete;
+
+    DllLoader& operator=(const DllLoader&) = delete;
+
+    bool Load(const std::string& dllPath, const std::string& tempCopyName = "");
+
+    void Unload();
+
+    bool Reload();
+
+    template<typename FuncType>
+    FuncType GetFunction(const char* functionName)
+    {
+        if (!handle) return nullptr;
+        return reinterpret_cast<FuncType>(GetProcAddress(handle, functionName));
+    }
+
+    bool IsLoaded() const { return handle != nullptr; }
+
+private:
+    HMODULE handle = nullptr;
+    std::string originalPath;
+    std::string loadedPath;
+};
 } // Utils
 
 #endif //WILLENGINETESTBED_UTILS_H
