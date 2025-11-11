@@ -128,7 +128,7 @@ void HotReloading::Render(Renderer::FrameSynchronization& frameSync)
 void HotReloading::HotReloading::Cleanup()
 {
     vkDeviceWaitIdle(vulkanContext->device);
- 
+
     auto gameShutdown = gameDll.GetFunction<void(*)(Game::GameState* state)>("GameShutdown");
     if (gameShutdown) { gameShutdown(gameState.get()); }
 

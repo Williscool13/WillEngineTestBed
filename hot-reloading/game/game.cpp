@@ -18,7 +18,7 @@ void GameInit(GameState* state)
 
 void GameUpdate(GameState* state)
 {
-    state->logger->info("Game update htyjrmt");
+    state->logger->info("Game update 10");
     // LOG_INFO("Game is printing whatever");
     // Input i = Input::Get();
     // if (i.IsKeyPressed(Key::O)) {

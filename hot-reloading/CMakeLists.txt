@@ -11,34 +11,31 @@ target_link_libraries(hot-reloading PRIVATE
         input-lib
 )
 
-add_custom_command(TARGET hot-reloading POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        $<TARGET_FILE:SDL3::SDL3>
-        $<TARGET_FILE_DIR:hot-reloading>
-)
-
-if (CMAKE_BUILD_TYPE STREQUAL "Debug" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
-    add_custom_command(TARGET hot-reloading POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            $<TARGET_PDB_FILE:SDL3::SDL3>
-            $<TARGET_FILE_DIR:hot-reloading>
-    )
-endif()
-
 add_subdirectory(game)
 
-add_custom_command(TARGET hot-reloading POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+set(DLLS_TO_COPY
         $<TARGET_FILE:hot-reload-game>
-        $<TARGET_FILE_DIR:hot-reloading>
-        COMMENT "Copying hot-reload-game.dll to engine directory"
+        $<TARGET_FILE:SDL3::SDL3>
 )
 
 if (CMAKE_BUILD_TYPE STREQUAL "Debug" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
-    add_custom_command(TARGET hot-reloading POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    set(PDBS_TO_COPY
             $<TARGET_PDB_FILE:hot-reload-game>
-            $<TARGET_FILE_DIR:hot-reloading>
-            COMMENT "Copying hot-reload-game.pdb to engine directory"
+            $<TARGET_PDB_FILE:SDL3::SDL3>
     )
 endif()
+
+add_custom_command(
+        OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/dlls_copied.stamp
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${DLLS_TO_COPY} $<TARGET_FILE_DIR:hot-reloading>
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${PDBS_TO_COPY} $<TARGET_FILE_DIR:hot-reloading>
+        COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_CURRENT_BINARY_DIR}/dlls_copied.stamp
+        DEPENDS hot-reload-game SDL3::SDL3
+        COMMENT "Copying DLLs and PDBs"
+)
+
+add_custom_target(copy-runtime-deps ALL
+        DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/dlls_copied.stamp
+)
+
+add_dependencies(hot-reloading copy-runtime-deps)
