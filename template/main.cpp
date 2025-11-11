@@ -3,7 +3,7 @@
 
 #include <fmt/format.h>
 
-#include "single-buffering.h"
+#include "class-name.h"
 #include "src/crash-handling/crash_context.h"
 #include "src/crash-handling/crash_handler.h"
 #include "src/crash-handling/logger.h"
@@ -16,7 +16,7 @@ int main()
     CrashContext::Initialize();
     Logger::Initialize("logs/multi-buffering.log");
 
-    Renderer::ClassName mb{};
+    Template::ClassName mb{};
     mb.Initialize();
     mb.Run();
     mb.Cleanup();

@@ -6,10 +6,8 @@
 #define WILLENGINETESTBED_MULTIBUFFERING_H
 
 #include <memory>
-#include <vector>
 #include <SDL3/SDL.h>
 
-#include "render/render_context.h"
 #include "render/vk_synchronization.h"
 #include "render/vk_resources.h"
 #include "utils/utils.h"
@@ -21,7 +19,10 @@ struct ImguiWrapper;
 struct VulkanContext;
 struct Swapchain;
 struct RenderTargets;
+}
 
+namespace Template
+{
 class ClassName
 {
 public:
@@ -33,23 +34,17 @@ public:
 
     void Run();
 
-    void Render();
+    void Render(Renderer::FrameSynchronization& frameSync);
 
     void Cleanup();
 
-
-private:
-    void UpdateFrameTimeStats(float frameTimeMs);
-    Utils::FrameTimeTracker frameTimeTracker{1000, 1.5f};
-
 private:
     SDL_Window* window{nullptr};
-    std::unique_ptr<VulkanContext> vulkanContext{};
-    std::unique_ptr<Swapchain> swapchain{};
-
+    std::unique_ptr<Renderer::VulkanContext> vulkanContext{};
+    std::unique_ptr<Renderer::Swapchain> swapchain{};
+    std::vector<Renderer::FrameSynchronization> frameSynchronization;
     uint64_t frameNumber{0};
-    FrameSynchronization frameSync;
-    int32_t renderFramesInFlight{0};
+    uint32_t renderFramesInFlight{0};
 
     bool bShouldExit{false};
 

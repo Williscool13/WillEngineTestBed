@@ -25,11 +25,11 @@
 
 namespace Renderer
 {
-SingleBuffering::SingleBuffering() = default;
+ClassName::ClassName() = default;
 
-SingleBuffering::~SingleBuffering() = default;
+ClassName::~ClassName() = default;
 
-void SingleBuffering::Initialize()
+void ClassName::Initialize()
 {
     Utils::ScopedTimer timer{"SingleBuffering Initialization"};
     bool sdlInitSuccess = SDL_Init(SDL_INIT_VIDEO);
@@ -63,7 +63,7 @@ void SingleBuffering::Initialize()
     frameSync.Initialize();
 }
 
-void SingleBuffering::Run()
+void ClassName::Run()
 {
     Input& input = Input::Input::Get();
     SDL_Event e;
@@ -86,7 +86,7 @@ void SingleBuffering::Run()
             SDL_GetWindowSize(window, &w, &h);
 
             swapchain->Recreate(w, h);
-            Input::Input::Get().UpdateWindowExtent(swapchain->extent.width, swapchain->extent.height);
+            input.UpdateWindowExtent(swapchain->extent.width, swapchain->extent.height);
             bSwapchainOutdated = false;
         }
 
@@ -109,7 +109,7 @@ void SingleBuffering::Run()
     }
 }
 
-void SingleBuffering::Render()
+void ClassName::Render()
 {
     const uint32_t currentFrameInFlight = frameNumber % swapchain->imageCount;
 
@@ -160,14 +160,14 @@ void SingleBuffering::Render()
     }
 }
 
-void SingleBuffering::Cleanup()
+void ClassName::Cleanup()
 {
     vkDeviceWaitIdle(vulkanContext->device);
 
     SDL_DestroyWindow(window);
 }
 
-void SingleBuffering::UpdateFrameTimeStats(float frameTimeMs)
+void ClassName::UpdateFrameTimeStats(float frameTimeMs)
 {
     frameTimeTracker.RecordFrameTime(frameTimeMs);
 
