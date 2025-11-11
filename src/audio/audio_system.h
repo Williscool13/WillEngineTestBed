@@ -16,7 +16,7 @@
 #include "audio_source.h"
 #include "audio_types.h"
 #include "crash-handling/logger.h"
-#include "utils/free_list.h"
+#include "core/data-structures/free_list.h"
 #include "utils/world_constants.h"
 
 
@@ -41,10 +41,10 @@ public:
 
     AudioSourceHandle PlaySound(AudioClipHandle clipHandle, float volume, float pitch, bool bLooping)
     {
-        return PlaySound(clipHandle, {}, {}, volume, pitch, false, false, bLooping);
+        return PlaySoundClip(clipHandle, {}, {}, volume, pitch, false, false, bLooping);
     }
 
-    AudioSourceHandle PlaySound(AudioClipHandle clipHandle, glm::vec3 position, glm::vec3 velocity, float volume, float pitch, bool bSpatial, bool bDoppler, bool bLooping);
+    AudioSourceHandle PlaySoundClip(AudioClipHandle clipHandle, glm::vec3 position, glm::vec3 velocity, float volume, float pitch, bool bSpatial, bool bDoppler, bool bLooping);
 
     bool StopSound(AudioSourceHandle sourceHandle);
 

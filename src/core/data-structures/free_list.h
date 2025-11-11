@@ -97,8 +97,6 @@ public:
     bool Remove(Handle<T> handle)
     {
         if (auto* item = Get(handle)) {
-            *item = T{};
-
             ++generations[handle.index];
             freeIndices.push_back(handle.index);
             --count;
@@ -118,7 +116,7 @@ public:
         count = 0;
     }
 
-    std::array<T, MaxSize>& GetAllItems() { return slots; }
+    std::vector<T>& GetAllItems() { return slots; }
 };
 
 

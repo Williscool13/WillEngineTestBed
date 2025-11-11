@@ -71,10 +71,6 @@ add_library(engine-common STATIC
         src/utils/file_utils.h
         src/utils/world_constants.cpp
         src/utils/world_constants.h
-        src/utils/free_list.cpp
-        src/utils/free_list.h
-        src/utils/handle_allocator.cpp
-        src/utils/handle_allocator.h
 )
 
 target_compile_definitions(engine-common PUBLIC

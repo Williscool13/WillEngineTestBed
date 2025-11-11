@@ -11,9 +11,10 @@
 #include "asset_load_types.h"
 #include "fastgltf/types.hpp"
 #include "LockFreeQueue/LockFreeQueueCpp11.h"
+#include "core/data-structures/handle_allocator.h"
 #include "render/render_constants.h"
 #include "render/model/model_data.h"
-#include "utils/handle_allocator.h"
+
 
 template<typename T>
 using LockFreeQueue = LockFreeQueueCpp11<T>;

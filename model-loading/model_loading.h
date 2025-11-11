@@ -11,6 +11,7 @@
 #include "offsetAllocator.hpp"
 #include "SDL3/SDL.h"
 
+#include "core/data-structures/handle_allocator.h"
 #include "render/render_context.h"
 #include "render/vk_synchronization.h"
 #include "render/vk_resources.h"
@@ -21,7 +22,6 @@
 #include "render/pipelines/draw_cull_compute_pipeline.h"
 #include "render/pipelines/main_render_pipeline.h"
 #include "render/pipelines/main_skeletal_render_pipeline.h"
-#include "utils/handle_allocator.h"
 
 namespace Renderer
 {

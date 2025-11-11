@@ -31,7 +31,7 @@ void Audio::Init()
         800,
         600,
         window_flags);
-    Input::Input input = Input::Input::Get();
+    Input input = Input::Get();
     input.Init(window, 800, 600);
 
     SDL_AudioSpec spec{};
@@ -65,7 +65,7 @@ void Audio::Update()
     glm::vec3 playerForward = WORLD_FORWARD;
     glm::vec3 playerRight = glm::cross(playerForward, WORLD_UP);
 
-    Input::Input input = Input::Input::Get();
+    Input input = Input::Get();
     SDL_Event e;
     bool exit = false;
     while (true) {
@@ -76,48 +76,48 @@ void Audio::Update()
             input.ProcessEvent(e);
         }
 
-        if (exit || input.IsKeyPressed(Input::Key::ESCAPE)) {
+        if (exit || input.IsKeyPressed(Key::ESCAPE)) {
             bShouldExit = true;
             break;
         }
 
-        if (input.IsKeyPressed(Input::Key::NUM_1)) {
-            audioSystem.PlaySound(gunshot, playerPos + playerForward * 2.0f, glm::vec3(0.0f), 1.0f, pitch, true, false, false);
+        if (input.IsKeyPressed(Key::NUM_1)) {
+            audioSystem.PlaySoundClip(gunshot, playerPos + playerForward * 2.0f, glm::vec3(0.0f), 1.0f, pitch, true, false, false);
         }
-        if (input.IsKeyPressed(Input::Key::NUM_2)) {
-            audioSystem.PlaySound(gunshot, playerPos - playerForward * 2.0f, glm::vec3(0.0f), 1.0f, 1.0f, true, false, false);
+        if (input.IsKeyPressed(Key::NUM_2)) {
+            audioSystem.PlaySoundClip(gunshot, playerPos - playerForward * 2.0f, glm::vec3(0.0f), 1.0f, 1.0f, true, false, false);
         }
-        if (input.IsKeyPressed(Input::Key::NUM_3)) {
-            audioSystem.PlaySound(gunshot, playerPos + playerRight * 2.0f, glm::vec3(0.0f), 1.0f, 1.0f, true, false, false);
+        if (input.IsKeyPressed(Key::NUM_3)) {
+            audioSystem.PlaySoundClip(gunshot, playerPos + playerRight * 2.0f, glm::vec3(0.0f), 1.0f, 1.0f, true, false, false);
         }
-        if (input.IsKeyPressed(Input::Key::NUM_4)) {
-            audioSystem.PlaySound(gunshot, playerPos - playerRight * 2.0f, glm::vec3(0.0f), 1.0f, 1.0f, true, false, false);
+        if (input.IsKeyPressed(Key::NUM_4)) {
+            audioSystem.PlaySoundClip(gunshot, playerPos - playerRight * 2.0f, glm::vec3(0.0f), 1.0f, 1.0f, true, false, false);
         }
-        if (input.IsKeyPressed(Input::Key::NUM_5)) {
-            audioSystem.PlaySound(gunshot, playerPos + (playerForward + playerRight) * 2.0f, glm::vec3(0.0f), 1.0f, 1.0f, true, false, false);
+        if (input.IsKeyPressed(Key::NUM_5)) {
+            audioSystem.PlaySoundClip(gunshot, playerPos + (playerForward + playerRight) * 2.0f, glm::vec3(0.0f), 1.0f, 1.0f, true, false, false);
         }
-        if (input.IsKeyPressed(Input::Key::NUM_6)) {
-            audioSystem.PlaySound(gunshot, playerPos + (playerForward - playerRight) * 2.0f, glm::vec3(0.0f), 1.0f, 1.0f, true, false, false);
+        if (input.IsKeyPressed(Key::NUM_6)) {
+            audioSystem.PlaySoundClip(gunshot, playerPos + (playerForward - playerRight) * 2.0f, glm::vec3(0.0f), 1.0f, 1.0f, true, false, false);
         }
-        if (input.IsKeyPressed(Input::Key::NUM_7)) {
-            audioSystem.PlaySound(gunshot, playerPos + (-playerForward + playerRight) * 2.0f, glm::vec3(0.0f), 1.0f, 1.0f, true, false, false);
+        if (input.IsKeyPressed(Key::NUM_7)) {
+            audioSystem.PlaySoundClip(gunshot, playerPos + (-playerForward + playerRight) * 2.0f, glm::vec3(0.0f), 1.0f, 1.0f, true, false, false);
         }
-        if (input.IsKeyPressed(Input::Key::NUM_8)) {
-            audioSystem.PlaySound(gunshot, playerPos + (-playerForward - playerRight) * 2.0f, glm::vec3(0.0f), 1.0f, 1.0f, true, false, false);
+        if (input.IsKeyPressed(Key::NUM_8)) {
+            audioSystem.PlaySoundClip(gunshot, playerPos + (-playerForward - playerRight) * 2.0f, glm::vec3(0.0f), 1.0f, 1.0f, true, false, false);
         }
-        if (input.IsKeyPressed(Input::Key::NUM_9)) {
-            audioSystem.PlaySound(gunshot, playerPos + playerForward * 95.0f, glm::vec3(0.0f), 1.0f, 1.0f, true, false, false);
+        if (input.IsKeyPressed(Key::NUM_9)) {
+            audioSystem.PlaySoundClip(gunshot, playerPos + playerForward * 95.0f, glm::vec3(0.0f), 1.0f, 1.0f, true, false, false);
         }
 
-        if (input.IsKeyPressed(Input::Key::NUM_0)) {
+        if (input.IsKeyPressed(Key::NUM_0)) {
             pitch = glm::min(2.0f, pitch + 0.05f);
         }
-        if (input.IsKeyPressed(Input::Key::NUM_9)) {
+        if (input.IsKeyPressed(Key::NUM_9)) {
             pitch = glm::max(0.0f, pitch - 0.05f);
         }
 
 
-        if (input.IsKeyPressed(Input::Key::P)) {
+        if (input.IsKeyPressed(Key::P)) {
             auto thread = std::jthread(&Audio::TestDopplerEffect, this);
             thread.join();
         }
@@ -146,7 +146,7 @@ void Audio::TestDopplerEffect()
     glm::vec3 sourceVel = glm::vec3(0.0f, 0.0f, -5.0f);
     glm::vec3 listenerPos = glm::vec3(0.0f, 0.0f, 0.0f);
     glm::vec3 listenerVel = glm::vec3(0.0f, 0.0f, 0.0f);
-    AudioSourceHandle sourceHandle = audioSystem.PlaySound(whistle, sourcePos, sourceVel, 0.03f, 1.0f, true, false, true);
+    AudioSourceHandle sourceHandle = audioSystem.PlaySoundClip(whistle, sourcePos, sourceVel, 0.03f, 1.0f, true, false, true);
 
     int32_t count{0};
     while (true) {

@@ -6,6 +6,7 @@
 
 #include <filesystem>
 
+#include "audio_constants.h"
 #include "glm/glm.hpp"
 
 namespace Audio

@@ -12,11 +12,11 @@
 #include <volk/volk.h>
 #include <OffsetAllocator/offsetAllocator.hpp>
 
+#include "core/data-structures/free_list.h"
 #include "core/types/transform.h"
 #include "render/vk_resources.h"
 #include "render/vk_types.h"
 #include "render/animation/animation_types.h"
-#include "utils/free_list.h"
 
 namespace Renderer
 {

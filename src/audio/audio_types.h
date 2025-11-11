@@ -4,8 +4,8 @@
 
 #ifndef WILLENGINETESTBED_AUDIO_TYPES_H
 #define WILLENGINETESTBED_AUDIO_TYPES_H
-#include "audio_constants.h"
-#include "utils/free_list.h"
+
+#include "core/data-structures/free_list.h"
 
 
 namespace Audio

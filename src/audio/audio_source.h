@@ -20,7 +20,7 @@ struct AudioSource
     alignas(64) std::atomic<glm::vec3> velocity;
 
     // Set once by game thread (no sync)
-    AudioClip* clip;
+    AudioClip* clip{nullptr};
     float baseVolume{1.0f};
     float basePitch{1.0f};
     float baseSpeed{1.0f};
@@ -35,6 +35,13 @@ struct AudioSource
 
 
     bool bIsFinished{false};
+
+    AudioSource();
+    ~AudioSource();
+    AudioSource(const AudioSource& other) noexcept;
+    AudioSource& operator=(const AudioSource& other) noexcept;
+    AudioSource(AudioSource&& other) noexcept;
+    AudioSource& operator=(AudioSource&& other) noexcept;
 };
 } // Audio
 

@@ -64,10 +64,10 @@ void AudioSystem::Cleanup()
 {
     if (scheduler) {
         // Wait for all async load tasks to complete
-        std::array<AudioClip, 256>& clips = clipFreeList.GetAllItems();
+        std::vector<AudioClip>& clips = clipFreeList.GetAllItems();
         for (auto& clip : clips) {
             if (clip.loadState.load() == AudioClip::LoadState::Loading) {
-                scheduler->WaitforTask(&clip.loadTask);
+                scheduler->WaitforTask(clip.loadTask.get());
             }
 
             if (clip.data) {
@@ -105,18 +105,18 @@ AudioClipHandle AudioSystem::LoadClip(const std::string& path)
     AudioClip* clip = clipFreeList.Get(newHandle);
     clip->path = path;
     clip->loadState.store(AudioClip::LoadState::Loading);
-    clip->loadTask.clip = clip;
-    clip->loadTask.path = path;
-    clip->loadTask.format = GetAudioExtension(path);
+    clip->loadTask->clip = clip;
+    clip->loadTask->path = path;
+    clip->loadTask->format = GetAudioExtension(path);
     clip->handleRefCount = 1;
-    scheduler->AddTaskSetToPipe(&clip->loadTask);
+    scheduler->AddTaskSetToPipe(clip->loadTask.get());
 
     loadedClips[path] = newHandle;
     return loadedClips[path];
 }
 
 
-AudioSourceHandle AudioSystem::PlaySound(AudioClipHandle clipHandle, glm::vec3 position, glm::vec3 velocity, float volume, float pitch, bool bSpatial, bool bDoppler, bool bLooping)
+AudioSourceHandle AudioSystem::PlaySoundClip(AudioClipHandle clipHandle, glm::vec3 position, glm::vec3 velocity, float volume, float pitch, bool bSpatial, bool bDoppler, bool bLooping)
 {
     AudioClip* clip = clipFreeList.Get(clipHandle);
     if (!clip) { return {}; }
@@ -142,7 +142,7 @@ AudioSourceHandle AudioSystem::PlaySound(AudioClipHandle clipHandle, glm::vec3 p
 
     bool res = gameToAudioCommands.push({GameToAudioCommandType::Play, newSourceHandle});
     if (!res) {
-        LOG_ERROR("[AudioSystem::PlaySound] Audio to Game command addition failed. Command terminated.");
+        LOG_ERROR("[AudioSystem::PlaySoundClip] Audio to Game command addition failed. Command terminated.");
         DeallocateSource(newSourceHandle);
         return {};
     }
@@ -230,9 +230,9 @@ void AudioSystem::DeallocateClip(AudioClipHandle clipHandle)
 
     clip->path.clear();
     clip->sampleCount = 0;
-    clip->loadTask.clip = nullptr;
-    clip->loadTask.path.clear();
-    clip->loadTask.format = AudioFormat::Unknown;
+    clip->loadTask->clip = nullptr;
+    clip->loadTask->path.clear();
+    clip->loadTask->format = AudioFormat::Unknown;
     clip->loadState = AudioClip::LoadState::Unloaded;
 
     loadedClips.erase(clip->path);

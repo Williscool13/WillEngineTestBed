@@ -24,11 +24,18 @@ struct AudioClip
     float* data = nullptr;
     size_t sampleCount{0};
 
-    LoadAudioClipTask loadTask;
+    std::unique_ptr<LoadAudioClipTask> loadTask;
 
     // Game thread only.
     uint32_t handleRefCount{0};
     uint32_t sourceRefCount{0};
+
+    AudioClip();
+    ~AudioClip();
+    AudioClip(const AudioClip& other) = delete;
+    AudioClip& operator=(const AudioClip& other) = delete;
+    AudioClip(AudioClip&& other) noexcept;
+    AudioClip& operator=(AudioClip&& other) noexcept;
 };
 } // Audio
 

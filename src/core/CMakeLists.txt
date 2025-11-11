@@ -1,4 +1,8 @@
 add_library(core-lib STATIC
+        data-structures/free_list.cpp
+        data-structures/free_list.h
+        data-structures/handle_allocator.cpp
+        data-structures/handle_allocator.h
         types/transform.cpp
         types/transform.h
         time.cpp

@@ -9,7 +9,7 @@
 #include "render_constants.h"
 #include "descriptor_buffer/descriptor_buffer_bindless_resources.h"
 #include "model/model_data.h"
-#include "utils/handle_allocator.h"
+#include "core/data-structures/handle_allocator.h"
 
 
 namespace Renderer
@@ -24,7 +24,7 @@ public:
 
     ~ResourceManager();
 
-    ResourceManager(VulkanContext* context);
+    explicit ResourceManager(VulkanContext* context);
 
 public:
     AllocatedBuffer megaVertexBuffer;
