@@ -18,12 +18,12 @@ void GameInit(GameState* state)
 
 void GameUpdate(GameState* state)
 {
-    state->logger->info("Game update 10");
+    state->logger->info("Game update");
     // LOG_INFO("Game is printing whatever");
-    // Input i = Input::Get();
-    // if (i.IsKeyPressed(Key::O)) {
-    //     LOG_INFO("Frame {}", state->frame);
-    // }
+    Input i = Input::Get();
+    if (i.IsKeyPressed(Key::O)) {
+        state->logger->info("Frame {}", state->frame);
+    }
 }
 
 void GameShutdown(GameState* state)

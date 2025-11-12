@@ -1,9 +1,9 @@
 //
-// Created by William on 2025-11-11.
+// Created by William on 2025-11-12.
 //
 
-#ifndef WILLENGINETESTBED_HOT_RELOADING_H
-#define WILLENGINETESTBED_HOT_RELOADING_H
+#ifndef WILLENGINETESTBED_ENGINE_H
+#define WILLENGINETESTBED_ENGINE_H
 #include <memory>
 #include <SDL3/SDL.h>
 
@@ -18,19 +18,21 @@ struct Swapchain;
 struct RenderTargets;
 }
 
-
-namespace HotReloading
+namespace HotReloading::Game
 {
-namespace Game
-{
-    struct GameState;
+struct GameState;
 }
 
-class HotReloading
+
+namespace HotReloading::Engine
+{
+class Engine
 {
 public:
-    HotReloading();
-    ~HotReloading();
+    Engine();
+
+    ~Engine();
+
     void Initialize();
 
     void Run();
@@ -56,7 +58,6 @@ private:
 
     Utils::DllLoader gameDll;
 };
-}
+} // HotReloading::Engine
 
-
-#endif //WILLENGINETESTBED_HOT_RELOADING_H
+#endif //WILLENGINETESTBED_ENGINE_H

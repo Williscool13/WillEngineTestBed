@@ -6,6 +6,7 @@ add_library(hot-reload-game SHARED
 )
 
 target_link_libraries(hot-reload-game PUBLIC
+        hot-reload-engine
         engine-common
         crash-handling
         core-lib

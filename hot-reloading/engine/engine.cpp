@@ -1,30 +1,37 @@
 //
-// Created by William on 2025-11-11.
+// Created by William on 2025-11-12.
 //
 
-#include "hot-reloading.h"
+#include "engine.h"
 
-#include <Windows.h>
-
-#include "game/game_state.h"
+#define VMA_IMPLEMENTATION
+#include <vk_mem_alloc.h>
 
 #include "core/constants.h"
+#include "crash-handling/crash_context.h"
 #include "crash-handling/crash_handler.h"
 #include "crash-handling/logger.h"
-#include "game/game.h"
+#include "hot-reloading/game/game_state.h"
 #include "input/input.h"
 #include "render/vk_context.h"
 #include "render/vk_swapchain.h"
+#include "render/vk_synchronization.h"
 #include "utils/utils.h"
 
-namespace HotReloading
+namespace HotReloading::Engine
 {
-HotReloading::HotReloading() = default;
+Engine::Engine() = default;
 
-HotReloading::~HotReloading() = default;
+Engine::~Engine() = default;
 
-void HotReloading::Initialize()
+void Engine::Initialize()
 {
+    fmt::println("=== Hot Reloading ===");
+
+    CrashHandler::Initialize("crashes/");
+    CrashContext::Initialize();
+    Logger::Initialize("logs/hot-reloading.log");
+
     Utils::ScopedTimer timer{"Hot-Reloading Initialization"};
     bool sdlInitSuccess = SDL_Init(SDL_INIT_VIDEO);
     if (!sdlInitSuccess) {
@@ -59,12 +66,12 @@ void HotReloading::Initialize()
     gameState = std::make_unique<Game::GameState>();
     gameState->logger = Logger::Get();
 
-    gameDll.Load("hot-reload-game.dll", "hot-reload-game_temp.dll");
+    gameDll.Load("game/hot-reload-game.dll", "hot-reload-game_temp.dll");
     auto gameInit = gameDll.GetFunction<void(*)(Game::GameState* state)>("GameInit");
     if (gameInit) { gameInit(gameState.get()); }
 }
 
-void HotReloading::HotReloading::Run()
+void Engine::Run()
 {
     Input& input = Input::Input::Get();
     SDL_Event e;
@@ -120,18 +127,17 @@ void HotReloading::HotReloading::Run()
     }
 }
 
-void HotReloading::Render(Renderer::FrameSynchronization& frameSync)
-{
-    // stub
-}
+void Engine::Render(Renderer::FrameSynchronization& frameSync) {}
 
-void HotReloading::HotReloading::Cleanup()
+void Engine::Cleanup()
 {
     vkDeviceWaitIdle(vulkanContext->device);
 
     auto gameShutdown = gameDll.GetFunction<void(*)(Game::GameState* state)>("GameShutdown");
     if (gameShutdown) { gameShutdown(gameState.get()); }
 
+    gameDll.Unload();
+
     SDL_DestroyWindow(window);
 }
-}
+} // HotReloading::Engine
