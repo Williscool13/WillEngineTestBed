@@ -5,8 +5,10 @@ add_executable(hot-reloading
 target_link_libraries(hot-reloading PRIVATE
         hot-reload-engine
         hot-reload-render
+        hot-reload-core
 )
 
+add_subdirectory(core)
 add_subdirectory(engine)
 add_subdirectory(game)
 add_subdirectory(render)
@@ -19,6 +21,12 @@ add_custom_command(TARGET hot-reloading POST_BUILD
         $<TARGET_FILE_DIR:hot-reloading>
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
         $<TARGET_PDB_FILE:SDL3::SDL3>
+        $<TARGET_FILE_DIR:hot-reloading>
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:hot-reload-engine>
+        $<TARGET_FILE_DIR:hot-reloading>
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_PDB_FILE:hot-reload-engine>
         $<TARGET_FILE_DIR:hot-reloading>
 )
 

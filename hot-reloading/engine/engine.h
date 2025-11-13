@@ -6,6 +6,7 @@
 #define WILLENGINETESTBED_ENGINE_H
 #include <SDL3/SDL.h>
 
+#include <hot-reloading/engine/engine_api.h>
 #include "hot-reloading/game/game_state.h"
 #include "hot-reloading/render/render.h"
 #include "utils/utils.h"
@@ -20,7 +21,7 @@ struct RenderTargets;
 
 namespace HotReloading::Engine
 {
-class Engine
+class ENGINE_API Engine
 {
 public:
     Engine();
@@ -37,7 +38,7 @@ private:
     SDL_Window* window{nullptr};
 
     Game::GameState gameState;
-    EngineSynchronization engineSynchronization{};
+    Core::EngineSynchronization engineSynchronization{};
 
 private:
     Render::RenderThread renderThread{};

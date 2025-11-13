@@ -5,7 +5,7 @@
 #include "render.h"
 
 #include "input/input.h"
-#include "hot-reloading/engine/engine_synchronization.h"
+#include "../core/engine_synchronization.h"
 #include "render/render_context.h"
 #include "render/render_targets.h"
 #include "render/render_utils.h"
@@ -47,7 +47,7 @@ RenderThread::~RenderThread()
     }
 }
 
-void RenderThread::Initialize(Engine::EngineSynchronization* engineSync_, SDL_Window* window_, uint32_t w, uint32_t h)
+void RenderThread::Initialize(Core::EngineSynchronization* engineSync_, SDL_Window* window_, uint32_t w, uint32_t h)
 {
     engineSync = engineSync_;
     window = window_;
@@ -179,7 +179,7 @@ void RenderThread::ThreadMain()
         engineSync->renderFrames.acquire();
         if (bShouldExit.load()) { break; }
 
-        const uint32_t currentGameFrameInFlight = frameNumber % Core::FRAMES_IN_FLIGHT;
+        const uint32_t currentGameFrameInFlight = frameNumber % ::Core::FRAMES_IN_FLIGHT;
         const uint32_t currentRenderFrameInFlight = frameNumber % renderBufferCount;
 
         Renderer::FrameBuffer& currentFrameBuffer = engineSync->frameBuffers[currentGameFrameInFlight];

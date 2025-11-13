@@ -9,15 +9,15 @@
 #include "core/constants.h"
 #include "render/render-operations/render_operations.h"
 
-namespace HotReloading::Engine
+namespace HotReloading::Core
 {
 struct EngineSynchronization
 {
-    std::counting_semaphore<Core::FRAMES_IN_FLIGHT> gameFrames{Core::FRAMES_IN_FLIGHT};
-    std::counting_semaphore<Core::FRAMES_IN_FLIGHT> renderFrames{0};
+    std::counting_semaphore<::Core::FRAMES_IN_FLIGHT> gameFrames{::Core::FRAMES_IN_FLIGHT};
+    std::counting_semaphore<::Core::FRAMES_IN_FLIGHT> renderFrames{0};
 
-    std::array<Renderer::FrameBuffer, Core::FRAMES_IN_FLIGHT> frameBuffers{};
+    std::array<Renderer::FrameBuffer, ::Core::FRAMES_IN_FLIGHT> frameBuffers{};
 };
-} // HotReloading::Engine
+} // HotReloading::Core
 
 #endif //WILLENGINETESTBED_ENGINE_SYNCHRONIZATION_H

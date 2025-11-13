@@ -6,6 +6,7 @@
 
 #include "game_state.h"
 #include "crash-handling/logger.h"
+#include "hot-reloading/engine/engine_api.h"
 #include "input/input.h"
 
 namespace HotReloading::Game
@@ -18,7 +19,8 @@ void GameInit(GameState* state)
 
 void GameUpdate(GameState* state)
 {
-    state->logger->info("Game update");
+    Engine::EngineLogInfo("Test cross dll");
+    //state->logger->info("Game update");
     // LOG_INFO("Game is printing whatever");
     Input i = Input::Get();
     if (i.IsKeyPressed(Key::O)) {

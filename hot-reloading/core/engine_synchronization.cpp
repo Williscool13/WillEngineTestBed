@@ -4,6 +4,6 @@
 
 #include "engine_synchronization.h"
 
-namespace HotReloading::Engine
+namespace HotReloading::Core
 {
 } // HotReloading::Engine

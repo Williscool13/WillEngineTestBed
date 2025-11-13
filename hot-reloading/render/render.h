@@ -4,7 +4,7 @@
 
 #ifndef WILLENGINETESTBED_RENDER_H
 #define WILLENGINETESTBED_RENDER_H
-#include "hot-reloading/engine/engine_synchronization.h"
+#include "../core/engine_synchronization.h"
 #include "render/descriptor_buffer/descriptor_buffer_storage_image.h"
 #include "render/pipelines/draw_cull_compute_pipeline.h"
 #include "render/pipelines/main_render_pipeline.h"
@@ -31,7 +31,7 @@ public:
 
     ~RenderThread();
 
-    void Initialize(Engine::EngineSynchronization* engineSync_, SDL_Window* window_, uint32_t w, uint32_t h);
+    void Initialize(Core::EngineSynchronization* engineSync_, SDL_Window* window_, uint32_t w, uint32_t h);
 
     void CreateBuffers(uint32_t count);
 
@@ -66,7 +66,7 @@ private:
     void ConstructSceneData(Renderer::RawSceneData& raw, Renderer::SceneData& scene, float aspectRatio, glm::vec2 renderTargetSize, glm::vec2 texelSize);
 
 private:
-    Engine::EngineSynchronization* engineSync{};
+    Core::EngineSynchronization* engineSync{};
     SDL_Window* window{};
     std::unique_ptr<Renderer::VulkanContext> vulkanContext{};
     std::unique_ptr<Renderer::Swapchain> swapchain{};

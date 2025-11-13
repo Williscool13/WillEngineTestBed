@@ -3,9 +3,7 @@
 
 int main()
 {
-    using HotReloading::Engine::Engine;
-
-    Engine engine{};
+    HotReloading::Engine::Engine engine{};
     engine.Initialize();
     engine.Run();
     engine.Cleanup();

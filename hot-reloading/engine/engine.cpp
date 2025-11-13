@@ -42,8 +42,8 @@ void Engine::Initialize()
     constexpr auto window_flags = SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE;
     window = SDL_CreateWindow(
         "Template",
-        Core::DEFAULT_WINDOW_WIDTH,
-        Core::DEFAULT_WINDOW_HEIGHT,
+        ::Core::DEFAULT_WINDOW_WIDTH,
+        ::Core::DEFAULT_WINDOW_HEIGHT,
         window_flags);
 
     SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
@@ -112,7 +112,7 @@ void Engine::Run()
 
         bool canTransmit = engineSynchronization.gameFrames.try_acquire();
         if (canTransmit) {
-            uint64_t currentRenderFrame = renderFrame % Core::FRAMES_IN_FLIGHT;
+            uint64_t currentRenderFrame = renderFrame % ::Core::FRAMES_IN_FLIGHT;
             //PrepareFrameDataForRender(currentRenderFrame);
             renderFrame++;
             engineSynchronization.renderFrames.release();
