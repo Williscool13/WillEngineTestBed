@@ -1,36 +1,32 @@
 //
-// Created by William on 2025-10-31.
+// Created by William on 2025-11-13.
 //
 
-#include "render_thread.h"
-
-#include <VkBootstrap.h>
-#include <backends/imgui_impl_vulkan.h>
-#include <glm/glm.hpp>
-#include <glm/ext/matrix_clip_space.hpp>
-
-#include "engine_multithreading.h"
-#include "crash-handling/crash_handler.h"
-#include "crash-handling/logger.h"
-
-#include "render/vk_context.h"
-#include "render/vk_swapchain.h"
-#include "render/vk_imgui_wrapper.h"
-#include "render/vk_descriptors.h"
-#include "render/vk_helpers.h"
-#include "render/render_context.h"
-#include "render/render_utils.h"
-#include "render/render_constants.h"
-#include "render/render_targets.h"
-#include "render/resource_manager.h"
-#include "render/model/model_loader.h"
-#include "render/descriptor_buffer/descriptor_buffer_storage_image.h"
+#include "render.h"
 
 #include "input/input.h"
-#include "core/time.h"
+#include "hot-reloading/engine/engine_synchronization.h"
+#include "render/render_context.h"
+#include "render/render_targets.h"
+#include "render/render_utils.h"
+#include "render/resource_manager.h"
+#include "render/vk_descriptors.h"
+#include "render/vk_helpers.h"
+#include "render/vk_imgui_wrapper.h"
+#include "render/vk_swapchain.h"
+#include "render/vk_synchronization.h"
+#include "render/descriptor_buffer/descriptor_buffer_storage_image.h"
+#include "render/pipelines/draw_cull_compute_pipeline.h"
+#include "render/pipelines/main_render_pipeline.h"
+#include "render/pipelines/main_skeletal_render_pipeline.h"
 #include "utils/utils.h"
 
 namespace Renderer
+{
+struct FrameSynchronization;
+}
+
+namespace HotReloading::Render
 {
 RenderThread::RenderThread()
 {
@@ -51,26 +47,22 @@ RenderThread::~RenderThread()
     }
 }
 
-void RenderThread::Initialize(EngineMultithreading* engineMultithreading_, SDL_Window* window_, uint32_t w, uint32_t h)
+void RenderThread::Initialize(Engine::EngineSynchronization* engineSync_, SDL_Window* window_, uint32_t w, uint32_t h)
 {
-    engineMultithreading = engineMultithreading_;
+    engineSync = engineSync_;
     window = window_;
 
-    //
-    {
-        Utils::ScopedTimer timer{"[Render Thread] Render Context"};
-        renderContext = std::make_unique<RenderContext>(w, h, DEFAULT_RENDER_SCALE);
-        std::array<uint32_t, 2> renderExtent = renderContext->GetRenderExtent();
+    renderContext = std::make_unique<Renderer::RenderContext>(w, h, Renderer::DEFAULT_RENDER_SCALE);
+    std::array<uint32_t, 2> renderExtent = renderContext->GetRenderExtent();
 
-        vulkanContext = std::make_unique<VulkanContext>(window);
-        swapchain = std::make_unique<Swapchain>(vulkanContext.get(), renderExtent[0], renderExtent[1]);
-        // Imgui multithreaded needs a lot more attention, see
-        // https://github.com/ocornut/imgui/issues/1860#issuecomment-1927630727
-        imgui = std::make_unique<ImguiWrapper>(vulkanContext.get(), window, swapchain->imageCount, swapchain->format);
-        renderTargets = std::make_unique<RenderTargets>(vulkanContext.get(), w, h);
-        resourceManager = std::make_unique<ResourceManager>(vulkanContext.get());
-        Input::Input::Get().Init(window, swapchain->extent.width, swapchain->extent.height);
-    }
+    vulkanContext = std::make_unique<Renderer::VulkanContext>(window);
+    swapchain = std::make_unique<Renderer::Swapchain>(vulkanContext.get(), renderExtent[0], renderExtent[1]);
+    // Imgui multithreaded needs a lot more attention, see
+    // https://github.com/ocornut/imgui/issues/1860#issuecomment-1927630727
+    imgui = std::make_unique<Renderer::ImguiWrapper>(vulkanContext.get(), window, swapchain->imageCount, swapchain->format);
+    renderTargets = std::make_unique<Renderer::RenderTargets>(vulkanContext.get(), w, h);
+    resourceManager = std::make_unique<Renderer::ResourceManager>(vulkanContext.get());
+    Input::Input::Get().Init(window, swapchain->extent.width, swapchain->extent.height);
 
     renderBufferCount = swapchain->imageCount;
     lastFrameTime = std::chrono::high_resolution_clock::now();
@@ -86,49 +78,46 @@ void RenderThread::CreateBuffers(uint32_t count)
     vmaAllocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
     vmaAllocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
     bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
-    bufferInfo.size = sizeof(SceneData);
-
-    // Assume that even if swapchain is remade, imageCount will be exactly the same.
-    //todo: runtime make it easy to change between 2buff and 3buff
+    bufferInfo.size = sizeof(Renderer::SceneData);
 
     for (int32_t i = 0; i < count; ++i) {
         frameSynchronization.emplace_back(vulkanContext.get());
         frameSynchronization.back().Initialize();
 
-        sceneDataBuffers.push_back(std::move(VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo)));
+        sceneDataBuffers.push_back(std::move(Renderer::VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo)));
     }
 
     vmaAllocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
     vmaAllocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
     bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT;
-    bufferInfo.size = sizeof(VkDrawIndexedIndirectCommand) * BINDLESS_INSTANCE_COUNT;
-    opaqueIndexedIndirectBuffer = VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
+    bufferInfo.size = sizeof(VkDrawIndexedIndirectCommand) * Renderer::BINDLESS_INSTANCE_COUNT;
+    opaqueIndexedIndirectBuffer = Renderer::VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
 
     bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT;
-    bufferInfo.size = sizeof(VkDrawIndexedIndirectCommand) * BINDLESS_INSTANCE_COUNT;
-    opaqueSkeletalIndexedIndirectBuffer = VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
+    bufferInfo.size = sizeof(VkDrawIndexedIndirectCommand) * Renderer::BINDLESS_INSTANCE_COUNT;
+    opaqueSkeletalIndexedIndirectBuffer = Renderer::VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
 
     for (int32_t i = 0; i < count; ++i) {
         bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-        bufferInfo.size = sizeof(IndirectCount);
-        indirectCountBuffers.push_back(VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo));
+        bufferInfo.size = sizeof(Renderer::IndirectCount);
+        indirectCountBuffers.push_back(Renderer::VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo));
 
         bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-        bufferInfo.size = sizeof(IndirectCount);
-        skeletalIndirectCountBuffers.push_back(VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo));
+        bufferInfo.size = sizeof(Renderer::IndirectCount);
+        skeletalIndirectCountBuffers.push_back(Renderer::VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo));
 
         bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
-        bufferInfo.size = sizeof(Model) * BINDLESS_MODEL_MATRIX_COUNT;
-        modelBuffers.push_back(VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo));
+        bufferInfo.size = sizeof(Renderer::Model) * Renderer::BINDLESS_MODEL_MATRIX_COUNT;
+        modelBuffers.push_back(Renderer::VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo));
 
         bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
-        bufferInfo.size = sizeof(Instance) * BINDLESS_INSTANCE_COUNT;
-        instanceBuffers.push_back(VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo));
+        bufferInfo.size = sizeof(Renderer::Instance) * Renderer::BINDLESS_INSTANCE_COUNT;
+        instanceBuffers.push_back(Renderer::VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo));
 
         bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
-        bufferInfo.size = sizeof(Model) * BINDLESS_MODEL_MATRIX_COUNT;
-        jointMatrixBuffers.push_back(VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo));
+        bufferInfo.size = sizeof(Renderer::Model) * Renderer::BINDLESS_MODEL_MATRIX_COUNT;
+        jointMatrixBuffers.push_back(Renderer::VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo));
     }
 }
 
@@ -146,8 +135,8 @@ void RenderThread::InitializeResources()
             static_cast<VkShaderStageFlagBits>(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT),
             VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT
         );
-        renderTargetSetLayout = VkResources::CreateDescriptorSetLayout(vulkanContext.get(), layoutCreateInfo);
-        renderTargetDescriptors = DescriptorBufferStorageImage(vulkanContext.get(), renderTargetSetLayout.handle, 1);
+        renderTargetSetLayout = Renderer::VkResources::CreateDescriptorSetLayout(vulkanContext.get(), layoutCreateInfo);
+        renderTargetDescriptors = Renderer::DescriptorBufferStorageImage(vulkanContext.get(), renderTargetSetLayout.handle, 1);
         renderTargetDescriptors.AllocateDescriptorSet();
     }
 
@@ -156,13 +145,13 @@ void RenderThread::InitializeResources()
     drawDescriptorInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
     renderTargetDescriptors.UpdateDescriptor(drawDescriptorInfo, 0, 0, 0);
 
-    drawCullComputePipeline = DrawCullComputePipeline(vulkanContext.get());
-    mainRenderPipeline = MainRenderPipeline(vulkanContext.get(), resourceManager->bindlessResourcesDescriptorBuffer.descriptorSetLayout.handle);
-    mainSkeletalRenderPipeline = MainSkeletalRenderPipeline(vulkanContext.get(), resourceManager->bindlessResourcesDescriptorBuffer.descriptorSetLayout.handle);
+    drawCullComputePipeline = Renderer::DrawCullComputePipeline(vulkanContext.get());
+    mainRenderPipeline = Renderer::MainRenderPipeline(vulkanContext.get(), resourceManager->bindlessResourcesDescriptorBuffer.descriptorSetLayout.handle);
+    mainSkeletalRenderPipeline = Renderer::MainSkeletalRenderPipeline(vulkanContext.get(), resourceManager->bindlessResourcesDescriptorBuffer.descriptorSetLayout.handle);
 
-    modelMatrixOperationRingBuffer.Initialize(FRAME_BUFFER_OPERATION_COUNT_LIMIT);
-    instanceOperationRingBuffer.Initialize(FRAME_BUFFER_OPERATION_COUNT_LIMIT);
-    jointMatrixOperationRingBuffer.Initialize(FRAME_BUFFER_OPERATION_COUNT_LIMIT);
+    modelMatrixOperationRingBuffer.Initialize(Renderer::FRAME_BUFFER_OPERATION_COUNT_LIMIT);
+    instanceOperationRingBuffer.Initialize(Renderer::FRAME_BUFFER_OPERATION_COUNT_LIMIT);
+    jointMatrixOperationRingBuffer.Initialize(Renderer::FRAME_BUFFER_OPERATION_COUNT_LIMIT);
 }
 
 void RenderThread::Start()
@@ -187,13 +176,13 @@ void RenderThread::ThreadMain()
     Utils::SetThreadName("Render Thread");
 
     while (!bShouldExit.load()) {
-        engineMultithreading->renderFrames.acquire();
+        engineSync->renderFrames.acquire();
         if (bShouldExit.load()) { break; }
 
         const uint32_t currentGameFrameInFlight = frameNumber % Core::FRAMES_IN_FLIGHT;
         const uint32_t currentRenderFrameInFlight = frameNumber % renderBufferCount;
 
-        FrameBuffer& currentFrameBuffer = engineMultithreading->frameBuffers[currentGameFrameInFlight];
+        Renderer::FrameBuffer& currentFrameBuffer = engineSync->frameBuffers[currentGameFrameInFlight];
         modelMatrixOperationRingBuffer.Enqueue(currentFrameBuffer.modelMatrixOperations);
         currentFrameBuffer.modelMatrixOperations.clear();
         instanceOperationRingBuffer.Enqueue(currentFrameBuffer.instanceOperations);
@@ -202,20 +191,18 @@ void RenderThread::ThreadMain()
         currentFrameBuffer.jointMatrixOperations.clear();
 
         if (currentFrameBuffer.bRequireSwapchainRecreate || bSwapchainOutdated) {
-            LOG_INFO("SwapchainCreate: currentFrameBuffer.bRequireSwapchainRecreate - {}", currentFrameBuffer.bRequireSwapchainRecreate);
-            LOG_INFO("SwapchainOutdate: bSwapchainOutdated - {}", bSwapchainOutdated);
             vkDeviceWaitIdle(vulkanContext->device);
 
             int32_t w, h;
             SDL_GetWindowSize(window, &w, &h);
 
             swapchain->Recreate(w, h);
-            for (FrameSynchronization& fs : frameSynchronization) {
+            for (Renderer::FrameSynchronization& fs : frameSynchronization) {
                 fs.RecreateSynchronization();
             }
 
             Input::Input::Get().UpdateWindowExtent(swapchain->extent.width, swapchain->extent.height);
-            if (RENDER_TARGET_SIZE_EQUALS_SWAPCHAIN_SIZE) {
+            if (Renderer::RENDER_TARGET_SIZE_EQUALS_SWAPCHAIN_SIZE) {
                 renderContext->RequestRenderExtentResize(w, h);
             }
             bSwapchainOutdated = false;
@@ -237,7 +224,7 @@ void RenderThread::ThreadMain()
 
 
         if (swapchain->extent.width > 0 && swapchain->extent.height > 0) {
-            FrameSynchronization& currentFrameSynchronization = frameSynchronization[currentRenderFrameInFlight];
+            Renderer::FrameSynchronization& currentFrameSynchronization = frameSynchronization[currentRenderFrameInFlight];
 
             // Wait for the GPU to finish the last frame that used this frame-in-flight's resources (N - imageCount).
             vkWaitForFences(vulkanContext->device, 1, &currentFrameSynchronization.renderFence, true, UINT64_MAX);
@@ -260,13 +247,13 @@ void RenderThread::ThreadMain()
 
 
         frameNumber++;
-        engineMultithreading->gameFrames.release();
+        engineSync->gameFrames.release();
     }
 
     vkDeviceWaitIdle(vulkanContext->device);
 }
 
-void RenderThread::ProcessAcquisitions(VkCommandBuffer cmd, FrameBuffer& currentFrameBuffer)
+void RenderThread::ProcessAcquisitions(VkCommandBuffer cmd, Renderer::FrameBuffer& currentFrameBuffer)
 {
     if (currentFrameBuffer.bufferAcquireOperations.empty() && currentFrameBuffer.imageAcquireOperations.empty()) {
         return;
@@ -289,16 +276,16 @@ void RenderThread::ProcessAcquisitions(VkCommandBuffer cmd, FrameBuffer& current
 
 void RenderThread::ProcessOperations(uint32_t currentFrameInFlight)
 {
-    const AllocatedBuffer& currentModelBuffer = modelBuffers[currentFrameInFlight];
-    const AllocatedBuffer& currentInstanceBuffer = instanceBuffers[currentFrameInFlight];
-    const AllocatedBuffer& currentJointMatrixBuffers = jointMatrixBuffers[currentFrameInFlight];
+    const Renderer::AllocatedBuffer& currentModelBuffer = modelBuffers[currentFrameInFlight];
+    const Renderer::AllocatedBuffer& currentInstanceBuffer = instanceBuffers[currentFrameInFlight];
+    const Renderer::AllocatedBuffer& currentJointMatrixBuffers = jointMatrixBuffers[currentFrameInFlight];
 
     modelMatrixOperationRingBuffer.ProcessOperations(static_cast<char*>(currentModelBuffer.allocationInfo.pMappedData), renderBufferCount + 1);
     instanceOperationRingBuffer.ProcessOperations(static_cast<char*>(currentInstanceBuffer.allocationInfo.pMappedData), renderBufferCount, highestInstanceIndex);
     jointMatrixOperationRingBuffer.ProcessOperations(static_cast<char*>(currentJointMatrixBuffers.allocationInfo.pMappedData), renderBufferCount + 1);
 }
 
-RenderThread::RenderResponse RenderThread::Render(uint32_t currentRenderFrameInFlight, FrameSynchronization& currentFrameSynchronization, FrameBuffer& currentFrameBuffer)
+RenderThread::RenderResponse RenderThread::Render(uint32_t currentRenderFrameInFlight, Renderer::FrameSynchronization& currentFrameSynchronization, Renderer::FrameBuffer& currentFrameBuffer)
 {
     // Un-signal fence, essentially saying "I'm using this frame-in-flight's resources, hands off".
     VK_CHECK(vkResetFences(vulkanContext->device, 1, &currentFrameSynchronization.renderFence));
@@ -319,13 +306,13 @@ RenderThread::RenderResponse RenderThread::Render(uint32_t currentRenderFrameInF
 
     VkCommandBuffer cmd = currentFrameSynchronization.commandBuffer;
     VK_CHECK(vkResetCommandBuffer(cmd, 0));
-    VkCommandBufferBeginInfo commandBufferBeginInfo = VkHelpers::CommandBufferBeginInfo();
+    VkCommandBufferBeginInfo commandBufferBeginInfo = Renderer::VkHelpers::CommandBufferBeginInfo();
     VK_CHECK(vkBeginCommandBuffer(cmd, &commandBufferBeginInfo));
 
     ProcessAcquisitions(cmd, currentFrameBuffer);
 
-    AllocatedBuffer& currentSceneDataBuffer = sceneDataBuffers[currentRenderFrameInFlight];
-    auto* currentSceneData = static_cast<SceneData*>(currentSceneDataBuffer.allocationInfo.pMappedData);
+    Renderer::AllocatedBuffer& currentSceneDataBuffer = sceneDataBuffers[currentRenderFrameInFlight];
+    auto* currentSceneData = static_cast<Renderer::SceneData*>(currentSceneDataBuffer.allocationInfo.pMappedData);
     float aspectRatio = renderContext->GetAspectRatio();
     glm::vec2 renderTargetSize = {scaledRenderExtent[0], scaledRenderExtent[1]};
     glm::vec2 texelSize = renderContext->GetTexelSize();
@@ -333,14 +320,14 @@ RenderThread::RenderResponse RenderThread::Render(uint32_t currentRenderFrameInF
 
     //
     {
-        vkCmdFillBuffer(cmd, indirectCountBuffers[currentRenderFrameInFlight].handle,offsetof(IndirectCount, opaqueCount), sizeof(uint32_t), 0);
-        vkCmdFillBuffer(cmd, skeletalIndirectCountBuffers[currentRenderFrameInFlight].handle,offsetof(IndirectCount, opaqueCount), sizeof(uint32_t), 0);
+        vkCmdFillBuffer(cmd, indirectCountBuffers[currentRenderFrameInFlight].handle,offsetof(Renderer::IndirectCount, opaqueCount), sizeof(uint32_t), 0);
+        vkCmdFillBuffer(cmd, skeletalIndirectCountBuffers[currentRenderFrameInFlight].handle,offsetof(Renderer::IndirectCount, opaqueCount), sizeof(uint32_t), 0);
         VkBufferMemoryBarrier2 bufferBarrier[2];
-        bufferBarrier[0] = VkHelpers::BufferMemoryBarrier(
+        bufferBarrier[0] = Renderer::VkHelpers::BufferMemoryBarrier(
             indirectCountBuffers[currentRenderFrameInFlight].handle, 0, VK_WHOLE_SIZE,
             VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
             VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT);
-        bufferBarrier[1] = VkHelpers::BufferMemoryBarrier(
+        bufferBarrier[1] = Renderer::VkHelpers::BufferMemoryBarrier(
             skeletalIndirectCountBuffers[currentRenderFrameInFlight].handle, 0, VK_WHOLE_SIZE,
             VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
             VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT);
@@ -359,7 +346,7 @@ RenderThread::RenderResponse RenderThread::Render(uint32_t currentRenderFrameInF
     {
         if (highestInstanceIndex > 0) {
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, drawCullComputePipeline.drawCullPipeline.handle);
-            BindlessIndirectPushConstant pushData{
+            Renderer::BindlessIndirectPushConstant pushData{
                 currentSceneDataBuffer.address,
                 resourceManager->primitiveBuffer.address,
                 modelBuffers[currentRenderFrameInFlight].address,
@@ -370,7 +357,7 @@ RenderThread::RenderResponse RenderThread::Render(uint32_t currentRenderFrameInF
                 skeletalIndirectCountBuffers[currentRenderFrameInFlight].address,
             };
 
-            vkCmdPushConstants(cmd, drawCullComputePipeline.drawCullPipelineLayout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(BindlessIndirectPushConstant), &pushData);
+            vkCmdPushConstants(cmd, drawCullComputePipeline.drawCullPipelineLayout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(Renderer::BindlessIndirectPushConstant), &pushData);
             uint32_t groupsX = (highestInstanceIndex + 63) / 64;
             vkCmdDispatch(cmd, groupsX, 1, 1);
         }
@@ -379,19 +366,19 @@ RenderThread::RenderResponse RenderThread::Render(uint32_t currentRenderFrameInF
     //
     {
         VkBufferMemoryBarrier2 bufferBarrier[4];
-        bufferBarrier[0] = VkHelpers::BufferMemoryBarrier(
+        bufferBarrier[0] = Renderer::VkHelpers::BufferMemoryBarrier(
             opaqueIndexedIndirectBuffer.handle, 0, VK_WHOLE_SIZE,
             VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT,
             VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT, VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT);
-        bufferBarrier[1] = VkHelpers::BufferMemoryBarrier(
+        bufferBarrier[1] = Renderer::VkHelpers::BufferMemoryBarrier(
             indirectCountBuffers[currentRenderFrameInFlight].handle, 0, VK_WHOLE_SIZE,
             VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT,
             VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT, VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT);
-        bufferBarrier[2] = VkHelpers::BufferMemoryBarrier(
+        bufferBarrier[2] = Renderer::VkHelpers::BufferMemoryBarrier(
             opaqueSkeletalIndexedIndirectBuffer.handle, 0, VK_WHOLE_SIZE,
             VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT,
             VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT, VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT);
-        bufferBarrier[3] = VkHelpers::BufferMemoryBarrier(
+        bufferBarrier[3] = Renderer::VkHelpers::BufferMemoryBarrier(
             skeletalIndirectCountBuffers[currentRenderFrameInFlight].handle, 0, VK_WHOLE_SIZE,
             VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT,
             VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT, VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT);
@@ -408,14 +395,14 @@ RenderThread::RenderResponse RenderThread::Render(uint32_t currentRenderFrameInF
 
     // Transition 1
     {
-        auto subresource = VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT);
-        auto barrier = VkHelpers::ImageMemoryBarrier(
+        auto subresource = Renderer::VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT);
+        auto barrier = Renderer::VkHelpers::ImageMemoryBarrier(
             renderTargets->drawImage.handle,
             subresource,
             VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_UNDEFINED,
             VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
         );
-        auto dependencyInfo = VkHelpers::DependencyInfo(&barrier);
+        auto dependencyInfo = Renderer::VkHelpers::DependencyInfo(&barrier);
         vkCmdPipelineBarrier2(cmd, &dependencyInfo);
     }
 
@@ -423,21 +410,21 @@ RenderThread::RenderResponse RenderThread::Render(uint32_t currentRenderFrameInF
     // Draw render
     {
         constexpr VkClearValue colorClear = {.color = {0.0f, 0.0f, 1.0f, 1.0f}};
-        const VkRenderingAttachmentInfo colorAttachment = VkHelpers::RenderingAttachmentInfo(renderTargets->drawImageView.handle, &colorClear, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+        const VkRenderingAttachmentInfo colorAttachment = Renderer::VkHelpers::RenderingAttachmentInfo(renderTargets->drawImageView.handle, &colorClear, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
         constexpr VkClearValue depthClear = {.depthStencil = {0.0f, 0u}};
-        const VkRenderingAttachmentInfo depthAttachment = VkHelpers::RenderingAttachmentInfo(renderTargets->depthImageView.handle, &depthClear, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
-        const VkRenderingInfo renderInfo = VkHelpers::RenderingInfo({scaledRenderExtent[0], scaledRenderExtent[1]}, &colorAttachment, &depthAttachment);
+        const VkRenderingAttachmentInfo depthAttachment = Renderer::VkHelpers::RenderingAttachmentInfo(renderTargets->depthImageView.handle, &depthClear, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+        const VkRenderingInfo renderInfo = Renderer::VkHelpers::RenderingInfo({scaledRenderExtent[0], scaledRenderExtent[1]}, &colorAttachment, &depthAttachment);
 
 
         vkCmdBeginRendering(cmd, &renderInfo);
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainRenderPipeline.pipeline.handle);
 
-        VkViewport viewport = VkHelpers::GenerateViewport(scaledRenderExtent[0], scaledRenderExtent[1]);
+        VkViewport viewport = Renderer::VkHelpers::GenerateViewport(scaledRenderExtent[0], scaledRenderExtent[1]);
         vkCmdSetViewport(cmd, 0, 1, &viewport);
-        VkRect2D scissor = VkHelpers::GenerateScissor(scaledRenderExtent[0], scaledRenderExtent[1]);
+        VkRect2D scissor = Renderer::VkHelpers::GenerateScissor(scaledRenderExtent[0], scaledRenderExtent[1]);
         vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-        BindlessAddressPushConstant pushData{
+        Renderer::BindlessAddressPushConstant pushData{
             currentSceneDataBuffer.address,
             resourceManager->materialBuffer.address,
             resourceManager->primitiveBuffer.address,
@@ -445,7 +432,7 @@ RenderThread::RenderResponse RenderThread::Render(uint32_t currentRenderFrameInF
             instanceBuffers[currentRenderFrameInFlight].address,
         };
 
-        vkCmdPushConstants(cmd, mainRenderPipeline.pipelineLayout.handle, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(BindlessAddressPushConstant), &pushData);
+        vkCmdPushConstants(cmd, mainRenderPipeline.pipelineLayout.handle, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(Renderer::BindlessAddressPushConstant), &pushData);
 
         VkDescriptorBufferBindingInfoEXT bindingInfo = resourceManager->bindlessResourcesDescriptorBuffer.GetBindingInfo();
         vkCmdBindDescriptorBuffersEXT(cmd, 1, &bindingInfo);
@@ -461,10 +448,10 @@ RenderThread::RenderResponse RenderThread::Render(uint32_t currentRenderFrameInF
         vkCmdBindIndexBuffer(cmd, resourceManager->megaIndexBuffer.handle, 0, VK_INDEX_TYPE_UINT32);
         vkCmdDrawIndexedIndirectCount(cmd,
                                       opaqueIndexedIndirectBuffer.handle, 0,
-                                      indirectCountBuffers[currentRenderFrameInFlight].handle, offsetof(IndirectCount, opaqueCount),
+                                      indirectCountBuffers[currentRenderFrameInFlight].handle, offsetof(Renderer::IndirectCount, opaqueCount),
                                       highestInstanceIndex, sizeof(VkDrawIndexedIndirectCommand));
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mainSkeletalRenderPipeline.pipeline.handle);
-        BindlessAddressSkeletalPushConstant skeletalPushData{
+        Renderer::BindlessAddressSkeletalPushConstant skeletalPushData{
             currentSceneDataBuffer.address,
             resourceManager->materialBuffer.address,
             resourceManager->primitiveBuffer.address,
@@ -472,12 +459,12 @@ RenderThread::RenderResponse RenderThread::Render(uint32_t currentRenderFrameInF
             instanceBuffers[currentRenderFrameInFlight].address,
             jointMatrixBuffers[currentRenderFrameInFlight].address,
         };
-        vkCmdPushConstants(cmd, mainSkeletalRenderPipeline.pipelineLayout.handle, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(BindlessAddressSkeletalPushConstant),
+        vkCmdPushConstants(cmd, mainSkeletalRenderPipeline.pipelineLayout.handle, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(Renderer::BindlessAddressSkeletalPushConstant),
                            &skeletalPushData);
 
         vkCmdDrawIndexedIndirectCount(cmd,
                                       opaqueSkeletalIndexedIndirectBuffer.handle, 0,
-                                      skeletalIndirectCountBuffers[currentRenderFrameInFlight].handle, offsetof(IndirectCount, opaqueCount),
+                                      skeletalIndirectCountBuffers[currentRenderFrameInFlight].handle, offsetof(Renderer::IndirectCount, opaqueCount),
                                       highestInstanceIndex, sizeof(VkDrawIndexedIndirectCommand));
 
         vkCmdEndRendering(cmd);
@@ -486,15 +473,15 @@ RenderThread::RenderResponse RenderThread::Render(uint32_t currentRenderFrameInF
     // Transition 2 - Prepare for copy
     {
         VkImageMemoryBarrier2 barriers[2];
-        barriers[0] = VkHelpers::ImageMemoryBarrier(
+        barriers[0] = Renderer::VkHelpers::ImageMemoryBarrier(
             renderTargets->drawImage.handle,
-            VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT),
+            Renderer::VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT),
             VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
             VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
         );
-        barriers[1] = VkHelpers::ImageMemoryBarrier(
+        barriers[1] = Renderer::VkHelpers::ImageMemoryBarrier(
             currentSwapchainImage,
-            VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT),
+            Renderer::VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT),
             VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_UNDEFINED,
             VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
         );
@@ -534,29 +521,29 @@ RenderThread::RenderResponse RenderThread::Render(uint32_t currentRenderFrameInF
 
     // Final transition
     {
-        auto subresource = VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT);
-        auto barrier = VkHelpers::ImageMemoryBarrier(
+        auto subresource = Renderer::VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT);
+        auto barrier = Renderer::VkHelpers::ImageMemoryBarrier(
             currentSwapchainImage,
             subresource,
             VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
             VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
         );
-        auto dependencyInfo = VkHelpers::DependencyInfo(&barrier);
+        auto dependencyInfo = Renderer::VkHelpers::DependencyInfo(&barrier);
         vkCmdPipelineBarrier2(cmd, &dependencyInfo);
     }
 
     VK_CHECK(vkEndCommandBuffer(cmd));
 
-    VkCommandBufferSubmitInfo commandBufferSubmitInfo = VkHelpers::CommandBufferSubmitInfo(currentFrameSynchronization.commandBuffer);
-    VkSemaphoreSubmitInfo swapchainSemaphoreWaitInfo = VkHelpers::SemaphoreSubmitInfo(currentFrameSynchronization.swapchainSemaphore, VK_PIPELINE_STAGE_2_BLIT_BIT);
-    VkSemaphoreSubmitInfo renderSemaphoreSignalInfo = VkHelpers::SemaphoreSubmitInfo(currentFrameSynchronization.renderSemaphore, VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT);
-    VkSubmitInfo2 submitInfo = VkHelpers::SubmitInfo(&commandBufferSubmitInfo, &swapchainSemaphoreWaitInfo, &renderSemaphoreSignalInfo);
+    VkCommandBufferSubmitInfo commandBufferSubmitInfo = Renderer::VkHelpers::CommandBufferSubmitInfo(currentFrameSynchronization.commandBuffer);
+    VkSemaphoreSubmitInfo swapchainSemaphoreWaitInfo = Renderer::VkHelpers::SemaphoreSubmitInfo(currentFrameSynchronization.swapchainSemaphore, VK_PIPELINE_STAGE_2_BLIT_BIT);
+    VkSemaphoreSubmitInfo renderSemaphoreSignalInfo = Renderer::VkHelpers::SemaphoreSubmitInfo(currentFrameSynchronization.renderSemaphore, VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT);
+    VkSubmitInfo2 submitInfo = Renderer::VkHelpers::SubmitInfo(&commandBufferSubmitInfo, &swapchainSemaphoreWaitInfo, &renderSemaphoreSignalInfo);
 
     // Wait for swapchain semaphore, then submit command buffer. When finished, signal render semaphore and render fence.
     VK_CHECK(vkQueueSubmit2(vulkanContext->graphicsQueue, 1, &submitInfo, currentFrameSynchronization.renderFence));
 
     // Wait for render semaphore, then present frame.
-    VkPresentInfoKHR presentInfo = VkHelpers::PresentInfo(&swapchain->handle, nullptr, &swapchainImageIndex);
+    VkPresentInfoKHR presentInfo = Renderer::VkHelpers::PresentInfo(&swapchain->handle, nullptr, &swapchainImageIndex);
     presentInfo.pWaitSemaphores = &currentFrameSynchronization.renderSemaphore;
     const VkResult presentResult = vkQueuePresentKHR(vulkanContext->graphicsQueue, &presentInfo);
 
@@ -569,7 +556,7 @@ RenderThread::RenderResponse RenderThread::Render(uint32_t currentRenderFrameInF
     return RenderResponse::OK;
 }
 
-void RenderThread::ConstructSceneData(RawSceneData& raw, SceneData& scene, float aspectRatio, glm::vec2 renderTargetSize, glm::vec2 texelSize)
+void RenderThread::ConstructSceneData(Renderer::RawSceneData& raw, Renderer::SceneData& scene, float aspectRatio, glm::vec2 renderTargetSize, glm::vec2 texelSize)
 {
     scene.view = raw.view;
     scene.prevView = raw.prevView;
@@ -616,4 +603,4 @@ void RenderThread::UpdateFrameTimeStats(float frameTimeMs)
                  frameTimeTracker.GetSampleCount(), avg, 1000.0f / avg);
     }
 }
-} // Renderer
+} // HotReloading::Render

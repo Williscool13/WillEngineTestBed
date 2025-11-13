@@ -7,16 +7,15 @@
 #define VMA_IMPLEMENTATION
 #include <vk_mem_alloc.h>
 
-#include "core/constants.h"
 #include "crash-handling/crash_context.h"
 #include "crash-handling/crash_handler.h"
 #include "crash-handling/logger.h"
-#include "hot-reloading/game/game_state.h"
+#include "core/constants.h"
+#include "core/time.h"
 #include "input/input.h"
-#include "render/vk_context.h"
-#include "render/vk_swapchain.h"
-#include "render/vk_synchronization.h"
 #include "utils/utils.h"
+
+#include "hot-reloading/game/game_state.h"
 
 namespace HotReloading::Engine
 {
@@ -27,12 +26,12 @@ Engine::~Engine() = default;
 void Engine::Initialize()
 {
     fmt::println("=== Hot Reloading ===");
+    start = std::chrono::high_resolution_clock::now();
 
     CrashHandler::Initialize("crashes/");
     CrashContext::Initialize();
     Logger::Initialize("logs/hot-reloading.log");
 
-    Utils::ScopedTimer timer{"Hot-Reloading Initialization"};
     bool sdlInitSuccess = SDL_Init(SDL_INIT_VIDEO);
     if (!sdlInitSuccess) {
         LOG_ERROR("SDL_Init failed: {}", SDL_GetError());
@@ -54,32 +53,33 @@ void Engine::Initialize()
     SDL_GetWindowSize(window, &w, &h);
     Input::Get().Init(window, w, h);
 
-    vulkanContext = std::make_unique<Renderer::VulkanContext>(window);
-    swapchain = std::make_unique<Renderer::Swapchain>(vulkanContext.get(), w, h);
-    renderFramesInFlight = swapchain->imageCount;
-    frameSynchronization.reserve(renderFramesInFlight);
-    for (int32_t i = 0; i < renderFramesInFlight; ++i) {
-        frameSynchronization.emplace_back(vulkanContext.get());
-        frameSynchronization[i].Initialize();
-    }
 
-    gameState = std::make_unique<Game::GameState>();
-    gameState->logger = Logger::Get();
+    gameState.logger = Logger::Get();
 
     gameDll.Load("game/hot-reload-game.dll", "hot-reload-game_temp.dll");
     auto gameInit = gameDll.GetFunction<void(*)(Game::GameState* state)>("GameInit");
-    if (gameInit) { gameInit(gameState.get()); }
+    if (gameInit) { gameInit(&gameState); }
+
+    renderThread.Initialize(&engineSynchronization, window, w, h);
 }
 
 void Engine::Run()
 {
+    Utils::SetThreadName("GameThread");
+
+    renderThread.Start();
+    // assetLoadingThread.Start();
+
     Input& input = Input::Input::Get();
+    Time& time = Time::Get();
+
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+    LOG_INFO("Engine Multithreading initialized in {:.3f}s", duration.count() / 1000000.0);
+
     SDL_Event e;
     bool exit = false;
     while (true) {
-        auto wait = std::chrono::milliseconds(500);
-        std::this_thread::sleep_for(wait);
-
         input.FrameReset();
         while (SDL_PollEvent(&e) != 0) {
             input.ProcessEvent(e);
@@ -93,48 +93,44 @@ void Engine::Run()
                 bSwapchainOutdated = true;
             }
         }
-        input.UpdateFocus(SDL_GetWindowFlags(window));
 
-        if (bSwapchainOutdated) {
-            vkDeviceWaitIdle(vulkanContext->device);
-
-            int32_t w, h;
-            SDL_GetWindowSize(window, &w, &h);
-
-            swapchain->Recreate(w, h);
-            for (Renderer::FrameSynchronization& frameSync : frameSynchronization) {
-                frameSync.RecreateSynchronization();
-            }
-
-            Input::Input::Get().UpdateWindowExtent(swapchain->extent.width, swapchain->extent.height);
-            bSwapchainOutdated = false;
-        }
+        SDL_WindowFlags windowFlags = SDL_GetWindowFlags(window);
+        input.UpdateFocus(windowFlags);
+        time.Update();
 
         if (exit) {
-            bShouldExit = true;
+            renderThread.RequestShutdown();
+            engineSynchronization.renderFrames.release();
+            //assetLoadingThread.RequestShutdown();
             break;
         }
 
-        gameState->frame = frameNumber;
 
+        // assetLoadingThread.ResolveLoads(loadedModelsToAcquire);
         auto gameUpdate = gameDll.GetFunction<void(*)(Game::GameState* state, float)>("GameUpdate");
-        if (gameUpdate) { gameUpdate(gameState.get(), 0.0f); }
-        // auto& currentFrameSync = frameSynchronization[frameNumber % renderFramesInFlight];
-        // Render(currentFrameSync);
+        if (gameUpdate) { gameUpdate(&gameState, 0.0f); }
 
-        LOG_INFO("Frame {}", frameNumber);
-        frameNumber++;
+        bool canTransmit = engineSynchronization.gameFrames.try_acquire();
+        if (canTransmit) {
+            uint64_t currentRenderFrame = renderFrame % Core::FRAMES_IN_FLIGHT;
+            //PrepareFrameDataForRender(currentRenderFrame);
+            renderFrame++;
+            engineSynchronization.renderFrames.release();
+        }
+
+        gameFrame++;
     }
 }
 
-void Engine::Render(Renderer::FrameSynchronization& frameSync) {}
-
 void Engine::Cleanup()
 {
-    vkDeviceWaitIdle(vulkanContext->device);
+    renderThread.Join();
+    // assetLoadingThread.Join();
+
+    SDL_DestroyWindow(window);
 
     auto gameShutdown = gameDll.GetFunction<void(*)(Game::GameState* state)>("GameShutdown");
-    if (gameShutdown) { gameShutdown(gameState.get()); }
+    if (gameShutdown) { gameShutdown(&gameState); }
 
     gameDll.Unload();
 

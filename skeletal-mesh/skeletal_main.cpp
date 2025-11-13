@@ -44,13 +44,13 @@ void SkeletalMain::Initialize()
     SDL_ShowWindow(window);
 
     vulkanContext = std::make_unique<VulkanContext>(window);
-    swapchain = std::make_unique<Swapchain>(vulkanContext.get());
+    swapchain = std::make_unique<Swapchain>(vulkanContext.get(), 800, 600);
     imgui = std::make_unique<ImguiWrapper>(vulkanContext.get(), window, swapchain->imageCount, swapchain->format);
 
     frameSynchronization.resize(swapchain->imageCount);
     renderFramesInFlight = swapchain->imageCount;
 
-    VkCommandPoolCreateInfo commandPoolCreateInfo = VkHelpers::CommandPoolCreateInfo();
+    VkCommandPoolCreateInfo commandPoolCreateInfo = VkHelpers::CommandPoolCreateInfo(vulkanContext->graphicsQueueFamily);
     VkCommandBufferAllocateInfo commandBufferAllocateInfo = VkHelpers::CommandBufferAllocateInfo(1);
 
     for (auto& frame : frameSynchronization) {
@@ -250,7 +250,7 @@ void SkeletalMain::CreateResources()
     VkCommandBuffer immediateCommandBuffer;
     VkFence immediateFence;
 
-    const VkCommandPoolCreateInfo commandPoolCreateInfo = VkHelpers::CommandPoolCreateInfo();
+    const VkCommandPoolCreateInfo commandPoolCreateInfo = VkHelpers::CommandPoolCreateInfo(vulkanContext->graphicsQueueFamily);
     VK_CHECK(vkCreateCommandPool(vulkanContext->device, &commandPoolCreateInfo, nullptr, &immediateCommandPool));
     VkCommandBufferAllocateInfo commandBufferAllocateInfo = VkHelpers::CommandBufferAllocateInfo(1, immediateCommandPool);
     VK_CHECK(vkAllocateCommandBuffers(vulkanContext->device, &commandBufferAllocateInfo, &immediateCommandBuffer));
@@ -283,7 +283,7 @@ void SkeletalMain::CreateResources()
 
 void SkeletalMain::Run()
 {
-    Input::Input& input = Input::Input::Input::Get();
+    Input& input = Input::Input::Input::Get();
     SDL_Event e;
     bool exit = false;
     while (true) {
@@ -310,7 +310,7 @@ void SkeletalMain::Run()
 
 void SkeletalMain::Render()
 {
-    Input::Input& input = Input::Input::Get();
+    Input& input = Input::Input::Get();
 
     const uint32_t currentFrameInFlight = frameNumber % swapchain->imageCount;
     const FrameSynchronization& currentFrameData = frameSynchronization[currentFrameInFlight];
@@ -345,10 +345,10 @@ void SkeletalMain::Render()
         ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
 
-        if (input.IsKeyPressed(Input::Key::G)) {
+        if (input.IsKeyPressed(Key::G)) {
             LOG_INFO("G is pressed");
         }
-        if (input.IsKeyReleased(Input::Key::G)) {
+        if (input.IsKeyReleased(Key::G)) {
             LOG_INFO("G is released");
         }
         if (ImGui::Begin("Main")) {
@@ -621,15 +621,6 @@ void SkeletalMain::Cleanup()
     vkDestroyPipeline(vulkanContext->device, computePipeline, nullptr);
     vkDestroyPipelineLayout(vulkanContext->device, renderPipelineLayout, nullptr);
     vkDestroyPipeline(vulkanContext->device, renderPipeline, nullptr);
-
-    drawImage.Cleanup(vulkanContext.get());
-    drawImageView.Cleanup(vulkanContext.get());
-    depthImage.Cleanup(vulkanContext.get());
-    depthImageView.Cleanup(vulkanContext.get());
-
-    for (FrameSynchronization& frameData : frameSynchronization) {
-        frameData.Cleanup(vulkanContext.get());
-    }
 
     SDL_DestroyWindow(window);
 }

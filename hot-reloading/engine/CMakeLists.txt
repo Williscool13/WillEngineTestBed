@@ -1,6 +1,8 @@
 add_library(hot-reload-engine STATIC
         engine.h
         engine.cpp
+        engine_synchronization.cpp
+        engine_synchronization.h
 )
 
 target_link_libraries(hot-reload-engine PUBLIC
