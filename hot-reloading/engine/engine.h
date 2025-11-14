@@ -7,16 +7,12 @@
 #include <SDL3/SDL.h>
 
 #include <hot-reloading/engine/engine_api.h>
+
+#include "core/data-structures/ring_buffer.h"
+#include "game/camera/free_camera.h"
 #include "hot-reloading/game/game_state.h"
 #include "hot-reloading/render/render.h"
-
-namespace Renderer
-{
-struct ImguiWrapper;
-struct VulkanContext;
-struct Swapchain;
-struct RenderTargets;
-}
+#include "hot-reloading/asset-load/asset_loading_thread.h"
 
 namespace HotReloading::Engine
 {
@@ -48,6 +44,13 @@ struct GameFunctions
 class ENGINE_API Engine
 {
 public:
+    static Engine& Get()
+    {
+        return *instance;
+    }
+
+    static Engine* instance;
+
     Engine();
 
     ~Engine();
@@ -58,6 +61,14 @@ public:
 
     void Cleanup();
 
+    void PrepareFrameDataForRender(Renderer::FrameBuffer& frameBuffer);
+
+    AssetLoad::RuntimeMesh GenerateModel(AssetLoad::ModelEntryHandle modelEntryHandle, const Transform& topLevelTransform);
+
+    void UpdateTransforms(AssetLoad::RuntimeMesh& runtimeMesh);
+
+    void UpdateRuntimeMesh(AssetLoad::RuntimeMesh& runtimeMesh);
+
 private:
     SDL_Window* window{nullptr};
 
@@ -66,6 +77,7 @@ private:
 
 private:
     Render::RenderThread renderThread{};
+    AssetLoad::AssetLoadingThread assetLoadingThread{};
 
     uint64_t gameFrame{0};
     uint64_t renderFrame{0};
@@ -74,6 +86,21 @@ private:
     bool bSwapchainOutdated{false};
 
     std::chrono::time_point<std::chrono::steady_clock> start{};
+
+private: // Game -> Render command cache
+    RingBuffer<AssetLoad::ModelEntryHandle, AssetLoad::MAX_LOADED_MODEL_RING_BUFFER> loadedModelEntryHandles;
+    std::vector<VkBufferMemoryBarrier2> bufferAcquireOperations;
+    std::vector<VkImageMemoryBarrier2> imageAcquireOperations;
+
+    std::vector<Renderer::ModelMatrixOperation> modelMatrixOperations;
+    std::vector<Renderer::InstanceOperation> instanceOperations;
+    std::vector<Renderer::JointMatrixOperation> jointMatrixOperations;
+
+    // Temporary
+    Renderer::RawSceneData rawSceneData;
+    AssetLoad::ModelEntryHandle suzanneModelEntryHandle{AssetLoad::ModelEntryHandle::Invalid};
+    AssetLoad::RuntimeMesh suzanneRuntimeMesh{};
+    ::Game::FreeCamera freeCamera{{0.0f, 0.0f, 5.0f}, {0.0f, 0.0f, 0.0f}};
 
 private: // Game DLL Loading
     Utils::DllLoader gameDll;

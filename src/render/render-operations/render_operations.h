@@ -43,6 +43,12 @@ struct AcquireOperations
     bool bRequiresAcquisition{false};
     std::vector<VkBufferMemoryBarrier2> bufferAcquireOps{};
     std::vector<VkImageMemoryBarrier2> imageAcquireOps{};
+
+    void Clear()
+    {
+        bufferAcquireOps.clear();
+        imageAcquireOps.clear();
+    }
 };
 
 struct FrameBuffer

@@ -4,6 +4,9 @@
 
 #include "engine.h"
 
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb/stb_image.h>
+
 #define VMA_IMPLEMENTATION
 #include <vk_mem_alloc.h>
 
@@ -17,6 +20,7 @@
 #include "utils/utils.h"
 
 #include "hot-reloading/game/game_state.h"
+#include "render/resource_manager.h"
 
 namespace HotReloading::Engine
 {
@@ -35,7 +39,12 @@ void StubShutdown(Game::GameState* state)
     LOG_WARN("Game DLL not loaded - using stub GameShutdown");
 }
 
-Engine::Engine() = default;
+Engine* Engine::instance = nullptr;
+
+Engine::Engine()
+{
+    instance = this;
+};
 
 Engine::~Engine() = default;
 
@@ -77,6 +86,7 @@ void Engine::Initialize()
 
     gameFunctions.gameInit(&gameState);
     renderThread.Initialize(&engineSynchronization, window, w, h);
+    assetLoadingThread.Initialize(renderThread.GetVulkanContext(), renderThread.GetResourceManager());
 }
 
 void Engine::Run()
@@ -84,7 +94,7 @@ void Engine::Run()
     Utils::SetThreadName("GameThread");
 
     renderThread.Start();
-    // assetLoadingThread.Start();
+    assetLoadingThread.Start();
 
     Input& input = Input::Input::Get();
     Time& time = Time::Get();
@@ -96,6 +106,9 @@ void Engine::Run()
     SDL_Event e;
     bool exit = false;
     while (true) {
+        constexpr auto gameWait = std::chrono::milliseconds(100);
+        std::this_thread::sleep_for(gameWait);
+
         input.FrameReset();
         while (SDL_PollEvent(&e) != 0) {
             input.ProcessEvent(e);
@@ -106,7 +119,7 @@ void Engine::Run()
                 || e.type == SDL_EVENT_WINDOW_MAXIMIZED
                 || e.type == SDL_EVENT_WINDOW_RESIZED
                 || e.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED) {
-                bSwapchainOutdated = true;
+                bSwapchainOutdated |= true;
             }
         }
 
@@ -127,21 +140,62 @@ void Engine::Run()
         if (exit) {
             renderThread.RequestShutdown();
             engineSynchronization.renderFrames.release();
-            //assetLoadingThread.RequestShutdown();
+            assetLoadingThread.RequestShutdown();
             break;
         }
 
-        constexpr auto gameWait = std::chrono::milliseconds(100);
-        std::this_thread::sleep_for(gameWait);
+
+        if (input.IsKeyPressed(Key::NUM_1)) {
+            auto suzannePath = std::filesystem::path("../assets/Suzanne/glTF/Suzanne.gltf");
+            AssetLoad::RequestLoad newModel = assetLoadingThread.RequestLoad(suzannePath);
+            if (!newModel.bIsLoaded) {
+                LOG_INFO("Not loaded, will need to wait.");
+                uint32_t index = newModel.modelEntryHandle.index;
+                uint32_t generation = newModel.modelEntryHandle.generation;
+                suzanneModelEntryHandle = newModel.modelEntryHandle;
+                LOG_INFO("New model: {}, {}", index, generation);
+            }
+        }
+
+        if (input.IsKeyPressed(Key::Q)) {
+            if (suzanneModelEntryHandle != AssetLoad::ModelEntryHandle::Invalid && suzanneRuntimeMesh.modelEntryHandle == AssetLoad::ModelEntryHandle::Invalid) {
+                suzanneRuntimeMesh = GenerateModel(suzanneModelEntryHandle, Transform::Identity);
+                UpdateRuntimeMesh(suzanneRuntimeMesh);
+                LOG_INFO("Sent Suzanne to be drawn by GPU");
+            }
+        }
+
+        const glm::vec3 cameraPos = freeCamera.GetPosition();
+        const glm::quat cameraRot = freeCamera.GetRotation();
+        const glm::vec3 forward = freeCamera.GetForward();
+        const glm::vec3 up = freeCamera.GetUp();
+
+        glm::mat4 view = glm::lookAt(cameraPos, cameraPos + forward, up);
+
+
+        rawSceneData.view = view;
+        rawSceneData.cameraWorldPos = glm::vec4(cameraPos, 1.0f);
+        rawSceneData.fovDegrees = glm::degrees(freeCamera.GetFov());
+        rawSceneData.nearPlane = freeCamera.GetNearPlane();
+        rawSceneData.farPlane = freeCamera.GetFarPlane();
+        rawSceneData.deltaTime += time.GetDeltaTime();
 
         gameState.frame = gameFrame;
-        // assetLoadingThread.ResolveLoads(loadedModelsToAcquire);
+        assetLoadingThread.ResolveLoads(loadedModelEntryHandles, bufferAcquireOperations, imageAcquireOperations);
+
+        AssetLoad::ModelEntryHandle loadedModelEntryHandle;
+        while (loadedModelEntryHandles.Pop(loadedModelEntryHandle)) {
+            auto index = loadedModelEntryHandle.index;
+            LOG_INFO("Loaded model! {}", index);
+        }
+
         gameFunctions.gameUpdate(&gameState, 0.0f);
 
         bool canTransmit = engineSynchronization.gameFrames.try_acquire();
         if (canTransmit) {
             uint64_t currentRenderFrame = renderFrame % ::Core::FRAMES_IN_FLIGHT;
-            //PrepareFrameDataForRender(currentRenderFrame);
+            Renderer::FrameBuffer& currentFrameBuffer = engineSynchronization.frameBuffers[currentRenderFrame];
+            PrepareFrameDataForRender(currentFrameBuffer);
             renderFrame++;
             engineSynchronization.renderFrames.release();
         }
@@ -153,11 +207,133 @@ void Engine::Run()
 void Engine::Cleanup()
 {
     renderThread.Join();
-    // assetLoadingThread.Join();
+    assetLoadingThread.Join();
 
     gameFunctions.gameShutdown(&gameState);
     gameDll.Unload();
 
     SDL_DestroyWindow(window);
+}
+
+void Engine::PrepareFrameDataForRender(Renderer::FrameBuffer& frameBuffer)
+{
+    frameBuffer.modelMatrixOperations.insert(frameBuffer.modelMatrixOperations.end(), modelMatrixOperations.begin(), modelMatrixOperations.end());
+    frameBuffer.instanceOperations.insert(frameBuffer.instanceOperations.end(), instanceOperations.begin(), instanceOperations.end());
+    frameBuffer.jointMatrixOperations.insert(frameBuffer.jointMatrixOperations.end(), jointMatrixOperations.begin(), jointMatrixOperations.end());
+    frameBuffer.bufferAcquireOperations.insert(frameBuffer.bufferAcquireOperations.end(), bufferAcquireOperations.begin(), bufferAcquireOperations.end());
+    frameBuffer.imageAcquireOperations.insert(frameBuffer.imageAcquireOperations.end(), imageAcquireOperations.begin(), imageAcquireOperations.end());
+
+    modelMatrixOperations.clear();
+    instanceOperations.clear();
+    jointMatrixOperations.clear();
+    bufferAcquireOperations.clear();
+    imageAcquireOperations.clear();
+
+    Time& time = Time::Get();
+    rawSceneData.timeElapsed = time.GetTime();
+
+    frameBuffer.rawSceneData = rawSceneData;
+    frameBuffer.currentFrame = gameFrame;
+    frameBuffer.bRequireSwapchainRecreate = bSwapchainOutdated;
+
+    rawSceneData.prevView = rawSceneData.view;
+    rawSceneData.prevCameraWorldPos = rawSceneData.cameraWorldPos;
+    rawSceneData.prevFovDegrees = rawSceneData.fovDegrees;
+    rawSceneData.prevNearPlane = rawSceneData.nearPlane;
+    rawSceneData.prevFarPlane = rawSceneData.farPlane;
+    rawSceneData.deltaTime = 0;
+
+    bSwapchainOutdated = false;
+}
+
+AssetLoad::RuntimeMesh Engine::GenerateModel(AssetLoad::ModelEntryHandle modelEntryHandle, const Transform& topLevelTransform)
+{
+    Renderer::ResourceManager* resourceManager = renderThread.GetResourceManager();
+    AssetLoad::RuntimeMesh rm{};
+
+    Renderer::ModelData* modelData = assetLoadingThread.GetModelData(modelEntryHandle);
+    if (!modelData) { return rm; }
+
+    rm.transform = topLevelTransform;
+    rm.nodes.reserve(modelData->nodes.size());
+    rm.nodeRemap = modelData->nodeRemap;
+
+    size_t jointMatrixCount = modelData->inverseBindMatrices.size();
+    bool bHasSkinning = jointMatrixCount > 0;
+    if (bHasSkinning) {
+        rm.jointMatrixAllocation = resourceManager->jointMatrixAllocator.allocate(jointMatrixCount * sizeof(Renderer::Model));
+        rm.jointMatrixOffset = rm.jointMatrixAllocation.offset / sizeof(uint32_t);
+    }
+
+    rm.modelEntryHandle = modelEntryHandle;
+    for (const Renderer::Node& n : modelData->nodes) {
+        rm.nodes.emplace_back(n);
+        Renderer::RuntimeNode& rn = rm.nodes.back();
+        if (n.inverseBindIndex != ~0u) {
+            rn.inverseBindMatrix = modelData->inverseBindMatrices[n.inverseBindIndex];
+        }
+    }
+
+    for (Renderer::RuntimeNode& node : rm.nodes) {
+        if (node.meshIndex != ~0u) {
+            node.modelMatrixHandle = resourceManager->modelMatrixAllocator.Add();
+
+            for (uint32_t primitiveIndex : modelData->meshes[node.meshIndex].primitiveIndices) {
+                Renderer::InstanceEntryHandle instanceEntry = resourceManager->instanceEntryAllocator.Add();
+                node.instanceEntryHandles.push_back(instanceEntry);
+
+                Renderer::Instance inst;
+                inst.modelIndex = node.modelMatrixHandle.index;
+                inst.primitiveIndex = primitiveIndex;
+                inst.jointMatrixOffset = rm.jointMatrixOffset;
+                inst.bIsAllocated = 1;
+
+                instanceOperations.push_back({instanceEntry.index, inst});
+            }
+        }
+    }
+
+    UpdateTransforms(rm);
+    return rm;
+}
+
+void Engine::UpdateTransforms(AssetLoad::RuntimeMesh& runtimeMesh)
+{
+    glm::mat4 baseTopLevel = runtimeMesh.transform.GetMatrix();
+
+    // Nodes are sorted
+    for (Renderer::RuntimeNode& rn : runtimeMesh.nodes) {
+        glm::mat4 localTransform = rn.transform.GetMatrix();
+
+        if (rn.parent == ~0u) {
+            rn.cachedWorldTransform = baseTopLevel * localTransform;
+        }
+        else {
+            rn.cachedWorldTransform = runtimeMesh.nodes[rn.parent].cachedWorldTransform * localTransform;
+        }
+    }
+
+    runtimeMesh.bNeedToSendToRender = true;
+}
+
+void Engine::UpdateRuntimeMesh(AssetLoad::RuntimeMesh& runtimeMesh)
+{
+    if (!runtimeMesh.bNeedToSendToRender) {
+        return;
+    }
+
+    for (Renderer::RuntimeNode& node : runtimeMesh.nodes) {
+        if (node.meshIndex != ~0u) {
+            modelMatrixOperations.push_back({node.modelMatrixHandle.index, node.cachedWorldTransform});
+        }
+
+        if (node.jointMatrixIndex != ~0u) {
+            glm::mat4 jointMatrix = node.cachedWorldTransform * node.inverseBindMatrix;
+            uint32_t jointMatrixFinalIndex = node.jointMatrixIndex + runtimeMesh.jointMatrixOffset;
+            jointMatrixOperations.push_back({jointMatrixFinalIndex, jointMatrix});
+        }
+    }
+
+    runtimeMesh.bNeedToSendToRender = false;
 }
 } // HotReloading::Engine

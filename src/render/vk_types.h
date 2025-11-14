@@ -101,8 +101,11 @@ struct RawSceneData
     glm::vec3 cameraWorldPos{0.0f};
     glm::vec3 prevCameraWorldPos{0.0f};
 
+    float prevFovDegrees{75.0f};
     float fovDegrees{75.0f};
+    float prevNearPlane{0.1f};
     float nearPlane{0.1f};
+    float prevFarPlane{1000.0f};
     float farPlane{1000.0f};
 
     float timeElapsed{};

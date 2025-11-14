@@ -10,15 +10,18 @@
 #include "render/model/model_data.h"
 #include "render/render-operations/render_operations.h"
 
-namespace Renderer
+namespace HotReloading::AssetLoad
 {
+
+static inline constexpr int32_t MAX_LOADED_MODEL_RING_BUFFER = 256;
+
 struct UploadStaging
 {
     VkCommandBuffer commandBuffer{};
     VkFence fence{};
 
-    AllocatedBuffer stagingBuffer{};
-    OffsetAllocator::Allocator stagingAllocator{STAGING_BUFFER_SIZE};
+    Renderer::AllocatedBuffer stagingBuffer{};
+    OffsetAllocator::Allocator stagingAllocator{Renderer::STAGING_BUFFER_SIZE};
 };
 
 using UploadStagingHandle = Handle<UploadStaging>;
@@ -32,8 +35,8 @@ struct ModelEntry
     std::atomic<State> state{};
 
     // Inserted into by asset loading thread. Used by game thread
-    ModelData data{};
-    AcquireOperations modelAcquires{};
+    Renderer::ModelData data{};
+    Renderer::AcquireOperations modelAcquires{};
 
 
     // Only accessed by asset loading thread
@@ -67,27 +70,31 @@ using ModelEntryHandle = Handle<ModelEntry>;
 
 struct AssetLoadRequest
 {
+    ModelEntryHandle modelEntryHandle;
     std::filesystem::path path;
-    std::function<void(ModelEntryHandle)> onComplete;
 };
 
 struct AssetLoadInProgress
 {
     ModelEntryHandle modelEntryHandle;
-    std::function<void(ModelEntryHandle)> onComplete;
 };
 
 struct AssetLoadComplete
 {
-    ModelEntryHandle handle;
-    std::function<void(ModelEntryHandle)> onComplete;
+    ModelEntryHandle modelEntryHandle;
+};
+
+struct RequestLoad
+{
+    bool bIsLoaded{false};
+    ModelEntryHandle modelEntryHandle;
 };
 
 struct RuntimeMesh
 {
     ModelEntryHandle modelEntryHandle{ModelEntryHandle::Invalid};
     // sorted when generated
-    std::vector<RuntimeNode> nodes;
+    std::vector<Renderer::RuntimeNode> nodes;
 
     std::vector<uint32_t> nodeRemap{};
 
@@ -96,6 +103,6 @@ struct RuntimeMesh
     OffsetAllocator::Allocation jointMatrixAllocation{};
     uint32_t jointMatrixOffset{0};
 };
-} // Renderer
+} // HotReloading::AssetLoad
 
 #endif //WILLENGINETESTBED_ASSET_LOAD_TYPES_H

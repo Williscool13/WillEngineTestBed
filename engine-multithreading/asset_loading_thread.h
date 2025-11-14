@@ -47,8 +47,6 @@ private: // Threading
     std::atomic<bool> running{false};
     LockFreeQueue<AssetLoadRequest> requestQueue{ASSET_LOAD_QUEUE_COUNT};
     LockFreeQueue<AssetLoadComplete> completeQueue{ASSET_LOAD_QUEUE_COUNT};
-    LockFreeQueue<VkBufferMemoryBarrier2> independentBufferAcquireQueue{ASSET_LOAD_INDEPENDENT_BARRIER_COUNT};
-    LockFreeQueue<VkImageMemoryBarrier2> independentImageAcquireQueue{ASSET_LOAD_INDEPENDENT_BARRIER_COUNT};
 
     std::vector<AssetLoadInProgress> modelsInProgress{};
 

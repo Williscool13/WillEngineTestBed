@@ -3,15 +3,18 @@ add_executable(hot-reloading
 )
 
 target_link_libraries(hot-reloading PRIVATE
+        engine-common
+        hot-reload-core
         hot-reload-engine
         hot-reload-render
-        hot-reload-core
+        hot-reload-asset-load
 )
 
 add_subdirectory(core)
 add_subdirectory(engine)
 add_subdirectory(game)
 add_subdirectory(render)
+add_subdirectory(asset-load)
 
 add_dependencies(hot-reloading hot-reload-engine)
 add_dependencies(hot-reloading hot-reload-game)

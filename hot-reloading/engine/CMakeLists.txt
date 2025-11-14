@@ -7,9 +7,11 @@ add_library(hot-reload-engine SHARED
 
 target_link_libraries(hot-reload-engine PUBLIC
         hot-reload-render
+        hot-reload-asset-load
         engine-common
         crash-handling
         core-lib
+        game-lib
         render-lib
         input-lib
         SDL3::SDL3

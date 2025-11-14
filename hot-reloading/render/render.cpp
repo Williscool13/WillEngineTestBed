@@ -5,7 +5,7 @@
 #include "render.h"
 
 #include "input/input.h"
-#include "../core/engine_synchronization.h"
+#include "hot-reloading/core/engine_synchronization.h"
 #include "render/render_context.h"
 #include "render/render_targets.h"
 #include "render/render_utils.h"

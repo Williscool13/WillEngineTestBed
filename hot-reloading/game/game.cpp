@@ -20,10 +20,10 @@ void GameInit(HotReloading::Game::GameState* state)
 
 void GameUpdate(HotReloading::Game::GameState* state, float deltaTime)
 {
-    LOG_INFO("Frame {}", -state->frame);
-    if (EngineIsKeyPressed(Key::O)) {
-        LOG_INFO("Frame {}", state->frame);
-    }
+    // LOG_INFO("Frame {}", -state->frame);
+    // if (EngineIsKeyPressed(Key::O)) {
+    //     LOG_INFO("Frame {}", state->frame);
+    // }
 }
 
 void GameShutdown(HotReloading::Game::GameState* state)

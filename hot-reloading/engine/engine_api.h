@@ -55,4 +55,9 @@ ENGINE_API float EngineGetMouseWheelDelta();
 ENGINE_API bool EngineIsCursorActive();
 
 ENGINE_API bool EngineIsWindowInputFocus();
+
+// ENGINE_API ModelEntryHandle EngineLoadModel(const char* path);
+// ENGINE_API EntityHandle EngineSpawnEntity(ModelHandle model, Transform transform);
+// ENGINE_API void EngineUpdateEntityTransform(EntityHandle entity, Transform transform);
+// ENGINE_API void EngineDeleteEntity(EntityHandle entity);
 #endif //WILLENGINETESTBED_ENGINE_API_H
