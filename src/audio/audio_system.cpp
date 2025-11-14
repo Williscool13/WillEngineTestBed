@@ -5,6 +5,7 @@
 
 #include "audio_commands.h"
 #include "audio_utils.h"
+#include "crash-handling/logger_helpers.h"
 #include "glm/glm.hpp"
 #include "utils/utils.h"
 #include "utils/world_constants.h"

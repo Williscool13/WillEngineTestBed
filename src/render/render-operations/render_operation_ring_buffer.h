@@ -9,7 +9,6 @@
 #include <vector>
 
 #include "render_operations.h"
-#include "crash-handling/logger.h"
 
 namespace Renderer
 {
@@ -25,17 +24,7 @@ public:
         capacity = capacity_;
     }
 
-    void Enqueue(const std::vector<ModelMatrixOperation>& operations)
-    {
-        count += operations.size();
-        if (count > capacity) {
-            LOG_ERROR("ModelMatrix operation buffer has exceeded count limit.");
-        }
-        for (const ModelMatrixOperation& op : operations) {
-            buffer[head] = op;
-            head = (head + 1) % capacity;
-        }
-    }
+    void Enqueue(const std::vector<ModelMatrixOperation>& operations);
 
     void ProcessOperations(char* pMappedData, uint32_t discardCount)
     {
@@ -83,17 +72,7 @@ public:
         capacity = capacity_;
     }
 
-    void Enqueue(const std::vector<InstanceOperation>& operations)
-    {
-        count += operations.size();
-        if (count > capacity) {
-            LOG_ERROR("Instance operation buffer has exceeded count limit.");
-        }
-        for (const InstanceOperation& op : operations) {
-            buffer[head] = op;
-            head = (head + 1) % capacity;
-        }
-    }
+    void Enqueue(const std::vector<InstanceOperation>& operations);
 
     void ProcessOperations(char* pMappedData, uint32_t discardCount, uint32_t& highestInstanceIndex)
     {
@@ -136,17 +115,7 @@ public:
         capacity = capacity_;
     }
 
-    void Enqueue(const std::vector<JointMatrixOperation>& operations)
-    {
-        count += operations.size();
-        if (count > capacity) {
-            LOG_ERROR("JointMatrix operation buffer has exceeded count limit.");
-        }
-        for (const JointMatrixOperation& op : operations) {
-            buffer[head] = op;
-            head = (head + 1) % capacity;
-        }
-    }
+    void Enqueue(const std::vector<JointMatrixOperation>& operations);
 
     void ProcessOperations(char* pMappedData, uint32_t discardCount)
     {

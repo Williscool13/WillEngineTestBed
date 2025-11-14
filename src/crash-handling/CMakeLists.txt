@@ -6,6 +6,8 @@ add_library(crash-handling STATIC
         # todo: logger should be its own lib
         logger.cpp
         logger.h
+        logger_helpers.cpp
+        logger_helpers.h
 )
 
 target_link_libraries(crash-handling PUBLIC

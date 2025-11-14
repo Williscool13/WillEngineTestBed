@@ -12,6 +12,7 @@
 #include "crash-handling/logger.h"
 #include "core/constants.h"
 #include "core/time.h"
+#include "crash-handling/logger_helpers.h"
 #include "input/input.h"
 #include "utils/utils.h"
 
@@ -19,6 +20,21 @@
 
 namespace HotReloading::Engine
 {
+void StubInit(Game::GameState* state)
+{
+    LOG_WARN("Game DLL not loaded - using stub GameInit");
+}
+
+void StubUpdate(Game::GameState* state, float deltaTime)
+{
+    LOG_WARN("Game DLL not loaded - using stub GameUpdate");
+}
+
+void StubShutdown(Game::GameState* state)
+{
+    LOG_WARN("Game DLL not loaded - using stub GameShutdown");
+}
+
 Engine::Engine() = default;
 
 Engine::~Engine() = default;
@@ -53,10 +69,13 @@ void Engine::Initialize()
     SDL_GetWindowSize(window, &w, &h);
     Input::Get().Init(window, w, h);
 
-    gameDll.Load("game/hot-reload-game.dll", "hot-reload-game_temp.dll");
-    auto gameInit = gameDll.GetFunction<void(*)(Game::GameState* state)>("GameInit");
-    if (gameInit) { gameInit(&gameState); }
+    if (gameDll.Load("game/hot-reload-game.dll", "hot-reload-game_temp.dll")) {
+        gameFunctions.gameInit = gameDll.GetFunction<GameInitFunc>("GameInit");
+        gameFunctions.gameUpdate = gameDll.GetFunction<GameUpdateFunc>("GameUpdate");
+        gameFunctions.gameShutdown = gameDll.GetFunction<GameShutdownFunc>("GameShutdown");
+    }
 
+    gameFunctions.gameInit(&gameState);
     renderThread.Initialize(&engineSynchronization, window, w, h);
 }
 
@@ -92,7 +111,12 @@ void Engine::Run()
         }
 
         if (input.IsKeyPressed(Key::F5)) {
-            gameDll.Reload();
+            if (gameDll.Reload()) {
+                gameFunctions.gameInit = gameDll.GetFunction<GameInitFunc>("GameInit");
+                gameFunctions.gameUpdate = gameDll.GetFunction<GameUpdateFunc>("GameUpdate");
+                gameFunctions.gameShutdown = gameDll.GetFunction<GameShutdownFunc>("GameShutdown");
+            }
+            else {}
             LOG_INFO("Game lib was hot-reloaded");
         }
 
@@ -110,10 +134,9 @@ void Engine::Run()
         constexpr auto gameWait = std::chrono::milliseconds(100);
         std::this_thread::sleep_for(gameWait);
 
-        gameState.frame = 12;
+        gameState.frame = gameFrame;
         // assetLoadingThread.ResolveLoads(loadedModelsToAcquire);
-        auto gameUpdate = gameDll.GetFunction<void(*)(Game::GameState* state, float)>("GameUpdate");
-        if (gameUpdate) { gameUpdate(&gameState, 0.0f); }
+        gameFunctions.gameUpdate(&gameState, 0.0f);
 
         bool canTransmit = engineSynchronization.gameFrames.try_acquire();
         if (canTransmit) {
@@ -132,11 +155,7 @@ void Engine::Cleanup()
     renderThread.Join();
     // assetLoadingThread.Join();
 
-    SDL_DestroyWindow(window);
-
-    auto gameShutdown = gameDll.GetFunction<void(*)(Game::GameState* state)>("GameShutdown");
-    if (gameShutdown) { gameShutdown(&gameState); }
-
+    gameFunctions.gameShutdown(&gameState);
     gameDll.Unload();
 
     SDL_DestroyWindow(window);

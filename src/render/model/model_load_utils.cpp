@@ -4,7 +4,7 @@
 
 #include "model_load_utils.h"
 
-#include "crash-handling/logger.h"
+#include "crash-handling/logger_helpers.h"
 
 namespace Renderer::ModelLoadUtils
 {

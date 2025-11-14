@@ -8,6 +8,7 @@
 #include <fmt/format.h>
 
 #include "crash-handling/logger.h"
+#include "crash-handling/logger_helpers.h"
 
 namespace Core
 {

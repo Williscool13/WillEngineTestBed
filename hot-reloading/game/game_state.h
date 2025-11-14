@@ -5,9 +5,6 @@
 #ifndef WILLENGINETESTBED_GAME_STATE_H
 #define WILLENGINETESTBED_GAME_STATE_H
 #include <cstdint>
-#include <memory>
-
-#include "spdlog/logger.h"
 
 namespace HotReloading::Game
 {

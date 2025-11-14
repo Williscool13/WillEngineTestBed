@@ -4,8 +4,8 @@
 
 #include "audio.h"
 
-#include "../src/audio/audio_utils.h"
-#include "crash-handling/logger.h"
+#include "audio/audio_utils.h"
+#include "crash-handling/logger_helpers.h"
 
 #include "dr_libs/dr_wav.h"
 #include "input/input.h"

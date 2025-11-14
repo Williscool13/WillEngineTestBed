@@ -6,7 +6,7 @@
 
 #include "audio_clip.h"
 #include "audio_constants.h"
-#include "crash-handling/logger.h"
+#include "crash-handling/logger_helpers.h"
 #include "dr_libs/dr_wav.h"
 
 namespace Audio

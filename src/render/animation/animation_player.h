@@ -7,7 +7,6 @@
 #include <glm/glm.hpp>
 
 #include "animation_types.h"
-#include "crash-handling/logger.h"
 #include "render/model/model_data.h"
 
 namespace Renderer

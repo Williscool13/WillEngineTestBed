@@ -3,14 +3,13 @@ add_library(hot-reload-game SHARED
         game.h
         game_state.cpp
         game_state.h
-        game_logging.h
+        game_logging.cpp
         game_logging.h
 )
 
 target_link_libraries(hot-reload-game PUBLIC
         hot-reload-engine
         engine-common
-        crash-handling
         core-lib
         input-lib
         SDL3::SDL3

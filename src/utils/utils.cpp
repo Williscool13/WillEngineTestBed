@@ -6,8 +6,18 @@
 
 #include <filesystem>
 
+#include "crash-handling/logger_helpers.h"
+
+
 namespace Utils
 {
+ScopedTimer::~ScopedTimer()
+{
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+    LOG_INFO("{}: {} us ({:.3f} ms)", name, duration.count(), duration.count() / 1000.0);
+}
+
 FrameTimeTracker::FrameTimeTracker(size_t historySize, float spikeThreshold)
     : historySize(std::min(historySize, MAX_HISTORY_SIZE))
       , spikeThreshold(spikeThreshold)

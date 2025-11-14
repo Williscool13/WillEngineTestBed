@@ -21,7 +21,12 @@ add_custom_command(TARGET hot-reload-engine POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
         $<TARGET_FILE:hot-reload-engine>
         $<TARGET_FILE_DIR:hot-reloading>
+)
+
+if (CMAKE_BUILD_TYPE STREQUAL "Debug" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+add_custom_command(TARGET hot-reload-engine POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
         $<TARGET_PDB_FILE:hot-reload-engine>
         $<TARGET_FILE_DIR:hot-reloading>
 )
+endif()

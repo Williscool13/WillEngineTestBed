@@ -10,7 +10,6 @@
 #include <chrono>
 #include <string>
 
-#include "crash-handling/logger.h"
 
 namespace Utils
 {
@@ -20,12 +19,8 @@ public:
     explicit ScopedTimer(std::string name)
         : name(std::move(name)), start(std::chrono::high_resolution_clock::now()) {}
 
-    ~ScopedTimer()
-    {
-        auto end = std::chrono::high_resolution_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
-        LOG_INFO("{}: {} us ({:.3f} ms)", name, duration.count(), duration.count() / 1000.0);
-    }
+    ~ScopedTimer();
+
 
 private:
     std::string name;

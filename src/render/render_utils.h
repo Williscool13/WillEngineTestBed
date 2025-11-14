@@ -6,7 +6,7 @@
 #define WILLENGINETESTBED_RENDER_UTILS_H
 
 #include <crash-handling/crash_handler.h>
-#include <crash-handling/logger.h>
+#include <crash-handling/logger_helpers.h>
 #include <vulkan/vk_enum_string_helper.h>
 #include <volk.h>
 

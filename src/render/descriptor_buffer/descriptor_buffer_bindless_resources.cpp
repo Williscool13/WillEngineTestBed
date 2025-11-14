@@ -4,7 +4,7 @@
 
 #include "descriptor_buffer_bindless_resources.h"
 
-#include "crash-handling/logger.h"
+#include "crash-handling/logger_helpers.h"
 #include "render/render_constants.h"
 #include "render/vk_descriptors.h"
 #include "render/vk_helpers.h"

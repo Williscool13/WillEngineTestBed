@@ -12,7 +12,7 @@
 #include <glm/gtc/quaternion.hpp>
 #include <utility>
 
-#include "src/crash-handling/logger.h"
+#include "crash-handling/logger_helpers.h"
 
 // JPH::BodyID not included, using uint64_t as substitute
 typedef uint64_t BodyId;

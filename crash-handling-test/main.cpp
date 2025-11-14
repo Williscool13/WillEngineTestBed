@@ -3,7 +3,7 @@
 
 #include "crash-handling/crash_context.h"
 #include "crash-handling/crash_handler.h"
-#include "crash-handling/logger.h"
+#include "crash-handling/logger_helpers.h"
 
 int main()
 {

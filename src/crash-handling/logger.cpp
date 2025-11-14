@@ -7,6 +7,10 @@
 #include <filesystem>
 
 #include <spdlog/sinks/stdout_color_sinks.h>
+#include <spdlog/sinks/basic_file_sink.h>
+
+#include "logger_helpers.h"
+
 
 std::shared_ptr<spdlog::logger> Logger::logger = nullptr;
 std::string Logger::logPath;
@@ -34,7 +38,7 @@ void Logger::Initialize(const std::string& _logPath)
 #ifdef NDEBUG
         logger->set_level(spdlog::level::info);
 #else
-        logger->set_level(spdlog::level::debug);
+        logger->set_level(spdlog::level::trace);
 #endif
         logger->flush_on(spdlog::level::warn);
         spdlog::register_logger(logger);

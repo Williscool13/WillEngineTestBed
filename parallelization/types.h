@@ -8,7 +8,7 @@
 #include <string>
 #include <utility>
 
-#include "src/crash-handling/logger.h"
+#include "crash-handling/logger_helpers.h"
 
 class ScopedTimer
 {

@@ -8,6 +8,8 @@
 namespace HotReloading::Game
 {
 struct GameState;
+}
+
 #ifdef GAME_EXPORTS
 #define GAME_API __declspec(dllexport)
 #else
@@ -15,12 +17,11 @@ struct GameState;
 #endif
 
 extern "C" {
-    GAME_API void GameDllInit(GameState* state);
-    GAME_API void GameInit(GameState* state);
-    GAME_API void GameUpdate(GameState* state);
-    GAME_API void GameShutdown(GameState* state);
+    GAME_API void GameInit(HotReloading::Game::GameState* state);
+    GAME_API void GameUpdate(HotReloading::Game::GameState* state, float deltaTime);
+    GAME_API void GameShutdown(HotReloading::Game::GameState* state);
 }
-}
+
 
 
 

@@ -4,6 +4,8 @@
 
 #ifndef WILLENGINETESTBED_RENDER_H
 #define WILLENGINETESTBED_RENDER_H
+#include <thread>
+
 #include "../core/engine_synchronization.h"
 #include "render/descriptor_buffer/descriptor_buffer_storage_image.h"
 #include "render/pipelines/draw_cull_compute_pipeline.h"

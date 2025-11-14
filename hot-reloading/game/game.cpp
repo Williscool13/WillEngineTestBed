@@ -6,41 +6,26 @@
 
 #include "game_logging.h"
 #include "game_state.h"
-#include "crash-handling/logger.h"
-#include "hot-reloading/engine/engine_api.h"
 #include "input/input.h"
 
-static HotReloading::Engine::EngineApi* g_Engine = nullptr;
-
-namespace HotReloading::Game
+void GameInit(HotReloading::Game::GameState* state)
 {
-void GameDllInit(Engine::EngineApi* engineApi)
-{
-    g_Engine = engineApi;
-}
-void GameInit(GameState* state)
-{
-    //state->logger->info("Game init 200");
-    //fmt::println("Test");
+    LOG_TRACE("Game Init");
+    LOG_DEBUG("Game Init");
+    LOG_INFO("Game Init");
+    LOG_WARN("Game Init");
+    LOG_ERROR("Game Init");
+    LOG_CRITICAL("Game Init");
 }
 
-void GameUpdate(GameState* state)
+void GameUpdate(HotReloading::Game::GameState* state, float deltaTime)
 {
-    LogInfo();
-    LogInfo("Frame {}", state->frame + 100);
-
-    //state->logger->info("Game update");
-    // LOG_INFO("Game is printing whatever");
-    Input i = Input::Get();
-    if (i.IsKeyPressed(Key::O)) {
-        LogInfo("Frame {}", state->frame);
+    LOG_INFO("Frame {}", -state->frame);
+    if (EngineIsKeyPressed(Key::O)) {
+        LOG_INFO("Frame {}", state->frame);
     }
 }
 
-void GameShutdown(GameState* state)
+void GameShutdown(HotReloading::Game::GameState* state)
 {
-    // LOG_INFO("Game shutdown");
-}
-
-
 }

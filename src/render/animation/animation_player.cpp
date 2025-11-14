@@ -4,6 +4,8 @@
 
 #include "animation_player.h"
 
+#include "crash-handling/logger_helpers.h"
+
 namespace Renderer
 {
 void AnimationPlayer::Play(const Animation& animation, bool loop)

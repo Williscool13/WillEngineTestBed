@@ -22,15 +22,20 @@ add_custom_command(TARGET hot-reloading POST_BUILD
         $<TARGET_FILE:SDL3::SDL3>
         $<TARGET_FILE_DIR:hot-reloading>
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        $<TARGET_PDB_FILE:SDL3::SDL3>
-        $<TARGET_FILE_DIR:hot-reloading>
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
         $<TARGET_FILE:hot-reload-engine>
+        $<TARGET_FILE_DIR:hot-reloading>
+)
+
+if (CMAKE_BUILD_TYPE STREQUAL "Debug" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+add_custom_command(TARGET hot-reloading POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_PDB_FILE:SDL3::SDL3>
         $<TARGET_FILE_DIR:hot-reloading>
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
         $<TARGET_PDB_FILE:hot-reload-engine>
         $<TARGET_FILE_DIR:hot-reloading>
 )
+endif()
 
 compile_shaders(hot-reloading
         ${CMAKE_SOURCE_DIR}/shaders/indirectDraw.slang vertex vertexMain

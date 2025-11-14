@@ -9,7 +9,6 @@
 #include <hot-reloading/engine/engine_api.h>
 #include "hot-reloading/game/game_state.h"
 #include "hot-reloading/render/render.h"
-#include "utils/utils.h"
 
 namespace Renderer
 {
@@ -21,6 +20,31 @@ struct RenderTargets;
 
 namespace HotReloading::Engine
 {
+using GameInitFunc = void(*)(Game::GameState*);
+using GameUpdateFunc = void(*)(Game::GameState*, float);
+using GameShutdownFunc = void(*)(Game::GameState*);
+
+void StubInit(Game::GameState* state);
+
+void StubUpdate(Game::GameState* state, float deltaTime);
+
+void StubShutdown(Game::GameState* state);
+
+struct GameFunctions
+{
+    GameInitFunc gameInit;
+    GameUpdateFunc gameUpdate;
+    GameShutdownFunc gameShutdown;
+
+    void Stub()
+    {
+        gameInit = StubInit;
+        gameUpdate = StubUpdate;
+        gameShutdown = StubShutdown;
+    }
+};
+
+
 class ENGINE_API Engine
 {
 public:
@@ -51,8 +75,13 @@ private:
 
     std::chrono::time_point<std::chrono::steady_clock> start{};
 
-
+private: // Game DLL Loading
     Utils::DllLoader gameDll;
+    GameFunctions gameFunctions = {
+        StubInit,
+        StubUpdate,
+        StubShutdown,
+    };
 };
 } // HotReloading::Engine
 

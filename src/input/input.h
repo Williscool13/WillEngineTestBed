@@ -232,7 +232,6 @@ public:
     float GetMouseXDelta() const { return mouseXDelta; }
     float GetMouseYDelta() const { return mouseYDelta; }
     float GetMouseWheelDelta() const { return mouseWheelDelta; }
-
     bool IsCursorActive() const { return bIsCursorActive; }
     bool IsWindowInputFocus() const { return bIsWindowInputFocus; }
 

@@ -9,6 +9,7 @@
 #include "core/constants.h"
 #include "core/time.h"
 #include "crash-handling/crash_handler.h"
+#include "crash-handling/logger_helpers.h"
 #include "input/input.h"
 #include "render/resource_manager.h"
 #include "render/vk_imgui_wrapper.h"

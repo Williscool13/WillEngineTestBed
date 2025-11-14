@@ -6,7 +6,7 @@
 
 #include <filesystem>
 
-#include "crash-handling/logger.h"
+#include "crash-handling/logger_helpers.h"
 #include "render/vk_helpers.h"
 
 
