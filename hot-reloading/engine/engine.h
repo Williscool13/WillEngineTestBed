@@ -49,8 +49,6 @@ public:
         return *instance;
     }
 
-    static Engine* instance;
-
     Engine();
 
     ~Engine();
@@ -63,13 +61,18 @@ public:
 
     void PrepareFrameDataForRender(Renderer::FrameBuffer& frameBuffer);
 
-    AssetLoad::RuntimeMesh GenerateModel(AssetLoad::ModelEntryHandle modelEntryHandle, const Transform& topLevelTransform);
+    AssetLoad::RequestLoad RequestModelLoad(const char* path);
 
-    void UpdateTransforms(AssetLoad::RuntimeMesh& runtimeMesh);
+    AssetLoad::RuntimeMeshHandle GenerateModel(AssetLoad::ModelEntryHandle modelEntryHandle, const Transform& topLevelTransform);
 
-    void UpdateRuntimeMesh(AssetLoad::RuntimeMesh& runtimeMesh);
+    bool UpdateRuntimeMesh(AssetLoad::RuntimeMeshHandle runtimeMeshHandle, const Transform& topLevelTransform);
 
 private:
+    void UpdateTransforms(AssetLoad::RuntimeMesh* runtimeMesh);
+
+private:
+    static Engine* instance;
+
     SDL_Window* window{nullptr};
 
     Game::GameState gameState;
@@ -88,6 +91,8 @@ private:
     std::chrono::time_point<std::chrono::steady_clock> start{};
 
 private: // Game -> Render command cache
+    Renderer::RawSceneData rawSceneData;
+
     RingBuffer<AssetLoad::ModelEntryHandle, AssetLoad::MAX_LOADED_MODEL_RING_BUFFER> loadedModelEntryHandles;
     std::vector<VkBufferMemoryBarrier2> bufferAcquireOperations;
     std::vector<VkImageMemoryBarrier2> imageAcquireOperations;
@@ -96,11 +101,7 @@ private: // Game -> Render command cache
     std::vector<Renderer::InstanceOperation> instanceOperations;
     std::vector<Renderer::JointMatrixOperation> jointMatrixOperations;
 
-    // Temporary
-    Renderer::RawSceneData rawSceneData;
-    AssetLoad::ModelEntryHandle suzanneModelEntryHandle{AssetLoad::ModelEntryHandle::Invalid};
-    AssetLoad::RuntimeMesh suzanneRuntimeMesh{};
-    ::Game::FreeCamera freeCamera{{0.0f, 0.0f, 5.0f}, {0.0f, 0.0f, 0.0f}};
+    FreeList<AssetLoad::RuntimeMesh, AssetLoad::MAX_RUNTIME_MESH> runtimeMeshes;
 
 private: // Game DLL Loading
     Utils::DllLoader gameDll;

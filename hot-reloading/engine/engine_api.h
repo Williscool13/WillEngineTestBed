@@ -4,6 +4,7 @@
 
 #ifndef WILLENGINETESTBED_ENGINE_API_H
 #define WILLENGINETESTBED_ENGINE_API_H
+#include "hot-reloading/asset-load/asset_load_types.h"
 #include "input/input.h"
 
 #ifdef ENGINE_EXPORTS
@@ -16,6 +17,32 @@ struct Vec2
 {
     float x;
     float y;
+
+    Vec2(const glm::vec2& v) : x(v.x), y(v.y) {}
+    operator glm::vec2() const { return {x, y,}; }
+};
+
+struct Vec3
+{
+    float x;
+    float y;
+    float z;
+
+    Vec3(const glm::vec3& v) : x(v.x), y(v.y), z(v.z) {}
+    operator glm::vec3() const { return {x, y, z}; }
+};
+
+struct Vec4
+{
+    float x;
+    float y;
+    float z;
+    float w;
+
+    Vec4(const glm::vec4& v) : x(v.x), y(v.y), z(v.z), w(v.w) {}
+    Vec4(const glm::quat& v) : x(v.x), y(v.y), z(v.z), w(v.w) {}
+    operator glm::vec4() const { return {x, y, z, w}; }
+    operator glm::quat() const { return {w, x, y, z}; }
 };
 
 ENGINE_API void EngineLogTrace(const char* msg);
@@ -56,8 +83,11 @@ ENGINE_API bool EngineIsCursorActive();
 
 ENGINE_API bool EngineIsWindowInputFocus();
 
-// ENGINE_API ModelEntryHandle EngineLoadModel(const char* path);
-// ENGINE_API EntityHandle EngineSpawnEntity(ModelHandle model, Transform transform);
-// ENGINE_API void EngineUpdateEntityTransform(EntityHandle entity, Transform transform);
+ENGINE_API HotReloading::AssetLoad::RequestLoad EngineLoadModel(const char* path);
+
+ENGINE_API HotReloading::AssetLoad::RuntimeMeshHandle EngineGenerateModel(HotReloading::AssetLoad::ModelEntryHandle model, Vec3 translation, Vec4 quatRotation, Vec3 scale);
+
+ENGINE_API bool EngineUpdateModelTransform(HotReloading::AssetLoad::RuntimeMeshHandle runtimeMeshHandle, Vec3 translation, Vec4 quatRotation, Vec3 scale);
+
 // ENGINE_API void EngineDeleteEntity(EntityHandle entity);
 #endif //WILLENGINETESTBED_ENGINE_API_H

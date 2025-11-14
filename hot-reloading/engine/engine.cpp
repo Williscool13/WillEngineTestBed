@@ -83,6 +83,9 @@ void Engine::Initialize()
         gameFunctions.gameUpdate = gameDll.GetFunction<GameUpdateFunc>("GameUpdate");
         gameFunctions.gameShutdown = gameDll.GetFunction<GameShutdownFunc>("GameShutdown");
     }
+    else {
+        gameFunctions.Stub();
+    }
 
     gameFunctions.gameInit(&gameState);
     renderThread.Initialize(&engineSynchronization, window, w, h);
@@ -123,20 +126,6 @@ void Engine::Run()
             }
         }
 
-        if (input.IsKeyPressed(Key::F5)) {
-            if (gameDll.Reload()) {
-                gameFunctions.gameInit = gameDll.GetFunction<GameInitFunc>("GameInit");
-                gameFunctions.gameUpdate = gameDll.GetFunction<GameUpdateFunc>("GameUpdate");
-                gameFunctions.gameShutdown = gameDll.GetFunction<GameShutdownFunc>("GameShutdown");
-            }
-            else {}
-            LOG_INFO("Game lib was hot-reloaded");
-        }
-
-        SDL_WindowFlags windowFlags = SDL_GetWindowFlags(window);
-        input.UpdateFocus(windowFlags);
-        time.Update();
-
         if (exit) {
             renderThread.RequestShutdown();
             engineSynchronization.renderFrames.release();
@@ -144,27 +133,25 @@ void Engine::Run()
             break;
         }
 
-
-        if (input.IsKeyPressed(Key::NUM_1)) {
-            auto suzannePath = std::filesystem::path("../assets/Suzanne/glTF/Suzanne.gltf");
-            AssetLoad::RequestLoad newModel = assetLoadingThread.RequestLoad(suzannePath);
-            if (!newModel.bIsLoaded) {
-                LOG_INFO("Not loaded, will need to wait.");
-                uint32_t index = newModel.modelEntryHandle.index;
-                uint32_t generation = newModel.modelEntryHandle.generation;
-                suzanneModelEntryHandle = newModel.modelEntryHandle;
-                LOG_INFO("New model: {}, {}", index, generation);
+        if (input.IsKeyPressed(Key::F5)) {
+            if (gameDll.Reload()) {
+                gameFunctions.gameInit = gameDll.GetFunction<GameInitFunc>("GameInit");
+                gameFunctions.gameUpdate = gameDll.GetFunction<GameUpdateFunc>("GameUpdate");
+                gameFunctions.gameShutdown = gameDll.GetFunction<GameShutdownFunc>("GameShutdown");
+                LOG_INFO("Game lib was hot-reloaded");
+            }
+            else {
+                gameFunctions.Stub();
+                LOG_INFO("Game lib failed to be hot-reloaded");
             }
         }
 
-        if (input.IsKeyPressed(Key::Q)) {
-            if (suzanneModelEntryHandle != AssetLoad::ModelEntryHandle::Invalid && suzanneRuntimeMesh.modelEntryHandle == AssetLoad::ModelEntryHandle::Invalid) {
-                suzanneRuntimeMesh = GenerateModel(suzanneModelEntryHandle, Transform::Identity);
-                UpdateRuntimeMesh(suzanneRuntimeMesh);
-                LOG_INFO("Sent Suzanne to be drawn by GPU");
-            }
-        }
+        SDL_WindowFlags windowFlags = SDL_GetWindowFlags(window);
+        input.UpdateFocus(windowFlags);
+        time.Update();
 
+
+        ::Game::FreeCamera freeCamera{{0.0f, 0.0f, 5.0f}, {0.0f, 0.0f, 0.0f}};
         const glm::vec3 cameraPos = freeCamera.GetPosition();
         const glm::quat cameraRot = freeCamera.GetRotation();
         const glm::vec3 forward = freeCamera.GetForward();
@@ -246,15 +233,20 @@ void Engine::PrepareFrameDataForRender(Renderer::FrameBuffer& frameBuffer)
     bSwapchainOutdated = false;
 }
 
-AssetLoad::RuntimeMesh Engine::GenerateModel(AssetLoad::ModelEntryHandle modelEntryHandle, const Transform& topLevelTransform)
+AssetLoad::RequestLoad Engine::RequestModelLoad(const char* path)
 {
-    Renderer::ResourceManager* resourceManager = renderThread.GetResourceManager();
-    AssetLoad::RuntimeMesh rm{};
+    return assetLoadingThread.RequestLoad(path);
+}
 
+AssetLoad::RuntimeMeshHandle Engine::GenerateModel(AssetLoad::ModelEntryHandle modelEntryHandle, const Transform& topLevelTransform)
+{
     Renderer::ModelData* modelData = assetLoadingThread.GetModelData(modelEntryHandle);
-    if (!modelData) { return rm; }
+    if (!modelData) { return AssetLoad::RuntimeMeshHandle::Invalid; }
+    AssetLoad::RuntimeMeshHandle newRuntimeMeshHandle = runtimeMeshes.Add();
+    if (!newRuntimeMeshHandle.IsValid()) { return AssetLoad::RuntimeMeshHandle::Invalid; }
+    AssetLoad::RuntimeMesh& rm = *runtimeMeshes.Get(newRuntimeMeshHandle);
 
-    rm.transform = topLevelTransform;
+    Renderer::ResourceManager* resourceManager = renderThread.GetResourceManager();
     rm.nodes.reserve(modelData->nodes.size());
     rm.nodeRemap = modelData->nodeRemap;
 
@@ -293,47 +285,47 @@ AssetLoad::RuntimeMesh Engine::GenerateModel(AssetLoad::ModelEntryHandle modelEn
         }
     }
 
-    UpdateTransforms(rm);
-    return rm;
+    UpdateRuntimeMesh(newRuntimeMeshHandle, topLevelTransform);
+    return newRuntimeMeshHandle;
 }
 
-void Engine::UpdateTransforms(AssetLoad::RuntimeMesh& runtimeMesh)
+bool Engine::UpdateRuntimeMesh(AssetLoad::RuntimeMeshHandle runtimeMeshHandle, const Transform& topLevelTransform)
 {
-    glm::mat4 baseTopLevel = runtimeMesh.transform.GetMatrix();
+    AssetLoad::RuntimeMesh* runtimeMesh = runtimeMeshes.Get(runtimeMeshHandle);
+    if (!runtimeMesh) { return false; }
 
-    // Nodes are sorted
-    for (Renderer::RuntimeNode& rn : runtimeMesh.nodes) {
-        glm::mat4 localTransform = rn.transform.GetMatrix();
+    runtimeMesh->transform = topLevelTransform;
+    UpdateTransforms(runtimeMesh);
 
-        if (rn.parent == ~0u) {
-            rn.cachedWorldTransform = baseTopLevel * localTransform;
-        }
-        else {
-            rn.cachedWorldTransform = runtimeMesh.nodes[rn.parent].cachedWorldTransform * localTransform;
-        }
-    }
-
-    runtimeMesh.bNeedToSendToRender = true;
-}
-
-void Engine::UpdateRuntimeMesh(AssetLoad::RuntimeMesh& runtimeMesh)
-{
-    if (!runtimeMesh.bNeedToSendToRender) {
-        return;
-    }
-
-    for (Renderer::RuntimeNode& node : runtimeMesh.nodes) {
+    for (Renderer::RuntimeNode& node : runtimeMesh->nodes) {
         if (node.meshIndex != ~0u) {
             modelMatrixOperations.push_back({node.modelMatrixHandle.index, node.cachedWorldTransform});
         }
 
         if (node.jointMatrixIndex != ~0u) {
             glm::mat4 jointMatrix = node.cachedWorldTransform * node.inverseBindMatrix;
-            uint32_t jointMatrixFinalIndex = node.jointMatrixIndex + runtimeMesh.jointMatrixOffset;
+            uint32_t jointMatrixFinalIndex = node.jointMatrixIndex + runtimeMesh->jointMatrixOffset;
             jointMatrixOperations.push_back({jointMatrixFinalIndex, jointMatrix});
         }
     }
 
-    runtimeMesh.bNeedToSendToRender = false;
+    return true;
+}
+
+void Engine::UpdateTransforms(AssetLoad::RuntimeMesh* runtimeMesh)
+{
+    glm::mat4 baseTopLevel = runtimeMesh->transform.GetMatrix();
+
+    // Nodes are sorted
+    for (Renderer::RuntimeNode& rn : runtimeMesh->nodes) {
+        glm::mat4 localTransform = rn.transform.GetMatrix();
+
+        if (rn.parent == ~0u) {
+            rn.cachedWorldTransform = baseTopLevel * localTransform;
+        }
+        else {
+            rn.cachedWorldTransform = runtimeMesh->nodes[rn.parent].cachedWorldTransform * localTransform;
+        }
+    }
 }
 } // HotReloading::Engine

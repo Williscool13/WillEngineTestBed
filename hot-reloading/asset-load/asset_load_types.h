@@ -14,6 +14,7 @@ namespace HotReloading::AssetLoad
 {
 
 static inline constexpr int32_t MAX_LOADED_MODEL_RING_BUFFER = 256;
+static inline constexpr int32_t MAX_RUNTIME_MESH = 16384;
 
 struct UploadStaging
 {
@@ -98,11 +99,12 @@ struct RuntimeMesh
 
     std::vector<uint32_t> nodeRemap{};
 
-    bool bNeedToSendToRender{false};
     Transform transform;
     OffsetAllocator::Allocation jointMatrixAllocation{};
     uint32_t jointMatrixOffset{0};
 };
+
+using RuntimeMeshHandle = Handle<RuntimeMesh>;
 } // HotReloading::AssetLoad
 
 #endif //WILLENGINETESTBED_ASSET_LOAD_TYPES_H

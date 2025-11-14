@@ -5,10 +5,13 @@ add_library(hot-reload-game SHARED
         game_state.h
         game_logging.cpp
         game_logging.h
+        game_input.cpp
+        game_input.h
 )
 
 target_link_libraries(hot-reload-game PUBLIC
         hot-reload-engine
+        hot-reload-asset-load
         engine-common
         core-lib
         input-lib

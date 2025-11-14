@@ -6,8 +6,6 @@
 #define WILLENGINETESTBED_ENGINE_LOGGING_H
 
 #include <fmt/format.h>
-
-#include "hot-reloading/engine/engine.h"
 #include "hot-reloading/engine/engine_api.h"
 
 namespace HotReloading::Game

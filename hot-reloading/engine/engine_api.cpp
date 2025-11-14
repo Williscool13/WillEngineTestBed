@@ -4,6 +4,7 @@
 
 #include "engine_api.h"
 
+#include "engine.h"
 #include "crash-handling/logger.h"
 #include "input/input.h"
 
@@ -39,67 +40,80 @@ void EngineLogCritical(const char* msg)
 
 bool EngineIsKeyPressed(Key key)
 {
-    return ::Input::Get().IsKeyPressed(key);
+    return Input::Get().IsKeyPressed(key);
 }
 
 bool EngineIsKeyReleased(Key key)
 {
-    return ::Input::Get().IsKeyReleased(key);
+    return Input::Get().IsKeyReleased(key);
 }
 
 bool EngineIsKeyDown(Key key)
 {
-    return ::Input::Get().IsKeyDown(key);
+    return Input::Get().IsKeyDown(key);
 }
 
 bool EngineIsMousePressed(MouseButton mouseButton)
 {
-    return ::Input::Get().IsMousePressed(mouseButton);
+    return Input::Get().IsMousePressed(mouseButton);
 }
 
 bool EngineIsMouseReleased(MouseButton mouseButton)
 {
-    return ::Input::Get().IsMouseReleased(mouseButton);
+    return Input::Get().IsMouseReleased(mouseButton);
 }
 
 bool EngineIsMouseDown(MouseButton mouseButton)
 {
-    return ::Input::Get().IsMouseDown(mouseButton);
+    return Input::Get().IsMouseDown(mouseButton);
 }
 
 Vec2 EngineGetMousePosition()
 {
-    glm::vec2 v = ::Input::Get().GetMousePosition();
-    return {v.x, v.y};
+    return Input::Get().GetMousePosition();
 }
 
 Vec2 EngineGetMousePositionAbsolute()
 {
-    glm::vec2 v = ::Input::Get().GetMousePositionAbsolute();
-    return {v.x, v.y};
+    return Input::Get().GetMousePositionAbsolute();
 }
 
 float EngineGetMouseXDelta()
 {
-    return ::Input::Get().GetMouseXDelta();
+    return Input::Get().GetMouseXDelta();
 }
 
 float EngineGetMouseYDelta()
 {
-    return ::Input::Get().GetMouseYDelta();
+    return Input::Get().GetMouseYDelta();
 }
 
 float EngineGetMouseWheelDelta()
 {
-    return ::Input::Get().GetMouseWheelDelta();
+    return Input::Get().GetMouseWheelDelta();
 }
 
 bool EngineIsCursorActive()
 {
-    return ::Input::Get().IsCursorActive();
+    return Input::Get().IsCursorActive();
 }
 
 bool EngineIsWindowInputFocus()
 {
-    return ::Input::Get().IsWindowInputFocus();
+    return Input::Get().IsWindowInputFocus();
+}
+
+HotReloading::AssetLoad::RequestLoad EngineLoadModel(const char* path)
+{
+    return HotReloading::Engine::Engine::Get().RequestModelLoad(path);
+}
+
+HotReloading::AssetLoad::RuntimeMeshHandle EngineGenerateModel(const HotReloading::AssetLoad::ModelEntryHandle model, const Vec3 translation, const Vec4 quatRotation, const Vec3 scale)
+{
+    return HotReloading::Engine::Engine::Get().GenerateModel(model, {translation, quatRotation, scale});
+}
+
+bool EngineUpdateModelTransform(const HotReloading::AssetLoad::RuntimeMeshHandle runtimeMeshHandle, const Vec3 translation, const Vec4 quatRotation, const Vec3 scale)
+{
+    return HotReloading::Engine::Engine::Get().UpdateRuntimeMesh(runtimeMeshHandle, {translation, quatRotation, scale});
 }

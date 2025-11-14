@@ -1085,17 +1085,11 @@ void AssetLoadingThread::FinishUploadsInProgress()
 
 void AssetLoadingThread::RemoveFinishedUploadStaging(std::vector<UploadStagingHandle>& uploadStagingHandles)
 {
-    if (uploadStagingHandles.empty()) { return; }
-
-    // todo find out why it's all or nothing
-    for (size_t i = 0; i < uploadStagingHandles.size(); ++i) {
-        UploadStagingHandle handle = uploadStagingHandles[i];
-        if (uploadStagingHandleAllocator.IsValid(handle)) {
-            return;
+    for (int i = static_cast<int>(uploadStagingHandles.size()) - 1; i >= 0; --i) {
+        if (!uploadStagingHandleAllocator.IsValid(uploadStagingHandles[i])) {
+            uploadStagingHandles.erase(uploadStagingHandles.begin() + i);
         }
     }
-
-    uploadStagingHandles.clear();
 }
 
 void AssetLoadingThread::StartUploadStaging(const UploadStaging& uploadStaging)
