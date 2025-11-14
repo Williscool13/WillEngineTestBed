@@ -53,9 +53,6 @@ void Engine::Initialize()
     SDL_GetWindowSize(window, &w, &h);
     Input::Get().Init(window, w, h);
 
-
-    gameState.logger = Logger::Get();
-
     gameDll.Load("game/hot-reload-game.dll", "hot-reload-game_temp.dll");
     auto gameInit = gameDll.GetFunction<void(*)(Game::GameState* state)>("GameInit");
     if (gameInit) { gameInit(&gameState); }
@@ -94,6 +91,11 @@ void Engine::Run()
             }
         }
 
+        if (input.IsKeyPressed(Key::F5)) {
+            gameDll.Reload();
+            LOG_INFO("Game lib was hot-reloaded");
+        }
+
         SDL_WindowFlags windowFlags = SDL_GetWindowFlags(window);
         input.UpdateFocus(windowFlags);
         time.Update();
@@ -105,7 +107,10 @@ void Engine::Run()
             break;
         }
 
+        constexpr auto gameWait = std::chrono::milliseconds(100);
+        std::this_thread::sleep_for(gameWait);
 
+        gameState.frame = 12;
         // assetLoadingThread.ResolveLoads(loadedModelsToAcquire);
         auto gameUpdate = gameDll.GetFunction<void(*)(Game::GameState* state, float)>("GameUpdate");
         if (gameUpdate) { gameUpdate(&gameState, 0.0f); }

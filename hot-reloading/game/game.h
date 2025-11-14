@@ -5,7 +5,6 @@
 #ifndef WILLENGINETESTBED_GAME_H
 #define WILLENGINETESTBED_GAME_H
 
-
 namespace HotReloading::Game
 {
 struct GameState;
@@ -16,6 +15,7 @@ struct GameState;
 #endif
 
 extern "C" {
+    GAME_API void GameDllInit(GameState* state);
     GAME_API void GameInit(GameState* state);
     GAME_API void GameUpdate(GameState* state);
     GAME_API void GameShutdown(GameState* state);

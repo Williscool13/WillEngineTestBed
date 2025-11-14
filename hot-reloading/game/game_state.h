@@ -14,7 +14,6 @@ namespace HotReloading::Game
 struct GameState
 {
     uint64_t frame{0};
-    std::shared_ptr<spdlog::logger> logger;
 };
 } // Hotreloading
 

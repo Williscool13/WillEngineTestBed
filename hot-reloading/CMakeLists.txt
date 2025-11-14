@@ -13,7 +13,9 @@ add_subdirectory(engine)
 add_subdirectory(game)
 add_subdirectory(render)
 
+add_dependencies(hot-reloading hot-reload-engine)
 add_dependencies(hot-reloading hot-reload-game)
+
 
 add_custom_command(TARGET hot-reloading POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
