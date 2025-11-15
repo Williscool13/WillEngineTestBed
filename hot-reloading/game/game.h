@@ -4,6 +4,7 @@
 
 #ifndef WILLENGINETESTBED_GAME_H
 #define WILLENGINETESTBED_GAME_H
+#include "game/camera/free_camera.h"
 
 namespace HotReloading::Game
 {
@@ -22,7 +23,6 @@ extern "C" {
     GAME_API void GameShutdown(HotReloading::Game::GameState* state);
 }
 
-
-
+void UpdateFreeCamera(Game::FreeCamera& camera, float deltaTime);
 
 #endif //WILLENGINETESTBED_GAME_H

@@ -7,6 +7,8 @@ add_library(hot-reload-game SHARED
         game_logging.h
         game_input.cpp
         game_input.h
+        game_camera.cpp
+        game_camera.h
 )
 
 target_link_libraries(hot-reload-game PUBLIC

@@ -59,6 +59,9 @@ public:
 
     void Cleanup();
 
+public:
+    void UpdateCamera(glm::vec3 cameraPos, glm::vec3 cameraLook, glm::vec3 cameraUp, float fov, float nearPlane, float farPlane);
+
     void PrepareFrameDataForRender(Renderer::FrameBuffer& frameBuffer);
 
     AssetLoad::RequestLoad RequestModelLoad(const char* path);

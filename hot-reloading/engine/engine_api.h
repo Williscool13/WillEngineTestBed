@@ -85,9 +85,13 @@ ENGINE_API bool EngineIsWindowInputFocus();
 
 ENGINE_API HotReloading::AssetLoad::RequestLoad EngineLoadModel(const char* path);
 
+ENGINE_API bool EngineUnloadModel(HotReloading::AssetLoad::ModelEntryHandle modelEntryHandle);
+
 ENGINE_API HotReloading::AssetLoad::RuntimeMeshHandle EngineGenerateModel(HotReloading::AssetLoad::ModelEntryHandle model, Vec3 translation, Vec4 quatRotation, Vec3 scale);
 
 ENGINE_API bool EngineUpdateModelTransform(HotReloading::AssetLoad::RuntimeMeshHandle runtimeMeshHandle, Vec3 translation, Vec4 quatRotation, Vec3 scale);
 
-// ENGINE_API void EngineDeleteEntity(EntityHandle entity);
+ENGINE_API void EngineDeleteModel(HotReloading::AssetLoad::RuntimeMeshHandle runtimeMeshHandle);
+
+ENGINE_API void EngineUpdateCamera(Vec3 cameraPos, Vec3 cameraLook, Vec3 cameraUp, float fovDegrees, float nearPlane, float farPlane);
 #endif //WILLENGINETESTBED_ENGINE_API_H

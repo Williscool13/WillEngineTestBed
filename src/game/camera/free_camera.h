@@ -18,7 +18,8 @@ public:
     ~FreeCamera() override = default;
 
     void Update(float deltaTime) override;
-private:
+
+public:
     float speed{1.0f};
 };
 } // Game

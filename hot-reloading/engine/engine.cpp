@@ -21,6 +21,7 @@
 
 #include "hot-reloading/game/game_state.h"
 #include "render/resource_manager.h"
+#include "utils/world_constants.h"
 
 namespace HotReloading::Engine
 {
@@ -109,9 +110,6 @@ void Engine::Run()
     SDL_Event e;
     bool exit = false;
     while (true) {
-        constexpr auto gameWait = std::chrono::milliseconds(100);
-        std::this_thread::sleep_for(gameWait);
-
         input.FrameReset();
         while (SDL_PollEvent(&e) != 0) {
             input.ProcessEvent(e);
@@ -150,33 +148,18 @@ void Engine::Run()
         input.UpdateFocus(windowFlags);
         time.Update();
 
-
-        ::Game::FreeCamera freeCamera{{0.0f, 0.0f, 5.0f}, {0.0f, 0.0f, 0.0f}};
-        const glm::vec3 cameraPos = freeCamera.GetPosition();
-        const glm::quat cameraRot = freeCamera.GetRotation();
-        const glm::vec3 forward = freeCamera.GetForward();
-        const glm::vec3 up = freeCamera.GetUp();
-
-        glm::mat4 view = glm::lookAt(cameraPos, cameraPos + forward, up);
-
-
-        rawSceneData.view = view;
-        rawSceneData.cameraWorldPos = glm::vec4(cameraPos, 1.0f);
-        rawSceneData.fovDegrees = glm::degrees(freeCamera.GetFov());
-        rawSceneData.nearPlane = freeCamera.GetNearPlane();
-        rawSceneData.farPlane = freeCamera.GetFarPlane();
-        rawSceneData.deltaTime += time.GetDeltaTime();
-
-        gameState.frame = gameFrame;
         assetLoadingThread.ResolveLoads(loadedModelEntryHandles, bufferAcquireOperations, imageAcquireOperations);
 
+        // Game should call engine API to pop one by one.
         AssetLoad::ModelEntryHandle loadedModelEntryHandle;
         while (loadedModelEntryHandles.Pop(loadedModelEntryHandle)) {
             auto index = loadedModelEntryHandle.index;
-            LOG_INFO("Loaded model! {}", index);
+            LOG_INFO("Loaded model with index = {}", index);
         }
 
-        gameFunctions.gameUpdate(&gameState, 0.0f);
+        gameState.frame = gameFrame;
+        gameFunctions.gameUpdate(&gameState, time.GetDeltaTime());
+        rawSceneData.deltaTime += time.GetDeltaTime();
 
         bool canTransmit = engineSynchronization.gameFrames.try_acquire();
         if (canTransmit) {
@@ -200,6 +183,15 @@ void Engine::Cleanup()
     gameDll.Unload();
 
     SDL_DestroyWindow(window);
+}
+
+void Engine::UpdateCamera(const glm::vec3 cameraPos, const glm::vec3 cameraLook, const glm::vec3 cameraUp, const float fov, const float nearPlane, const float farPlane)
+{
+    rawSceneData.view = glm::lookAt(cameraPos, cameraLook, cameraUp);
+    rawSceneData.cameraWorldPos = cameraPos;
+    rawSceneData.fovDegrees = fov;
+    rawSceneData.nearPlane = nearPlane;
+    rawSceneData.farPlane = farPlane;
 }
 
 void Engine::PrepareFrameDataForRender(Renderer::FrameBuffer& frameBuffer)

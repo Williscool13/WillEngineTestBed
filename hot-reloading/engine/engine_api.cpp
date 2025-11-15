@@ -108,6 +108,11 @@ HotReloading::AssetLoad::RequestLoad EngineLoadModel(const char* path)
     return HotReloading::Engine::Engine::Get().RequestModelLoad(path);
 }
 
+bool EngineUnloadModel(HotReloading::AssetLoad::ModelEntryHandle modelEntryHandle)
+{
+    return true;
+}
+
 HotReloading::AssetLoad::RuntimeMeshHandle EngineGenerateModel(const HotReloading::AssetLoad::ModelEntryHandle model, const Vec3 translation, const Vec4 quatRotation, const Vec3 scale)
 {
     return HotReloading::Engine::Engine::Get().GenerateModel(model, {translation, quatRotation, scale});
@@ -116,4 +121,12 @@ HotReloading::AssetLoad::RuntimeMeshHandle EngineGenerateModel(const HotReloadin
 bool EngineUpdateModelTransform(const HotReloading::AssetLoad::RuntimeMeshHandle runtimeMeshHandle, const Vec3 translation, const Vec4 quatRotation, const Vec3 scale)
 {
     return HotReloading::Engine::Engine::Get().UpdateRuntimeMesh(runtimeMeshHandle, {translation, quatRotation, scale});
+}
+
+void EngineDeleteModel(HotReloading::AssetLoad::RuntimeMeshHandle runtimeMeshHandle)
+{}
+
+void EngineUpdateCamera(Vec3 cameraPos, Vec3 cameraLook, Vec3 cameraUp, float fovDegrees, float nearPlane, float farPlane)
+{
+    return HotReloading::Engine::Engine::Get().UpdateCamera(cameraPos, cameraLook, cameraUp, fovDegrees, nearPlane, farPlane);
 }

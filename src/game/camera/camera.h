@@ -34,7 +34,7 @@ public:
 
     void SetPlanes(float near, float far);
 
-protected:
+public:
     Transform transform{Transform::Identity};
     float fov = glm::radians(75.0f);
     float nearPlane = 0.1f;
