@@ -6,6 +6,8 @@
 
 #include <SDL3/SDL.h>
 
+#include "backends/imgui_impl_sdl3.h"
+#include "backends/imgui_impl_vulkan.h"
 #include "core/constants.h"
 #include "core/time.h"
 #include "crash-handling/crash_handler.h"
@@ -13,8 +15,8 @@
 #include "input/input.h"
 #include "render/resource_manager.h"
 #include "render/vk_imgui_wrapper.h"
+#include "render/vk_swapchain.h"
 #include "utils/utils.h"
-#include "utils/world_constants.h"
 
 EngineMultithreading::EngineMultithreading() = default;
 
@@ -56,10 +58,34 @@ void EngineMultithreading::Initialize()
     SDL_GetWindowSize(window, &w, &h);
     renderThread.Initialize(this, window, w, h);
     assetLoadingThread.Initialize(renderThread.GetVulkanContext(), renderThread.GetResourceManager());
+    // Imgui multithreaded needs a lot more attention, see
+    // https://github.com/ocornut/imgui/issues/1860#issuecomment-1927630727
+    imgui = std::make_unique<Renderer::ImguiWrapper>(renderThread.GetVulkanContext(), window, renderThread.GetSwapchain()->imageCount, renderThread.GetSwapchain()->format);
 
     Input::Get().Init(window, w, h);
 
     loadedModelsToAcquire.reserve(10);
+}
+
+void EngineMultithreading::DrawImgui()
+{
+    ImGui_ImplVulkan_NewFrame();
+    ImGui_ImplSDL3_NewFrame();
+    ImGui::NewFrame();
+
+    if (ImGui::Begin("Main")) {
+        ImGui::Text("Hello!");
+        float camPos[3];
+        camPos[0] = freeCamera.transform.translation.x;
+        camPos[1] = freeCamera.transform.translation.y;
+        camPos[2] = freeCamera.transform.translation.z;
+        if (ImGui::DragFloat3("Position", camPos)) {
+            freeCamera.transform.translation = {camPos[0], camPos[1], camPos[2]};
+        }
+    }
+
+    ImGui::End();
+    ImGui::Render();
 }
 
 void EngineMultithreading::Run()
@@ -82,7 +108,7 @@ void EngineMultithreading::Run()
         input.FrameReset();
         while (SDL_PollEvent(&e) != 0) {
             input.ProcessEvent(e);
-            Renderer::ImguiWrapper::HandleInput(e);
+            imgui->HandleInput(e);
             if (e.type == SDL_EVENT_QUIT) { exit = true; }
             if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_ESCAPE) { exit = true; }
             if (e.type == SDL_EVENT_WINDOW_MINIMIZED
@@ -105,14 +131,15 @@ void EngineMultithreading::Run()
             break;
         }
 
-
         assetLoadingThread.ResolveLoads(loadedModelsToAcquire);
-        ThreadMain();
 
-        bool canTransmit = gameFrames.try_acquire();
+        ThreadMain();
+        const bool canTransmit = gameFrames.try_acquire();
         if (canTransmit) {
             uint64_t currentRenderFrame = renderFrame % Core::FRAMES_IN_FLIGHT;
-            PrepareFrameDataForRender(currentRenderFrame);
+            PrepareImguiForRender(imguiFrameBuffers[currentRenderFrame]);
+            PrepareFrameDataForRender(frameBuffers[currentRenderFrame]);
+
             renderFrame++;
             renderFrames.release();
         }
@@ -120,6 +147,7 @@ void EngineMultithreading::Run()
         gameFrame++;
     }
 }
+
 
 void EngineMultithreading::ThreadMain()
 {
@@ -271,10 +299,14 @@ void EngineMultithreading::Cleanup()
     SDL_DestroyWindow(window);
 }
 
-void EngineMultithreading::PrepareFrameDataForRender(uint64_t currentRenderFrame)
+void EngineMultithreading::PrepareImguiForRender(ImDrawDataSnapshot& imguiSnapshot)
 {
-    Renderer::FrameBuffer& currentFrameBuffer = frameBuffers[currentRenderFrame];
+    DrawImgui();
+    imguiSnapshot.SnapUsingSwap(ImGui::GetDrawData(), ImGui::GetTime());
+}
 
+void EngineMultithreading::PrepareFrameDataForRender(Renderer::FrameBuffer& currentFrameBuffer)
+{
     for (Renderer::ModelEntryHandle loadedModel : loadedModelsToAcquire) {
         if (Renderer::AcquireOperations* modelAcquires = assetLoadingThread.GetModelAcquires(loadedModel)) {
             currentFrameBuffer.bufferAcquireOperations.insert(

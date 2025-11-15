@@ -11,6 +11,7 @@
 
 #include <SDL3/SDL.h>
 
+#include "imgui_threaded_rendering.h"
 #include "render/render-operations/render_operations.h"
 #include "render/vk_resources.h"
 #include "render/vk_synchronization.h"
@@ -59,6 +60,7 @@ public:
 public:
     ResourceManager* GetResourceManager() const { return resourceManager.get(); }
     VulkanContext* GetVulkanContext() const { return vulkanContext.get(); }
+    Swapchain* GetSwapchain() const { return swapchain.get(); }
 
 private:
     enum class RenderResponse
@@ -73,7 +75,7 @@ private:
 
     void ProcessOperations(uint32_t currentFrameInFlight);
 
-    RenderResponse Render(uint32_t currentRenderFrameInFlight, FrameSynchronization& currentFrameSynchronization, FrameBuffer& currentFrameBuffer);
+    RenderResponse Render(uint32_t currentRenderFrameInFlight, FrameSynchronization& currentFrameSynchronization, FrameBuffer& currentFrameBuffer, ImDrawDataSnapshot& currentImguiSnapshot);
 
 private:
     void ConstructSceneData(RawSceneData& raw, SceneData& scene, float aspectRatio, glm::vec2 renderTargetSize, glm::vec2 texelSize);
@@ -83,7 +85,6 @@ private:
     SDL_Window* window{};
     std::unique_ptr<VulkanContext> vulkanContext{};
     std::unique_ptr<Swapchain> swapchain{};
-    std::unique_ptr<ImguiWrapper> imgui{};
     std::unique_ptr<RenderTargets> renderTargets{};
     std::unique_ptr<ResourceManager> resourceManager{};
 

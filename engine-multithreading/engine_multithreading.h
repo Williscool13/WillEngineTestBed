@@ -15,6 +15,7 @@
 
 #include "game/camera/free_camera.h"
 #include "render/animation/animation_player.h"
+#include "imgui_threaded_rendering.h"
 
 namespace Renderer
 {
@@ -37,9 +38,13 @@ public:
 
     void Initialize();
 
+    void DrawImgui();
+
     void Run();
 
-    void PrepareFrameDataForRender(uint64_t currentRenderFrame);
+    void PrepareImguiForRender(ImDrawDataSnapshot& imguiSnapshot);
+
+    void PrepareFrameDataForRender(Renderer::FrameBuffer& currentFrameBuffer);
 
     void ThreadMain();
 
@@ -68,9 +73,10 @@ private:
 
 private:
     SDL_Window* window{nullptr};
-
     Renderer::RenderThread renderThread{};
     Renderer::AssetLoadingThread assetLoadingThread{};
+
+    std::unique_ptr<Renderer::ImguiWrapper> imgui{};
 
     uint64_t gameFrame{0};
     uint64_t renderFrame{0};
@@ -84,6 +90,7 @@ public:
     std::counting_semaphore<Core::FRAMES_IN_FLIGHT> gameFrames{Core::FRAMES_IN_FLIGHT};
     std::counting_semaphore<Core::FRAMES_IN_FLIGHT> renderFrames{0};
 
+    std::array<ImDrawDataSnapshot, Core::FRAMES_IN_FLIGHT> imguiFrameBuffers{};
     std::array<Renderer::FrameBuffer, Core::FRAMES_IN_FLIGHT> frameBuffers{};
     std::vector<Renderer::ModelEntryHandle> loadedModelsToAcquire;
 

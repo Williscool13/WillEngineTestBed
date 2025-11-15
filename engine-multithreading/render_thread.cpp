@@ -15,7 +15,6 @@
 
 #include "render/vk_context.h"
 #include "render/vk_swapchain.h"
-#include "render/vk_imgui_wrapper.h"
 #include "render/vk_descriptors.h"
 #include "render/vk_helpers.h"
 #include "render/render_context.h"
@@ -64,9 +63,6 @@ void RenderThread::Initialize(EngineMultithreading* engineMultithreading_, SDL_W
 
         vulkanContext = std::make_unique<VulkanContext>(window);
         swapchain = std::make_unique<Swapchain>(vulkanContext.get(), renderExtent[0], renderExtent[1]);
-        // Imgui multithreaded needs a lot more attention, see
-        // https://github.com/ocornut/imgui/issues/1860#issuecomment-1927630727
-        imgui = std::make_unique<ImguiWrapper>(vulkanContext.get(), window, swapchain->imageCount, swapchain->format);
         renderTargets = std::make_unique<RenderTargets>(vulkanContext.get(), w, h);
         resourceManager = std::make_unique<ResourceManager>(vulkanContext.get());
         Input::Input::Get().Init(window, swapchain->extent.width, swapchain->extent.height);
@@ -200,6 +196,7 @@ void RenderThread::ThreadMain()
         currentFrameBuffer.instanceOperations.clear();
         jointMatrixOperationRingBuffer.Enqueue(currentFrameBuffer.jointMatrixOperations);
         currentFrameBuffer.jointMatrixOperations.clear();
+        ImDrawDataSnapshot& currentImguiFrameBuffer = engineMultithreading->imguiFrameBuffers[currentGameFrameInFlight];
 
         if (currentFrameBuffer.bRequireSwapchainRecreate || bSwapchainOutdated) {
             LOG_INFO("SwapchainCreate: currentFrameBuffer.bRequireSwapchainRecreate - {}", currentFrameBuffer.bRequireSwapchainRecreate);
@@ -243,7 +240,7 @@ void RenderThread::ThreadMain()
             vkWaitForFences(vulkanContext->device, 1, &currentFrameSynchronization.renderFence, true, UINT64_MAX);
 
             ProcessOperations(currentRenderFrameInFlight);
-            RenderResponse renderResponse = Render(currentRenderFrameInFlight, currentFrameSynchronization, currentFrameBuffer);
+            RenderResponse renderResponse = Render(currentRenderFrameInFlight, currentFrameSynchronization, currentFrameBuffer, currentImguiFrameBuffer);
             if (renderResponse == RenderResponse::SWAPCHAIN_OUTDATED) {
                 bSwapchainOutdated = true;
             }
@@ -298,7 +295,8 @@ void RenderThread::ProcessOperations(uint32_t currentFrameInFlight)
     jointMatrixOperationRingBuffer.ProcessOperations(static_cast<char*>(currentJointMatrixBuffers.allocationInfo.pMappedData), renderBufferCount + 1);
 }
 
-RenderThread::RenderResponse RenderThread::Render(uint32_t currentRenderFrameInFlight, FrameSynchronization& currentFrameSynchronization, FrameBuffer& currentFrameBuffer)
+RenderThread::RenderResponse RenderThread::Render(uint32_t currentRenderFrameInFlight, FrameSynchronization& currentFrameSynchronization, FrameBuffer& currentFrameBuffer,
+                                                  ImDrawDataSnapshot& currentImguiSnapshot)
 {
     // Un-signal fence, essentially saying "I'm using this frame-in-flight's resources, hands off".
     VK_CHECK(vkResetFences(vulkanContext->device, 1, &currentFrameSynchronization.renderFence));
@@ -532,13 +530,51 @@ RenderThread::RenderResponse RenderThread::Render(uint32_t currentRenderFrameInF
         vkCmdBlitImage2(cmd, &blitInfo);
     }
 
-    // Final transition
+    // Transition 3 - Prepare for imgui draw
     {
         auto subresource = VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT);
         auto barrier = VkHelpers::ImageMemoryBarrier(
             currentSwapchainImage,
             subresource,
             VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+        );
+        auto dependencyInfo = VkHelpers::DependencyInfo(&barrier);
+        vkCmdPipelineBarrier2(cmd, &dependencyInfo);
+    }
+
+    // Imgui Draw
+    {
+        VkRenderingAttachmentInfo imguiAttachment{};
+        imguiAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+        imguiAttachment.pNext = nullptr;
+        imguiAttachment.imageView = currentSwapchainImageView;
+        imguiAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        imguiAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+        imguiAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        VkRenderingInfo renderInfo{};
+        renderInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+        renderInfo.pNext = nullptr;
+        renderInfo.renderArea = VkRect2D{VkOffset2D{0, 0}, swapchain->extent};
+        renderInfo.layerCount = 1;
+        renderInfo.colorAttachmentCount = 1;
+        renderInfo.pColorAttachments = &imguiAttachment;
+        renderInfo.pDepthAttachment = nullptr;
+        renderInfo.pStencilAttachment = nullptr;
+
+        vkCmdBeginRendering(cmd, &renderInfo);
+        ImGui_ImplVulkan_RenderDrawData(&currentImguiSnapshot.DrawData, cmd);
+        vkCmdEndRendering(cmd);
+    }
+
+
+    // Final transition
+    {
+        auto subresource = VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT);
+        auto barrier = VkHelpers::ImageMemoryBarrier(
+            currentSwapchainImage,
+            subresource,
+            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
             VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
         );
         auto dependencyInfo = VkHelpers::DependencyInfo(&barrier);
