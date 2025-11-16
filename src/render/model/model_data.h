@@ -44,18 +44,22 @@ struct Meshlet
 {
     uint32_t vertexOffset;
     uint32_t meshletVerticesOffset;
-    uint32_t triangleOffset;
-    uint32_t vertexCount;
-    uint32_t triangleCount;
-    uint32_t materialIndex;
+    uint32_t meshletTriangleOffset;
+    uint32_t meshletVerticesCount;
+    uint32_t meshletTriangleCount;
+    uint32_t meshletPrimitiveIndex;
 };
 
 struct MeshletPrimitive
 {
     uint32_t meshletOffset{0};
     uint32_t meshletCount{0};
+    uint32_t materialIndex{0};
     uint32_t bHasTransparent{0};
     uint32_t bHasSkinning{0};
+    uint32_t padding1{0};
+    uint32_t padding2{0};
+    uint32_t padding3{0};
     // {3} center, {1} radius
     glm::vec4 boundingSphere{};
 };
@@ -97,17 +101,19 @@ struct ExtractedMeshletModel
     std::vector<Sampler> samplers{};
     std::vector<AllocatedImage> images{};
     std::vector<ImageView> imageViews{};
+
+    std::vector<Vertex> vertices{};
+    std::vector<uint32_t> meshletVertices{};
+    std::vector<uint8_t> meshletTriangles{};
+    std::vector<Meshlet> meshlets{};
+
+    std::vector<MeshletPrimitive> primitives{};
     std::vector<MaterialProperties> materials{};
 
-    std::vector<Vertex> allVertices{};
-    std::vector<uint32_t> allMeshletVertices{};
-    std::vector<uint8_t> allMeshletTriangles{};
-    std::vector<Meshlet> allMeshlets{};
-    std::vector<MeshletPrimitive> allPrimitives{};
     std::vector<MeshInformation> allMeshes{};
-
     std::vector<Node> nodes{};
     std::vector<uint32_t> nodeRemap{};
+
 
     std::vector<Animation> animations;
     std::vector<glm::mat4> inverseBindMatrices{};
@@ -191,6 +197,45 @@ struct ModelData
     ModelData(ModelData&&) noexcept = default;
 
     ModelData& operator=(ModelData&&) noexcept = default;
+};
+
+struct MeshletModelData
+{
+    std::string name{};
+    std::filesystem::path path{};
+
+    std::vector<MeshInformation> meshes{};
+    std::vector<Node> nodes{};
+    std::vector<uint32_t> nodeRemap{};
+    std::vector<Animation> animations{};
+
+    // if size > 0, means this model has skinning
+    std::vector<glm::mat4> inverseBindMatrices{};
+
+    std::vector<Sampler> samplers{};
+    std::vector<AllocatedImage> images{};
+    std::vector<ImageView> imageViews{};
+
+    std::vector<int32_t> samplerIndexToDescriptorBufferIndexMap{};
+    std::vector<int32_t> textureIndexToDescriptorBufferIndexMap{};
+
+    OffsetAllocator::Allocation vertexAllocation{};
+    OffsetAllocator::Allocation meshletVerticesAllocation{};
+    OffsetAllocator::Allocation meshletTrianglesAllocation{};
+    OffsetAllocator::Allocation meshletAllocation{};
+    OffsetAllocator::Allocation materialAllocation{};
+    OffsetAllocator::Allocation primitiveAllocation{};
+
+
+    MeshletModelData() = default;
+
+    MeshletModelData(const MeshletModelData&) = delete;
+
+    MeshletModelData& operator=(const MeshletModelData&) = delete;
+
+    MeshletModelData(MeshletModelData&&) noexcept = default;
+
+    MeshletModelData& operator=(MeshletModelData&&) noexcept = default;
 };
 
 using ModelDataHandle = Handle<ModelData>;

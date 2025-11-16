@@ -22,6 +22,7 @@
 #include "render/render_utils.h"
 
 #include "input/input.h"
+#include "render/descriptor_buffer/descriptor_buffer_bindless_resources.h"
 #include "render/model/model_loader.h"
 #include "render/model/model_load_utils.h"
 #include "utils/utils.h"
@@ -65,7 +66,12 @@ void AssetPipeline::Initialize()
         frameSynchronization[i].Initialize();
     }
 
+    bindlessResourcesDescriptorBuffer = Renderer::DescriptorBufferBindlessResources(vulkanContext.get());
     modelLoader = std::make_unique<Renderer::ModelLoader>(vulkanContext.get());
+
+    CreateBuffers();
+
+    CreateMeshletModel();
 }
 
 void AssetPipeline::Run()
@@ -87,7 +93,7 @@ void AssetPipeline::Run()
                 || e.type == SDL_EVENT_WINDOW_RESIZED
                 || e.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED) {
                 bSwapchainOutdated = true;
-                }
+            }
         }
         input.UpdateFocus(SDL_GetWindowFlags(window));
 
@@ -110,11 +116,6 @@ void AssetPipeline::Run()
         if (exit) {
             bShouldExit = true;
             break;
-        }
-
-        if (input.IsKeyPressed(Key::Q)) {
-            auto bunnyPath = std::filesystem::path("../assets/stanford_bunny/stanford_bunny.gltf");
-            modelLoader->LoadMeshletGltf(bunnyPath);
         }
 
         auto& currentFrameSync = frameSynchronization[frameNumber % renderFramesInFlight];
@@ -200,5 +201,179 @@ void AssetPipeline::Cleanup()
     vkDeviceWaitIdle(vulkanContext->device);
 
     SDL_DestroyWindow(window);
+}
+
+void AssetPipeline::CreateBuffers()
+{
+    VkBufferCreateInfo bufferInfo = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+    bufferInfo.pNext = nullptr;
+    VmaAllocationCreateInfo vmaAllocInfo = {};
+    vmaAllocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+    vmaAllocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+    bufferInfo.usage = VK_BUFFER_USAGE_2_VERTEX_BUFFER_BIT;
+    bufferInfo.size = sizeof(Renderer::Vertex) * Renderer::MEGA_VERTEX_BUFFER_COUNT;
+    megaVertexBuffer = Renderer::VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
+    bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
+    bufferInfo.size = sizeof(uint32_t) * Renderer::MEGA_INDEX_BUFFER_COUNT;
+    megaMeshletVerticesBuffer = Renderer::VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
+    bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
+    bufferInfo.size = sizeof(uint8_t) * Renderer::MEGA_INDEX_BUFFER_COUNT;
+    megaMeshletTrianglesBuffer = Renderer::VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
+    bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
+    bufferInfo.size = sizeof(uint32_t) * Renderer::MEGA_INDEX_BUFFER_COUNT;
+    megaMeshletBuffer = Renderer::VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
+    bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
+    bufferInfo.size = sizeof(Renderer::MaterialProperties) * Renderer::MEGA_MATERIAL_BUFFER_COUNT;
+    materialBuffer = Renderer::VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
+    bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
+    bufferInfo.size = sizeof(Renderer::Primitive) * Renderer::MEGA_PRIMITIVE_BUFFER_COUNT;
+    primitiveBuffer = Renderer::VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
+
+    for (int32_t i = 0; i < swapchain->imageCount; ++i) {
+        bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
+        bufferInfo.size = sizeof(Renderer::Model) * Renderer::BINDLESS_MODEL_MATRIX_COUNT;
+        modelBuffers.push_back(Renderer::VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo));
+
+        bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
+        bufferInfo.size = sizeof(Renderer::Instance) * Renderer::BINDLESS_INSTANCE_COUNT;
+        instanceBuffers.push_back(Renderer::VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo));
+
+        bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
+        bufferInfo.size = sizeof(Renderer::Model) * Renderer::BINDLESS_MODEL_MATRIX_COUNT;
+        jointMatrixBuffers.push_back(Renderer::VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo));
+    }
+}
+
+void AssetPipeline::CreateMeshletModel()
+{
+    auto bunnyPath = std::filesystem::path("../assets/stanford_bunny/stanford_bunny.gltf");
+    Renderer::ExtractedMeshletModel meshletModel = modelLoader->LoadMeshletGltf(bunnyPath);
+    if (!meshletModel.bSuccessfullyLoaded) {
+        return;
+    }
+
+    meshletModelData.name = bunnyPath.filename().string();
+    meshletModelData.path = bunnyPath;
+
+    // Vertices
+    size_t sizeVertices = meshletModel.vertices.size() * sizeof(Renderer::Vertex);
+    meshletModelData.vertexAllocation = vertexBufferAllocator.allocate(sizeVertices);
+    if (meshletModelData.vertexAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
+        LOG_WARN("[ModelLoading::LoadModelIntoBuffers] Not enough space in vertex buffer");
+        return;
+    }
+    memcpy(static_cast<char*>(megaVertexBuffer.allocationInfo.pMappedData) + meshletModelData.vertexAllocation.offset, meshletModel.vertices.data(), sizeVertices);
+
+    // Meshlet Vertices
+    size_t sizeMeshletVertices = meshletModel.meshletVertices.size() * sizeof(uint32_t);
+    meshletModelData.meshletVerticesAllocation = meshletVerticesBufferAllocator.allocate(sizeMeshletVertices);
+    if (meshletModelData.meshletVerticesAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
+        LOG_WARN("[ModelLoading::LoadModelIntoBuffers] Not enough space in meshletVertices buffer");
+        return;
+    }
+    memcpy(static_cast<char*>(megaMeshletVerticesBuffer.allocationInfo.pMappedData) + meshletModelData.meshletVerticesAllocation.offset, meshletModel.meshletVertices.data(), sizeMeshletVertices);
+
+    // Meshlet Triangles
+    size_t sizeMeshletTriangles = meshletModel.meshletTriangles.size() * sizeof(uint8_t);
+    meshletModelData.meshletTrianglesAllocation = meshletTrianglesBufferAllocator.allocate(sizeMeshletTriangles);
+    if (meshletModelData.meshletTrianglesAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
+        LOG_WARN("[ModelLoading::LoadModelIntoBuffers] Not enough space in meshletTriangles buffer");
+        return;
+    }
+    memcpy(static_cast<char*>(megaMeshletTrianglesBuffer.allocationInfo.pMappedData) + meshletModelData.meshletTrianglesAllocation.offset, meshletModel.meshletTriangles.data(), sizeMeshletTriangles);
+
+    // Meshlets
+    uint32_t vertexOffset = meshletModelData.vertexAllocation.offset / sizeof(Renderer::Vertex);
+    uint32_t meshletVerticesOffset = meshletModelData.meshletVerticesAllocation.offset / sizeof(uint32_t);
+    uint32_t meshletTriangleOffset = meshletModelData.meshletTrianglesAllocation.offset / sizeof(uint8_t);
+    uint32_t primitiveOffset = meshletModelData.primitiveAllocation.offset / sizeof(Renderer::MeshletPrimitive);
+    for (Renderer::Meshlet& meshlet : meshletModel.meshlets) {
+        meshlet.vertexOffset += vertexOffset;
+        meshlet.meshletVerticesOffset += meshletVerticesOffset;
+        meshlet.meshletTriangleOffset += meshletTriangleOffset;
+        meshlet.meshletPrimitiveIndex += primitiveOffset;
+    }
+
+    size_t sizeMeshlets = meshletModel.meshlets.size() * sizeof(Renderer::Meshlet);
+    meshletModelData.meshletAllocation = meshletBufferAllocator.allocate(sizeMeshlets);
+    if (meshletModelData.meshletAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
+        LOG_WARN("[ModelLoading::LoadModelIntoBuffers] Not enough space in meshlets buffer");
+        return;
+    }
+    memcpy(static_cast<char*>(megaMeshletBuffer.allocationInfo.pMappedData) + meshletModelData.meshletAllocation.offset, meshletModel.meshlets.data(), sizeMeshlets);
+
+
+    // Primitives
+    uint32_t meshletOffset = meshletModelData.meshletAllocation.offset / sizeof(Renderer::Meshlet);
+    uint32_t materialOffsetCount = meshletModelData.materialAllocation.offset / sizeof(Renderer::MaterialProperties);
+    for (auto& primitive : meshletModel.primitives) {
+        primitive.meshletOffset += meshletOffset;
+        primitive.materialIndex += materialOffsetCount;
+    }
+
+    size_t sizePrimitives = meshletModel.primitives.size() * sizeof(Renderer::MeshletPrimitive);
+    meshletModelData.primitiveAllocation = primitiveBufferAllocator.allocate(sizePrimitives);
+    if (meshletModelData.primitiveAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
+        LOG_WARN("[ModelLoading::LoadModelIntoBuffers] Not enough space in primitives buffer");
+        return;
+    }
+    memcpy(static_cast<char*>(primitiveBuffer.allocationInfo.pMappedData) + meshletModelData.primitiveAllocation.offset, meshletModel.primitives.data(), sizePrimitives);
+
+
+    // Descriptor assignment can happen here. Resource upload, will need to be staged and
+    auto remapIndices = [](auto& indices, const std::vector<int32_t>& map) {
+        indices.x = indices.x >= 0 ? map[indices.x] : -1;
+        indices.y = indices.y >= 0 ? map[indices.y] : -1;
+        indices.z = indices.z >= 0 ? map[indices.z] : -1;
+        indices.w = indices.w >= 0 ? map[indices.w] : -1;
+    };
+
+    std::vector<int32_t> materialToBufferMap;
+
+    // Samplers
+    materialToBufferMap.resize(meshletModel.samplers.size());
+    for (int32_t i = 0; i < meshletModel.samplers.size(); ++i) {
+        materialToBufferMap[i] = bindlessResourcesDescriptorBuffer.AllocateSampler(meshletModel.samplers[i].handle);
+    }
+
+    for (Renderer::MaterialProperties& material : meshletModel.materials) {
+        remapIndices(material.textureSamplerIndices, materialToBufferMap);
+        remapIndices(material.textureSamplerIndices2, materialToBufferMap);
+    }
+
+    meshletModelData.samplerIndexToDescriptorBufferIndexMap = std::move(materialToBufferMap);
+
+    // Textures
+    materialToBufferMap.clear();
+    materialToBufferMap.resize(meshletModel.imageViews.size());
+
+    for (int32_t i = 0; i < meshletModel.imageViews.size(); ++i) {
+        materialToBufferMap[i] = bindlessResourcesDescriptorBuffer.AllocateTexture({
+            .imageView = meshletModel.imageViews[i].handle,
+            .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+        });
+    }
+
+    for (Renderer::MaterialProperties& material : meshletModel.materials) {
+        remapIndices(material.textureImageIndices, materialToBufferMap);
+        remapIndices(material.textureImageIndices2, materialToBufferMap);
+    }
+
+    meshletModelData.textureIndexToDescriptorBufferIndexMap = std::move(materialToBufferMap);
+    // Materials
+    size_t sizeMaterials = meshletModel.materials.size() * sizeof(Renderer::MaterialProperties);
+    meshletModelData.materialAllocation = materialBufferAllocator.allocate(sizeMaterials);
+    memcpy(static_cast<char*>(materialBuffer.allocationInfo.pMappedData) + meshletModelData.materialAllocation.offset, meshletModel.materials.data(), sizeMaterials);
+
+
+    meshletModelData.samplers = std::move(meshletModel.samplers);
+    meshletModelData.images = std::move(meshletModel.images);
+    meshletModelData.imageViews = std::move(meshletModel.imageViews);
+    meshletModelData.nodes = std::move(meshletModel.nodes);
+
+    meshletModelData.inverseBindMatrices = std::move(meshletModel.inverseBindMatrices);
+    meshletModelData.animations = std::move(meshletModel.animations);
+    meshletModelData.nodeRemap = std::move(meshletModel.nodeRemap);
 }
 }

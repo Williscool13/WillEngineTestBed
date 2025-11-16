@@ -503,7 +503,7 @@ ExtractedMeshletModel ModelLoader::LoadMeshletGltf(const std::filesystem::path& 
         MeshInformation meshData{};
         meshData.name = mesh.name;
         meshData.primitiveIndices.reserve(mesh.primitives.size());
-        meshletModel.allPrimitives.reserve(meshletModel.allPrimitives.size() + mesh.primitives.size());
+        meshletModel.primitives.reserve(meshletModel.primitives.size() + mesh.primitives.size());
 
         for (fastgltf::Primitive& p : mesh.primitives) {
             MeshletPrimitive primitiveData{};
@@ -661,29 +661,29 @@ ExtractedMeshletModel ModelLoader::LoadMeshletGltf(const std::filesystem::path& 
 
 
             // todo: meshlet bounding volume and cone
-            primitiveData.meshletOffset = meshletModel.allMeshlets.size();
+            primitiveData.meshletOffset = meshletModel.meshlets.size();
             primitiveData.meshletCount = meshlets.size();
             primitiveData.boundingSphere = ModelLoadUtils::GenerateBoundingSphere(primitiveVertices);
 
-            meshData.primitiveIndices.push_back(meshletModel.allPrimitives.size());
-            meshletModel.allPrimitives.push_back(primitiveData);
+            meshData.primitiveIndices.push_back(meshletModel.primitives.size());
+            meshletModel.primitives.push_back(primitiveData);
 
-            uint32_t vertexOffset = meshletModel.allVertices.size();
-            uint32_t meshletVertexOffset = meshletModel.allMeshletVertices.size();
-            uint32_t meshletTrianglesOffset = meshletModel.allMeshletTriangles.size();
+            uint32_t vertexOffset = meshletModel.vertices.size();
+            uint32_t meshletVertexOffset = meshletModel.meshletVertices.size();
+            uint32_t meshletTrianglesOffset = meshletModel.meshletTriangles.size();
 
-            meshletModel.allVertices.insert(meshletModel.allVertices.end(), primitiveVertices.begin(), primitiveVertices.end());
-            meshletModel.allMeshletVertices.insert(meshletModel.allMeshletVertices.end(), meshletVertices.begin(), meshletVertices.end());
-            meshletModel.allMeshletTriangles.insert(meshletModel.allMeshletTriangles.end(), meshletTriangles.begin(), meshletTriangles.end());
+            meshletModel.vertices.insert(meshletModel.vertices.end(), primitiveVertices.begin(), primitiveVertices.end());
+            meshletModel.meshletVertices.insert(meshletModel.meshletVertices.end(), meshletVertices.begin(), meshletVertices.end());
+            meshletModel.meshletTriangles.insert(meshletModel.meshletTriangles.end(), meshletTriangles.begin(), meshletTriangles.end());
 
             for (meshopt_Meshlet meshlet : meshlets) {
-                meshletModel.allMeshlets.push_back({
-                    vertexOffset,
-                    meshletVertexOffset + meshlet.vertex_offset,
-                    meshletTrianglesOffset + meshlet.triangle_offset,
-                    meshlet.vertex_count,
-                    meshlet.triangle_count,
-                    materialIndex
+                meshletModel.meshlets.push_back({
+                    .vertexOffset = vertexOffset,
+                    .meshletVerticesOffset = meshletVertexOffset + meshlet.vertex_offset,
+                    .meshletTriangleOffset = meshletTrianglesOffset + meshlet.triangle_offset,
+                    .meshletVerticesCount = meshlet.vertex_count,
+                    .meshletTriangleCount = meshlet.triangle_count,
+                    .meshletPrimitiveIndex = meshData.primitiveIndices.back()
                 });
             }
         }
