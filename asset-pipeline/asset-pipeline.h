@@ -14,11 +14,13 @@
 #include "render/vk_resources.h"
 #include "render/descriptor_buffer/descriptor_buffer_bindless_resources.h"
 #include "render/model/model_data.h"
+#include "render/pipelines/basic_render_pipeline.h"
 #include "utils/utils.h"
 
 
 namespace Renderer
 {
+struct RenderContext;
 class ModelLoader;
 struct ImguiWrapper;
 struct VulkanContext;
@@ -52,11 +54,17 @@ private:
     std::unique_ptr<Renderer::VulkanContext> vulkanContext{};
     std::unique_ptr<Renderer::Swapchain> swapchain{};
     std::vector<Renderer::FrameSynchronization> frameSynchronization;
+    std::unique_ptr<Renderer::RenderTargets> renderTargets{};
+
     uint64_t frameNumber{0};
     uint32_t renderFramesInFlight{0};
 
     bool bShouldExit{false};
     bool bSwapchainOutdated{false};
+    std::unique_ptr<Renderer::RenderContext> renderContext{};
+
+private:
+    Renderer::BasicRenderPipeline basicRenderPipeline{};
 
 private:
     Renderer::DescriptorBufferBindlessResources bindlessResourcesDescriptorBuffer{};

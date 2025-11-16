@@ -63,6 +63,8 @@ add_library(render-lib STATIC
         render-operations/render_operation_ring_buffer.h
         pipelines/main_skeletal_render_pipeline.cpp
         pipelines/main_skeletal_render_pipeline.h
+        pipelines/basic_render_pipeline.cpp
+        pipelines/basic_render_pipeline.h
 )
 
 target_link_libraries(render-lib PUBLIC

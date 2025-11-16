@@ -148,52 +148,7 @@ void Renderer::CreateResources()
 
     // Compute Pipeline
     gradientComputePipeline = GradientComputePipeline(vulkanContext.get(), renderTargetSetLayout.handle);
-
-
-    // Render Pipeline
-    {
-        VkPipelineLayoutCreateInfo renderPipelineLayoutCreateInfo{};
-        renderPipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        renderPipelineLayoutCreateInfo.setLayoutCount = 0;
-        renderPipelineLayoutCreateInfo.pSetLayouts = nullptr;
-        renderPipelineLayoutCreateInfo.pushConstantRangeCount = 0;
-        renderPipelineLayoutCreateInfo.pPushConstantRanges = nullptr;
-        // VkPushConstantRange renderPushConstantRange{};
-        // renderPushConstantRange.offset = 0;
-        // renderPushConstantRange.size = sizeof(RenderPushConstant);
-        // renderPushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-        // std::array layouts{resourceManager.getSceneDataLayout(), samplerDescriptorLayout->layout};
-        // layoutInfo.pSetLayouts = layouts.data();
-        // layoutInfo.pPushConstantRanges = &renderPushConstantRange;
-        // layoutInfo.pushConstantRangeCount = 1;
-
-        renderPipelineLayout = VkResources::CreatePipelineLayout(vulkanContext.get(), renderPipelineLayoutCreateInfo);
-
-        VkShaderModule vertShader;
-        VkShaderModule fragShader;
-        if (!VkHelpers::LoadShaderModule("shaders\\render_vertex.spv", vulkanContext->device, &vertShader)) {
-            throw std::runtime_error("Error when building the compute shader (render_vertex.spv)");
-        }
-        if (!VkHelpers::LoadShaderModule("shaders\\render_fragment.spv", vulkanContext->device, &fragShader)) {
-            throw std::runtime_error("Error when building the compute shader (render_fragment.spv)");
-        }
-
-
-        RenderPipelineBuilder renderPipelineBuilder;
-        renderPipelineBuilder.setShaders(vertShader, fragShader);
-        renderPipelineBuilder.setupInputAssembly(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-        renderPipelineBuilder.setupRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_BACK_BIT, VK_FRONT_FACE_CLOCKWISE);
-        renderPipelineBuilder.disableMultisampling();
-        renderPipelineBuilder.enableDepthTest(true, VK_COMPARE_OP_GREATER_OR_EQUAL);
-        renderPipelineBuilder.setupRenderer({DRAW_IMAGE_FORMAT}, VK_FORMAT_D32_SFLOAT);
-        renderPipelineBuilder.setupPipelineLayout(renderPipelineLayout.handle);
-        VkGraphicsPipelineCreateInfo pipelineCreateInfo = renderPipelineBuilder.generatePipelineCreateInfo();
-        renderPipeline = VkResources::CreateGraphicsPipeline(vulkanContext.get(), pipelineCreateInfo);
-
-        vkDestroyShaderModule(vulkanContext->device, vertShader, nullptr);
-        vkDestroyShaderModule(vulkanContext->device, fragShader, nullptr);
-    }
-
+    basicRenderPipeline = BasicRenderPipeline(vulkanContext.get());
 
     VkCommandPool immediateCommandPool;
     VkCommandBuffer immediateCommandBuffer;
@@ -451,7 +406,7 @@ void Renderer::Render()
 
 
             vkCmdBeginRendering(cmd, &renderInfo);
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, renderPipeline.handle);
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, basicRenderPipeline.pipeline.handle);
 
             // Dynamic States
             //  Viewport

@@ -122,6 +122,10 @@ public struct SceneData
     public float deltaTime;
 };
 
+public struct VertexData {
+    public Vertex[] vertices;
+};
+
 public struct MaterialData {
     public MaterialProperties[] materials;
 }
@@ -129,6 +133,22 @@ public struct MaterialData {
 public struct PrimitiveData {
     public Primitive[] primitives;
 }
+
+public struct MeshletPrimitiveData {
+    public MeshletPrimitive[] primitives;
+}
+
+public struct MeshletData {
+    public Meshlet[] meshlets;
+};
+
+public struct MeshletVerticesData {
+    public uint32_t[] meshletVertices;
+};
+
+public struct MeshletTrianglesData {
+    public uint8_t[] meshletTriangles;
+};
 
 public struct ModelData {
     public Model[] models;

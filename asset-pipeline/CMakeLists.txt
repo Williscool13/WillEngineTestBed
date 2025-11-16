@@ -20,3 +20,10 @@ add_custom_command(TARGET asset-pipeline POST_BUILD
         $<TARGET_FILE:SDL3::SDL3>
         $<TARGET_FILE_DIR:asset-pipeline>
 )
+
+
+compile_shaders(asset-pipeline
+        #${CMAKE_SOURCE_DIR}/shaders/meshShader.slang mesh meshMain
+        ${CMAKE_SOURCE_DIR}/shaders/render.slang vertex vertexMain
+        ${CMAKE_SOURCE_DIR}/shaders/render.slang fragment fragmentMain
+)

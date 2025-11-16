@@ -22,6 +22,8 @@
 #include "render/render_utils.h"
 
 #include "input/input.h"
+#include "render/render_context.h"
+#include "render/render_targets.h"
 #include "render/descriptor_buffer/descriptor_buffer_bindless_resources.h"
 #include "render/model/model_loader.h"
 #include "render/model/model_load_utils.h"
@@ -43,15 +45,20 @@ void AssetPipeline::Initialize()
         exit(1);
     }
 
+    renderContext = std::make_unique<Renderer::RenderContext>(Renderer::DEFAULT_SWAPCHAIN_WIDTH, Renderer::DEFAULT_SWAPCHAIN_HEIGHT, Renderer::DEFAULT_RENDER_SCALE);
+    std::array<uint32_t, 2> renderExtent = renderContext->GetRenderExtent();
+
     constexpr auto window_flags = SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE;
+
     window = SDL_CreateWindow(
-        "Template",
-        Core::DEFAULT_WINDOW_WIDTH,
-        Core::DEFAULT_WINDOW_HEIGHT,
+        "Vulkan Test Bed",
+        renderExtent[0],
+        renderExtent[1],
         window_flags);
 
     SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
     SDL_ShowWindow(window);
+
     int32_t w;
     int32_t h;
     SDL_GetWindowSize(window, &w, &h);
@@ -59,6 +66,7 @@ void AssetPipeline::Initialize()
 
     vulkanContext = std::make_unique<Renderer::VulkanContext>(window);
     swapchain = std::make_unique<Renderer::Swapchain>(vulkanContext.get(), w, h);
+    renderTargets = std::make_unique<Renderer::RenderTargets>(vulkanContext.get(), Renderer::DEFAULT_RENDER_TARGET_WIDTH, Renderer::DEFAULT_RENDER_TARGET_HEIGHT);
     renderFramesInFlight = swapchain->imageCount;
     frameSynchronization.reserve(renderFramesInFlight);
     for (int32_t i = 0; i < renderFramesInFlight; ++i) {
@@ -72,6 +80,8 @@ void AssetPipeline::Initialize()
     CreateBuffers();
 
     CreateMeshletModel();
+
+    basicRenderPipeline = Renderer::BasicRenderPipeline(vulkanContext.get());
 }
 
 void AssetPipeline::Run()
@@ -93,7 +103,7 @@ void AssetPipeline::Run()
                 || e.type == SDL_EVENT_WINDOW_RESIZED
                 || e.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED) {
                 bSwapchainOutdated = true;
-            }
+                }
         }
         input.UpdateFocus(SDL_GetWindowFlags(window));
 
@@ -107,10 +117,16 @@ void AssetPipeline::Run()
             for (Renderer::FrameSynchronization& frameSync : frameSynchronization) {
                 frameSync.RecreateSynchronization();
             }
-
-
             Input::Input::Get().UpdateWindowExtent(swapchain->extent.width, swapchain->extent.height);
             bSwapchainOutdated = false;
+        }
+
+        if (renderContext->HasPendingRenderExtentChanges()) {
+            vkDeviceWaitIdle(vulkanContext->device);
+            renderContext->ApplyRenderExtentResize();
+
+            std::array<uint32_t, 2> newExtents = renderContext->GetRenderExtent();
+            renderTargets->Recreate(newExtents[0], newExtents[1]);
         }
 
         if (exit) {
@@ -128,6 +144,7 @@ void AssetPipeline::Run()
 void AssetPipeline::Render(Renderer::FrameSynchronization& frameSync)
 {
     const uint32_t currentFrameInFlight = frameNumber % swapchain->imageCount;
+    std::array<uint32_t, 2> scaledRenderExtent = renderContext->GetScaledRenderExtent();
 
     // Wait for the GPU to finish the last frame that used this frame-in-flight's resources (N - imageCount).
     VK_CHECK(vkWaitForFences(vulkanContext->device, 1, &frameSync.renderFence, true, 1000000000));
@@ -147,38 +164,127 @@ void AssetPipeline::Render(Renderer::FrameSynchronization& frameSync)
     VkCommandBuffer cmd = frameSync.commandBuffer;
     VK_CHECK(vkResetCommandBuffer(cmd, 0));
     VkCommandBufferBeginInfo commandBufferBeginInfo = Renderer::VkHelpers::CommandBufferBeginInfo();
-    VK_CHECK(vkBeginCommandBuffer(cmd, &commandBufferBeginInfo)); {
+    VK_CHECK(vkBeginCommandBuffer(cmd, &commandBufferBeginInfo));
+
+    // Prepare to render draw
+    {
         auto subresource = Renderer::VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT);
         auto barrier = Renderer::VkHelpers::ImageMemoryBarrier(
-            currentSwapchainImage,
+            renderTargets->drawImage.handle,
             subresource,
-            VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_UNDEFINED,
-            VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
-        );
-        auto dependencyInfo = Renderer::VkHelpers::DependencyInfo(&barrier);
-        vkCmdPipelineBarrier2(cmd, &dependencyInfo);
-    } {
-        VkClearColorValue clear{0.3f, 0.0f, 0.0f, 1.0f};
-        VkImageSubresourceRange subresource = Renderer::VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT);
-        vkCmdClearColorImage(cmd, currentSwapchainImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clear, 1, &subresource);
-    } {
-        auto subresource = Renderer::VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT);
-        auto barrier = Renderer::VkHelpers::ImageMemoryBarrier(
-            currentSwapchainImage,
-            subresource,
-            VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-            VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
+            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_UNDEFINED,
+            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
         );
         auto dependencyInfo = Renderer::VkHelpers::DependencyInfo(&barrier);
         vkCmdPipelineBarrier2(cmd, &dependencyInfo);
     }
 
+    // Draw
+    {
+        constexpr VkClearValue colorClear = {.color = {0.3f, 0.0f, 0.0f, 1.0f}};
+        const VkRenderingAttachmentInfo colorAttachment = Renderer::VkHelpers::RenderingAttachmentInfo(renderTargets->drawImageView.handle, &colorClear, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+        constexpr VkClearValue depthClear = {.depthStencil = {0.0f, 0u}};
+        const VkRenderingAttachmentInfo depthAttachment = Renderer::VkHelpers::RenderingAttachmentInfo(renderTargets->depthImageView.handle, &depthClear, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+        const VkRenderingInfo renderInfo = Renderer::VkHelpers::RenderingInfo({scaledRenderExtent[0], scaledRenderExtent[1]}, &colorAttachment, &depthAttachment);
+
+
+        vkCmdBeginRendering(cmd, &renderInfo);
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, basicRenderPipeline.pipeline.handle);
+
+        // Dynamic States
+        //  Viewport
+        VkViewport viewport = {};
+        viewport.x = 0;
+        viewport.y = 0;
+        viewport.width = scaledRenderExtent[0];
+        viewport.height = scaledRenderExtent[1];
+        viewport.minDepth = 0.f;
+        viewport.maxDepth = 1.f;
+        vkCmdSetViewport(cmd, 0, 1, &viewport);
+        //  Scissor
+        VkRect2D scissor = {};
+        scissor.offset.x = 0;
+        scissor.offset.y = 0;
+        scissor.extent.width = scaledRenderExtent[0];
+        scissor.extent.height = scaledRenderExtent[1];
+        vkCmdSetScissor(cmd, 0, 1, &scissor);
+
+        // VkViewport viewport = Renderer::VkHelpers::GenerateViewport(scaledRenderExtent[0], scaledRenderExtent[1]);
+        // vkCmdSetViewport(cmd, 0, 1, &viewport);
+        // VkRect2D scissor = Renderer::VkHelpers::GenerateScissor(scaledRenderExtent[0], scaledRenderExtent[1]);
+        // vkCmdSetScissor(cmd, 0, 1, &scissor);
+
+        vkCmdDraw(cmd, 6, 1, 0, 0);
+        vkCmdEndRendering(cmd);
+    }
+
+    // Prepare for copy
+    {
+        VkImageMemoryBarrier2 barriers[2];
+        barriers[0] = Renderer::VkHelpers::ImageMemoryBarrier(
+            renderTargets->drawImage.handle,
+            Renderer::VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT),
+            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
+        );
+        barriers[1] = Renderer::VkHelpers::ImageMemoryBarrier(
+            currentSwapchainImage,
+            Renderer::VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT),
+            VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_UNDEFINED,
+            VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
+        );
+        VkDependencyInfo depInfo{.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+        depInfo.imageMemoryBarrierCount = 2;
+        depInfo.pImageMemoryBarriers = barriers;
+        vkCmdPipelineBarrier2(cmd, &depInfo);
+    }
+
+    // Copy
+    {
+        VkOffset3D renderOffset = {static_cast<int32_t>(scaledRenderExtent[0]), static_cast<int32_t>(scaledRenderExtent[1]), 1};
+        VkOffset3D swapchainOffset = {static_cast<int32_t>(swapchain->extent.width), static_cast<int32_t>(swapchain->extent.height), 1};
+        VkImageBlit2 blitRegion{};
+        blitRegion.sType = VK_STRUCTURE_TYPE_IMAGE_BLIT_2;
+        blitRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        blitRegion.srcSubresource.layerCount = 1;
+        blitRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        blitRegion.dstSubresource.layerCount = 1;
+        blitRegion.srcOffsets[0] = {0, 0, 0};
+        blitRegion.srcOffsets[1] = renderOffset;
+        blitRegion.dstOffsets[0] = {0, 0, 0};
+        blitRegion.dstOffsets[1] = swapchainOffset;
+
+        VkBlitImageInfo2 blitInfo{};
+        blitInfo.sType = VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2;
+        blitInfo.srcImage = renderTargets->drawImage.handle;
+        blitInfo.srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        blitInfo.dstImage = currentSwapchainImage;
+        blitInfo.dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        blitInfo.regionCount = 1;
+        blitInfo.pRegions = &blitRegion;
+        blitInfo.filter = VK_FILTER_LINEAR;
+
+        vkCmdBlitImage2(cmd, &blitInfo);
+    }
+
+    // Final transition
+    {
+        auto subresource = Renderer::VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT);
+        auto barrier = Renderer::VkHelpers::ImageMemoryBarrier(
+            currentSwapchainImage,
+            subresource,
+            VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT,VK_ACCESS_2_NONE,VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
+        );
+        auto dependencyInfo = Renderer::VkHelpers::DependencyInfo(&barrier);
+        vkCmdPipelineBarrier2(cmd, &dependencyInfo);
+    }
 
     VK_CHECK(vkEndCommandBuffer(cmd));
 
 
     VkCommandBufferSubmitInfo commandBufferSubmitInfo = Renderer::VkHelpers::CommandBufferSubmitInfo(frameSync.commandBuffer);
-    VkSemaphoreSubmitInfo swapchainSemaphoreWaitInfo = Renderer::VkHelpers::SemaphoreSubmitInfo(frameSync.swapchainSemaphore, VK_PIPELINE_STAGE_2_CLEAR_BIT);
+    VkSemaphoreSubmitInfo swapchainSemaphoreWaitInfo = Renderer::VkHelpers::SemaphoreSubmitInfo(frameSync.swapchainSemaphore, VK_PIPELINE_STAGE_2_BLIT_BIT);
     VkSemaphoreSubmitInfo renderSemaphoreSignalInfo = Renderer::VkHelpers::SemaphoreSubmitInfo(frameSync.renderSemaphore, VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT);
     VkSubmitInfo2 submitInfo = Renderer::VkHelpers::SubmitInfo(&commandBufferSubmitInfo, &swapchainSemaphoreWaitInfo, &renderSemaphoreSignalInfo);
 
