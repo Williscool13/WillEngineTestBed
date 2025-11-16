@@ -19,6 +19,7 @@ add_subdirectory(extern/vma)
 add_subdirectory(extern/vk-bootstrap)
 add_subdirectory(extern/fastgltf)
 add_subdirectory(extern/OffsetAllocator)
+add_subdirectory(extern/meshoptimizer)
 
 # My Libs
 add_subdirectory(src/crash-handling)
@@ -104,3 +105,4 @@ add_subdirectory(multi-buffering)
 add_subdirectory(single-buffering)
 add_subdirectory(hot-reloading)
 add_subdirectory(template)
+add_subdirectory(asset-pipeline)

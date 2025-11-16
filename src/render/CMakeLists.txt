@@ -75,6 +75,7 @@ target_link_libraries(render-lib PUBLIC
         SDL3::SDL3
         fastgltf
         offsetAllocator
+        meshoptimizer
 )
 
 find_program(SLANGC slangc REQUIRED)

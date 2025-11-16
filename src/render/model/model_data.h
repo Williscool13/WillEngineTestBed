@@ -40,6 +40,25 @@ struct Primitive
     glm::vec4 boundingSphere{};
 };
 
+struct Meshlet
+{
+    uint32_t vertexOffset;
+    uint32_t meshletVerticesOffset;
+    uint32_t triangleOffset;
+    uint32_t vertexCount;
+    uint32_t triangleCount;
+    uint32_t materialIndex;
+};
+
+struct MeshletPrimitive
+{
+    uint32_t meshletOffset{0};
+    uint32_t meshletCount{0};
+    uint32_t bHasTransparent{0};
+    uint32_t bHasSkinning{0};
+    // {3} center, {1} radius
+    glm::vec4 boundingSphere{};
+};
 
 struct Instance
 {
@@ -68,6 +87,30 @@ struct Node
     glm::vec3 localTranslation{};
     glm::quat localRotation{};
     glm::vec3 localScale{};
+};
+
+struct ExtractedMeshletModel
+{
+    std::string name{};
+    bool bSuccessfullyLoaded{false};
+
+    std::vector<Sampler> samplers{};
+    std::vector<AllocatedImage> images{};
+    std::vector<ImageView> imageViews{};
+    std::vector<MaterialProperties> materials{};
+
+    std::vector<Vertex> allVertices{};
+    std::vector<uint32_t> allMeshletVertices{};
+    std::vector<uint8_t> allMeshletTriangles{};
+    std::vector<Meshlet> allMeshlets{};
+    std::vector<MeshletPrimitive> allPrimitives{};
+    std::vector<MeshInformation> allMeshes{};
+
+    std::vector<Node> nodes{};
+    std::vector<uint32_t> nodeRemap{};
+
+    std::vector<Animation> animations;
+    std::vector<glm::mat4> inverseBindMatrices{};
 };
 
 struct ExtractedModel

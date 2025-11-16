@@ -23,6 +23,8 @@ public:
 
     ExtractedModel LoadGltf(const std::filesystem::path& path);
 
+    ExtractedMeshletModel LoadMeshletGltf(const std::filesystem::path& path);
+
 private:
     void LoadGltfImages(const fastgltf::Asset& asset, const std::filesystem::path& parentFolder, std::vector<AllocatedImage>& outAllocatedImages);
 
