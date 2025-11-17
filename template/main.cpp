@@ -10,11 +10,11 @@
 
 int main()
 {
-    fmt::println("=== Multi-Buffering ===");
+    fmt::println("=== Template ===");
 
     CrashHandler::Initialize("crashes/");
     CrashContext::Initialize();
-    Logger::Initialize("logs/multi-buffering.log");
+    Logger::Initialize("logs/template.log");
 
     Template::ClassName mb{};
     mb.Initialize();

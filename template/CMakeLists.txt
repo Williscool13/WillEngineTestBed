@@ -13,6 +13,13 @@ add_custom_command(TARGET template POST_BUILD
 target_link_libraries(template PRIVATE
         engine-common
         crash-handling
+        core-lib
+        game-lib
         render-lib
         input-lib
+)
+
+compile_shaders(template
+        ${CMAKE_SOURCE_DIR}/shaders/render2.slang vertex vertexMain
+        ${CMAKE_SOURCE_DIR}/shaders/render2.slang fragment fragmentMain
 )

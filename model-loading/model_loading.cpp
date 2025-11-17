@@ -66,7 +66,7 @@ void ModelLoading::CreateResources()
 
     drawCullComputePipeline = DrawCullComputePipeline(vulkanContext.get());
     mainRenderPipeline = MainRenderPipeline(vulkanContext.get(), bindlessResourcesDescriptorBuffer.descriptorSetLayout.handle);
-    mainSkeletalRenderPipeline= MainSkeletalRenderPipeline(vulkanContext.get(), bindlessResourcesDescriptorBuffer.descriptorSetLayout.handle);
+    mainSkeletalRenderPipeline = MainSkeletalRenderPipeline(vulkanContext.get(), bindlessResourcesDescriptorBuffer.descriptorSetLayout.handle);
 }
 
 void ModelLoading::CreateModels()
@@ -284,6 +284,7 @@ void ModelLoading::Run()
                 bSwapchainOutdated = true;
             }
         }
+
         input.UpdateFocus(SDL_GetWindowFlags(window));
         time.Update();
 
@@ -429,7 +430,6 @@ void ModelLoading::Render()
     UpdateRuntimeMesh(*riggedFigureRuntimeMesh, modelBuffers[currentFrameInFlight], jointMatrixBuffers[currentFrameInFlight]);
 
 
-
     //
     {
         // Draw/Cull pass (compute) - Construct indexed indirect buffer
@@ -570,7 +570,8 @@ void ModelLoading::Render()
                 instanceBuffers[currentFrameInFlight].address,
                 jointMatrixBuffers[currentFrameInFlight].address,
             };
-            vkCmdPushConstants(cmd, mainSkeletalRenderPipeline.pipelineLayout.handle, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(BindlessAddressSkeletalPushConstant), &skeletalPushData);
+            vkCmdPushConstants(cmd, mainSkeletalRenderPipeline.pipelineLayout.handle, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(BindlessAddressSkeletalPushConstant),
+                               &skeletalPushData);
 
             vkCmdDrawIndexedIndirectCount(cmd,
                                           opaqueSkeletalIndexedIndirectBuffer.handle, 0,
@@ -811,8 +812,6 @@ bool ModelLoading::LoadModelIntoBuffers(const std::filesystem::path& modelPath, 
             primitiveIndex += primitiveOffsetCount;
         }
     }
-
-
 
 
     modelData.samplers = std::move(model.samplers);
