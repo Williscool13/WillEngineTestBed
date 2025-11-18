@@ -94,6 +94,7 @@ void AssetPipeline::Initialize()
 
     CreateMeshletModel();
     basicMeshShaderPipeline = Renderer::BasicMeshShaderPipeline(vulkanContext.get());
+    meshShaderPipeline = Renderer::MainMeshShaderPipeline(vulkanContext.get(), bindlessResourcesDescriptorBuffer.descriptorSetLayout.handle);
 }
 
 void AssetPipeline::Run()
@@ -107,7 +108,7 @@ void AssetPipeline::Run()
         if (input.IsKeyPressed(Key::RETURN)) {
             Uint32 flags = SDL_GetWindowFlags(window);
             if (flags & SDL_WINDOW_BORDERLESS) {
-                SDL_SetWindowFullscreen(window, 0);
+                SDL_SetWindowFullscreen(window, false);
                 SDL_SetWindowBordered(window, true);
                 bSwapchainOutdated = true;
             }
@@ -210,12 +211,12 @@ void AssetPipeline::Render(uint32_t currentFrameInFlight, Renderer::FrameSynchro
         sceneData.view = view;
         sceneData.proj = proj;
         sceneData.viewProj = proj * view;
-        sceneData.renderTargetSize.x = scaledRenderExtent[0];
-        sceneData.renderTargetSize.y = scaledRenderExtent[1];
+        sceneData.renderTargetSize.x = static_cast<float>(scaledRenderExtent[0]);
+        sceneData.renderTargetSize.y = static_cast<float>(scaledRenderExtent[1]);
         sceneData.deltaTime = deltaTime;
 
         Renderer::AllocatedBuffer& currentSceneDataBuffer = sceneDataBuffers[currentFrameInFlight];
-        Renderer::SceneData* currentSceneData = static_cast<Renderer::SceneData*>(currentSceneDataBuffer.allocationInfo.pMappedData);
+        auto* currentSceneData = static_cast<Renderer::SceneData*>(currentSceneDataBuffer.allocationInfo.pMappedData);
         *currentSceneData = sceneData;
     }
 
@@ -442,12 +443,10 @@ void AssetPipeline::CreateMeshletModel()
     uint32_t vertexOffset = meshletModelData.vertexAllocation.offset / sizeof(Renderer::Vertex);
     uint32_t meshletVerticesOffset = meshletModelData.meshletVerticesAllocation.offset / sizeof(uint32_t);
     uint32_t meshletTriangleOffset = meshletModelData.meshletTrianglesAllocation.offset / sizeof(uint8_t);
-    uint32_t primitiveOffset = meshletModelData.primitiveAllocation.offset / sizeof(Renderer::MeshletPrimitive);
     for (Renderer::Meshlet& meshlet : meshletModel.meshlets) {
         meshlet.vertexOffset += vertexOffset;
         meshlet.meshletVerticesOffset += meshletVerticesOffset;
         meshlet.meshletTriangleOffset += meshletTriangleOffset;
-        meshlet.meshletPrimitiveIndex += primitiveOffset;
     }
 
     size_t sizeMeshlets = meshletModel.meshlets.size() * sizeof(Renderer::Meshlet);

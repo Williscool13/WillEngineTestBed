@@ -16,6 +16,7 @@
 #include "render/descriptor_buffer/descriptor_buffer_bindless_resources.h"
 #include "render/model/model_data.h"
 #include "render/pipelines/basic_mesh_shader_pipeline.h"
+#include "render/pipelines/main_mesh_shader_pipeline.h"
 #include "render/pipelines/render_pipeline.h"
 
 
@@ -82,7 +83,7 @@ private:
     Renderer::AllocatedBuffer materialBuffer;
     OffsetAllocator::Allocator materialBufferAllocator{sizeof(Renderer::MaterialProperties) * Renderer::MEGA_MATERIAL_BUFFER_COUNT};
     Renderer::AllocatedBuffer primitiveBuffer;
-    OffsetAllocator::Allocator primitiveBufferAllocator{sizeof(Renderer::MaterialProperties) * Renderer::MEGA_PRIMITIVE_BUFFER_COUNT};
+    OffsetAllocator::Allocator primitiveBufferAllocator{sizeof(Renderer::MeshletPrimitive) * Renderer::MEGA_PRIMITIVE_BUFFER_COUNT};
 
     HandleAllocator<Renderer::ModelMatrix, Renderer::BINDLESS_MODEL_MATRIX_COUNT> modelMatrixAllocator;
     std::vector<Renderer::AllocatedBuffer> modelBuffers;
@@ -95,6 +96,8 @@ private:
     Renderer::MeshletModelData meshletModelData{};
 
     Renderer::BasicMeshShaderPipeline basicMeshShaderPipeline{};
+
+    Renderer::MainMeshShaderPipeline meshShaderPipeline{};
 };
 }
 

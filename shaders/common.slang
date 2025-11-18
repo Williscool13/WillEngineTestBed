@@ -39,7 +39,6 @@ public struct Meshlet
     public uint32_t meshletTriangleOffset;
     public uint32_t meshletVerticesCount;
     public uint32_t meshletTriangleCount;
-    public uint32_t meshletPrimitiveIndex;
 };
 
 public struct MeshletPrimitive

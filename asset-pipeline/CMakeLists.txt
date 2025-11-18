@@ -25,7 +25,6 @@ add_custom_command(TARGET asset-pipeline POST_BUILD
 
 
 compile_shaders(asset-pipeline
-        #${CMAKE_SOURCE_DIR}/shaders/meshShader.slang mesh meshMain
         ${CMAKE_SOURCE_DIR}/shaders/render.slang vertex vertexMain
         ${CMAKE_SOURCE_DIR}/shaders/render.slang fragment fragmentMain
         ${CMAKE_SOURCE_DIR}/shaders/render2.slang vertex vertexMain
@@ -33,4 +32,7 @@ compile_shaders(asset-pipeline
         ${CMAKE_SOURCE_DIR}/shaders/basicMeshShader.slang task taskMain
         ${CMAKE_SOURCE_DIR}/shaders/basicMeshShader.slang mesh meshMain
         ${CMAKE_SOURCE_DIR}/shaders/basicMeshShader.slang fragment fragmentMain
+        ${CMAKE_SOURCE_DIR}/shaders/meshShader.slang task taskMain
+        ${CMAKE_SOURCE_DIR}/shaders/meshShader.slang mesh meshMain
+        ${CMAKE_SOURCE_DIR}/shaders/meshShader.slang fragment fragmentMain
 )

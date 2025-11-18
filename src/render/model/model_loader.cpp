@@ -683,7 +683,6 @@ ExtractedMeshletModel ModelLoader::LoadMeshletGltf(const std::filesystem::path& 
                     .meshletTriangleOffset = meshletTrianglesOffset + meshlet.triangle_offset,
                     .meshletVerticesCount = meshlet.vertex_count,
                     .meshletTriangleCount = meshlet.triangle_count,
-                    .meshletPrimitiveIndex = meshData.primitiveIndices.back()
                 });
             }
         }
