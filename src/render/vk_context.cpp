@@ -64,6 +64,13 @@ VulkanContext::VulkanContext(SDL_Window* window)
     // Descriptor Buffer Extension
     VkPhysicalDeviceDescriptorBufferFeaturesEXT descriptorBufferFeatures = {};
     descriptorBufferFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_FEATURES_EXT;
+    descriptorBufferFeatures.descriptorBuffer = VK_TRUE;
+
+    // Task/Mesh Shader Extension
+    VkPhysicalDeviceMeshShaderFeaturesEXT meshShaderFeatures = {};
+    meshShaderFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
+    meshShaderFeatures.taskShader = VK_TRUE;
+    meshShaderFeatures.meshShader = VK_TRUE;
 
     // Modern Rendering (Vulkan 1.3)
     features.dynamicRendering = VK_TRUE;
@@ -77,7 +84,6 @@ VulkanContext::VulkanContext(SDL_Window* window)
     features12.shaderUniformBufferArrayNonUniformIndexing = VK_TRUE;
     features12.shaderStorageBufferArrayNonUniformIndexing = VK_TRUE;
     features12.drawIndirectCount = VK_TRUE;
-    descriptorBufferFeatures.descriptorBuffer = VK_TRUE;
     otherFeatures.multiDrawIndirect = VK_TRUE;
 
     // SV_VertexID
@@ -92,12 +98,14 @@ VulkanContext::VulkanContext(SDL_Window* window)
             .set_required_features_11(features11)
             .set_required_features(otherFeatures)
             .add_required_extension(VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME)
+            .add_required_extension(VK_EXT_MESH_SHADER_EXTENSION_NAME)
             .set_surface(surface)
             .select()
             .value();
 
     vkb::DeviceBuilder deviceBuilder{targetDevice};
     deviceBuilder.add_pNext(&descriptorBufferFeatures);
+    deviceBuilder.add_pNext(&meshShaderFeatures);
     vkb::Device vkbDevice = deviceBuilder.build().value();
 
     device = vkbDevice.device;
@@ -151,11 +159,20 @@ VulkanContext::VulkanContext(SDL_Window* window)
     vmaCreateAllocator(&allocatorInfo, &allocator);
 
 
-    VkPhysicalDeviceProperties2 deviceProperties{};
-    deviceProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
-    deviceProperties.pNext = &deviceInfo.descriptorBufferProps;
-    vkGetPhysicalDeviceProperties2(physicalDevice, &deviceProperties);
-    deviceInfo.properties = deviceProperties.properties;
+    LOG_INFO("=== Vulkan Context Handles ===");
+    LOG_INFO("Instance:              0x{:016x}", reinterpret_cast<uintptr_t>(instance));
+    LOG_INFO("Surface:               0x{:016x}", reinterpret_cast<uintptr_t>(surface));
+    LOG_INFO("Physical Device:       0x{:016x}", reinterpret_cast<uintptr_t>(physicalDevice));
+    LOG_INFO("Device:                0x{:016x}", reinterpret_cast<uintptr_t>(device));
+    LOG_INFO("Graphics Queue:        0x{:016x}", reinterpret_cast<uintptr_t>(graphicsQueue));
+    LOG_INFO("Graphics Queue Family: {}", graphicsQueueFamily);
+    LOG_INFO("Transfer Queue:        0x{:016x}", reinterpret_cast<uintptr_t>(transferQueue));
+    LOG_INFO("Transfer Queue Family: {}", transferQueueFamily);
+    LOG_INFO("VMA Allocator:         0x{:016x}", reinterpret_cast<uintptr_t>(allocator));
+
+    deviceInfo.properties.pNext = &deviceInfo.descriptorBufferProps;
+    deviceInfo.descriptorBufferProps.pNext = &deviceInfo.meshShaderProps;
+    vkGetPhysicalDeviceProperties2(physicalDevice, &deviceInfo.properties);
 }
 
 VulkanContext::~VulkanContext()

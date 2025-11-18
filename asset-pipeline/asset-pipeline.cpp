@@ -13,6 +13,7 @@
 #include <backends/imgui_impl_vulkan.h>
 #include <core/constants.h>
 
+#include "core/time.h"
 #include "crash-handling/crash_handler.h"
 #include "crash-handling/logger.h"
 
@@ -37,7 +38,7 @@ AssetPipeline::~AssetPipeline() = default;
 
 void AssetPipeline::Initialize()
 {
-    Utils::ScopedTimer timer{"Template Initialization"};
+    Utils::ScopedTimer timer{"Asset Pipeline Initialization"};
     bool sdlInitSuccess = SDL_Init(SDL_INIT_VIDEO);
     if (!sdlInitSuccess) {
         LOG_ERROR("SDL_Init failed: {}", SDL_GetError());
@@ -51,48 +52,73 @@ void AssetPipeline::Initialize()
     constexpr auto window_flags = SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE;
 
     window = SDL_CreateWindow(
-        "Vulkan Test Bed",
+        "Asset Pipeline",
         renderExtent[0],
         renderExtent[1],
         window_flags);
 
     SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
     SDL_ShowWindow(window);
-
     int32_t w;
     int32_t h;
     SDL_GetWindowSize(window, &w, &h);
-    Input::Input::Get().Init(window, w, h);
+    Input::Get().Init(window, w, h);
+
+    renderContext->RequestRenderExtentResize(w, h);
+    renderContext->ApplyRenderExtentResize();
 
     vulkanContext = std::make_unique<Renderer::VulkanContext>(window);
     swapchain = std::make_unique<Renderer::Swapchain>(vulkanContext.get(), w, h);
     renderTargets = std::make_unique<Renderer::RenderTargets>(vulkanContext.get(), Renderer::DEFAULT_RENDER_TARGET_WIDTH, Renderer::DEFAULT_RENDER_TARGET_HEIGHT);
-    renderFramesInFlight = swapchain->imageCount;
-    frameSynchronization.reserve(renderFramesInFlight);
-    for (int32_t i = 0; i < renderFramesInFlight; ++i) {
+
+    VkBufferCreateInfo bufferInfo = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+    bufferInfo.pNext = nullptr;
+    VmaAllocationCreateInfo vmaAllocInfo = {};
+    vmaAllocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+    vmaAllocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+    bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
+    bufferInfo.size = sizeof(Renderer::SceneData);
+    // make 3 even though we may only get 2 from swapchain (optimize for production, simplify for test)
+    constexpr int32_t tripleBuffering = 3;
+    frameSynchronization.reserve(tripleBuffering);
+    for (int32_t i = 0; i < tripleBuffering; ++i) {
         frameSynchronization.emplace_back(vulkanContext.get());
         frameSynchronization[i].Initialize();
+
+        sceneDataBuffers.push_back(Renderer::VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo));
     }
 
-    bindlessResourcesDescriptorBuffer = Renderer::DescriptorBufferBindlessResources(vulkanContext.get());
     modelLoader = std::make_unique<Renderer::ModelLoader>(vulkanContext.get());
 
     CreateBuffers();
 
     CreateMeshletModel();
-
-    basicRenderPipeline = Renderer::BasicRenderPipeline(vulkanContext.get());
+    basicMeshShaderPipeline = Renderer::BasicMeshShaderPipeline(vulkanContext.get());
 }
 
 void AssetPipeline::Run()
 {
     Input& input = Input::Input::Get();
+    Time& time = Time::Get();
+
     SDL_Event e;
     bool exit = false;
     while (true) {
-        auto wait = std::chrono::milliseconds(8);
-        std::this_thread::sleep_for(wait);
+        if (input.IsKeyPressed(Key::RETURN)) {
+            Uint32 flags = SDL_GetWindowFlags(window);
+            if (flags & SDL_WINDOW_BORDERLESS) {
+                SDL_SetWindowFullscreen(window, 0);
+                SDL_SetWindowBordered(window, true);
+                bSwapchainOutdated = true;
+            }
+            else {
+                SDL_SetWindowBordered(window, false);
+                SDL_SetWindowFullscreen(window, true);
+                bSwapchainOutdated = true;
+            }
+        }
 
+        input.FrameReset();
         while (SDL_PollEvent(&e) != 0) {
             input.ProcessEvent(e);
             if (e.type == SDL_EVENT_QUIT) { exit = true; }
@@ -103,10 +129,16 @@ void AssetPipeline::Run()
                 || e.type == SDL_EVENT_WINDOW_RESIZED
                 || e.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED) {
                 bSwapchainOutdated = true;
-                }
+            }
         }
-        input.UpdateFocus(SDL_GetWindowFlags(window));
 
+        if (exit) {
+            bShouldExit = true;
+            break;
+        }
+
+        input.UpdateFocus(SDL_GetWindowFlags(window));
+        time.Update();
         if (bSwapchainOutdated) {
             vkDeviceWaitIdle(vulkanContext->device);
 
@@ -114,13 +146,15 @@ void AssetPipeline::Run()
             SDL_GetWindowSize(window, &w, &h);
 
             swapchain->Recreate(w, h);
+            Input::Input::Get().UpdateWindowExtent(swapchain->extent.width, swapchain->extent.height);
+            if (Renderer::RENDER_TARGET_SIZE_EQUALS_SWAPCHAIN_SIZE) { renderContext->RequestRenderExtentResize(w, h); }
+
             for (Renderer::FrameSynchronization& frameSync : frameSynchronization) {
                 frameSync.RecreateSynchronization();
             }
-            Input::Input::Get().UpdateWindowExtent(swapchain->extent.width, swapchain->extent.height);
+
             bSwapchainOutdated = false;
         }
-
         if (renderContext->HasPendingRenderExtentChanges()) {
             vkDeviceWaitIdle(vulkanContext->device);
             renderContext->ApplyRenderExtentResize();
@@ -129,23 +163,16 @@ void AssetPipeline::Run()
             renderTargets->Recreate(newExtents[0], newExtents[1]);
         }
 
-        if (exit) {
-            bShouldExit = true;
-            break;
-        }
 
-        auto& currentFrameSync = frameSynchronization[frameNumber % renderFramesInFlight];
-        Render(currentFrameSync);
-        input.FrameReset();
+        const uint32_t currentFrameInFlight = frameNumber % swapchain->imageCount;
+        auto& currentFrameSync = frameSynchronization[currentFrameInFlight];
+        Render(currentFrameInFlight, currentFrameSync);
         frameNumber++;
     }
 }
 
-void AssetPipeline::Render(Renderer::FrameSynchronization& frameSync)
+void AssetPipeline::Render(uint32_t currentFrameInFlight, Renderer::FrameSynchronization& frameSync)
 {
-    const uint32_t currentFrameInFlight = frameNumber % swapchain->imageCount;
-    std::array<uint32_t, 2> scaledRenderExtent = renderContext->GetScaledRenderExtent();
-
     // Wait for the GPU to finish the last frame that used this frame-in-flight's resources (N - imageCount).
     VK_CHECK(vkWaitForFences(vulkanContext->device, 1, &frameSync.renderFence, true, 1000000000));
     VK_CHECK(vkResetFences(vulkanContext->device, 1, &frameSync.renderFence));
@@ -159,7 +186,38 @@ void AssetPipeline::Render(Renderer::FrameSynchronization& frameSync)
         return;
     }
 
+    std::array<uint32_t, 2> scaledRenderExtent = renderContext->GetScaledRenderExtent();
+    const Input& input = Input::Input::Get();
+    const float deltaTime = Time::Get().GetDeltaTime();
     VkImage currentSwapchainImage = swapchain->swapchainImages[swapchainImageIndex];
+
+    //
+    {
+        freeCamera.Update(deltaTime);
+        const glm::vec3 cameraPos = freeCamera.GetPosition();
+        const glm::vec3 forward = freeCamera.GetForward();
+        const glm::vec3 up = freeCamera.GetUp();
+
+        glm::mat4 view = glm::lookAt(cameraPos, cameraPos + forward, up);
+
+        glm::mat4 proj = glm::perspective(
+            freeCamera.GetFov(),
+            static_cast<float>(scaledRenderExtent[0]) / static_cast<float>(scaledRenderExtent[1]),
+            freeCamera.GetFarPlane(),
+            freeCamera.GetNearPlane()
+        );
+
+        sceneData.view = view;
+        sceneData.proj = proj;
+        sceneData.viewProj = proj * view;
+        sceneData.renderTargetSize.x = scaledRenderExtent[0];
+        sceneData.renderTargetSize.y = scaledRenderExtent[1];
+        sceneData.deltaTime = deltaTime;
+
+        Renderer::AllocatedBuffer& currentSceneDataBuffer = sceneDataBuffers[currentFrameInFlight];
+        Renderer::SceneData* currentSceneData = static_cast<Renderer::SceneData*>(currentSceneDataBuffer.allocationInfo.pMappedData);
+        *currentSceneData = sceneData;
+    }
 
     VkCommandBuffer cmd = frameSync.commandBuffer;
     VK_CHECK(vkResetCommandBuffer(cmd, 0));
@@ -172,7 +230,7 @@ void AssetPipeline::Render(Renderer::FrameSynchronization& frameSync)
         auto barrier = Renderer::VkHelpers::ImageMemoryBarrier(
             renderTargets->drawImage.handle,
             subresource,
-            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_UNDEFINED,
+            VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
             VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
         );
         auto dependencyInfo = Renderer::VkHelpers::DependencyInfo(&barrier);
@@ -187,34 +245,24 @@ void AssetPipeline::Render(Renderer::FrameSynchronization& frameSync)
         const VkRenderingAttachmentInfo depthAttachment = Renderer::VkHelpers::RenderingAttachmentInfo(renderTargets->depthImageView.handle, &depthClear, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
         const VkRenderingInfo renderInfo = Renderer::VkHelpers::RenderingInfo({scaledRenderExtent[0], scaledRenderExtent[1]}, &colorAttachment, &depthAttachment);
 
-
         vkCmdBeginRendering(cmd, &renderInfo);
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, basicRenderPipeline.pipeline.handle);
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, basicMeshShaderPipeline.pipeline.handle);
 
-        // Dynamic States
-        //  Viewport
-        VkViewport viewport = {};
-        viewport.x = 0;
-        viewport.y = 0;
-        viewport.width = scaledRenderExtent[0];
-        viewport.height = scaledRenderExtent[1];
-        viewport.minDepth = 0.f;
-        viewport.maxDepth = 1.f;
+        VkViewport viewport = Renderer::VkHelpers::GenerateViewport(scaledRenderExtent[0], scaledRenderExtent[1]);
         vkCmdSetViewport(cmd, 0, 1, &viewport);
-        //  Scissor
-        VkRect2D scissor = {};
-        scissor.offset.x = 0;
-        scissor.offset.y = 0;
-        scissor.extent.width = scaledRenderExtent[0];
-        scissor.extent.height = scaledRenderExtent[1];
+        VkRect2D scissor = Renderer::VkHelpers::GenerateScissor(scaledRenderExtent[0], scaledRenderExtent[1]);
         vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-        // VkViewport viewport = Renderer::VkHelpers::GenerateViewport(scaledRenderExtent[0], scaledRenderExtent[1]);
-        // vkCmdSetViewport(cmd, 0, 1, &viewport);
-        // VkRect2D scissor = Renderer::VkHelpers::GenerateScissor(scaledRenderExtent[0], scaledRenderExtent[1]);
-        // vkCmdSetScissor(cmd, 0, 1, &scissor);
+        Renderer::AllocatedBuffer& currentSceneDataBuffer = sceneDataBuffers[currentFrameInFlight];
+        Renderer::BasicMeshShaderPushConstants pushData{
+            glm::mat4(1.0f),
+            currentSceneDataBuffer.address,
+        };
 
-        vkCmdDraw(cmd, 6, 1, 0, 0);
+        vkCmdPushConstants(cmd, basicMeshShaderPipeline.pipelineLayout.handle, VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(Renderer::BasicMeshShaderPushConstants), &pushData);
+
+
+        vkCmdDrawMeshTasksEXT(cmd, 1, 1, 1);
         vkCmdEndRendering(cmd);
     }
 
@@ -230,7 +278,7 @@ void AssetPipeline::Render(Renderer::FrameSynchronization& frameSync)
         barriers[1] = Renderer::VkHelpers::ImageMemoryBarrier(
             currentSwapchainImage,
             Renderer::VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT),
-            VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_UNDEFINED,
+            VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_UNDEFINED,
             VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
         );
         VkDependencyInfo depInfo{.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
@@ -239,7 +287,7 @@ void AssetPipeline::Render(Renderer::FrameSynchronization& frameSync)
         vkCmdPipelineBarrier2(cmd, &depInfo);
     }
 
-    // Copy
+    // Blit
     {
         VkOffset3D renderOffset = {static_cast<int32_t>(scaledRenderExtent[0]), static_cast<int32_t>(scaledRenderExtent[1]), 1};
         VkOffset3D swapchainOffset = {static_cast<int32_t>(swapchain->extent.width), static_cast<int32_t>(swapchain->extent.height), 1};
@@ -267,14 +315,14 @@ void AssetPipeline::Render(Renderer::FrameSynchronization& frameSync)
         vkCmdBlitImage2(cmd, &blitInfo);
     }
 
-    // Final transition
+    //
     {
         auto subresource = Renderer::VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT);
         auto barrier = Renderer::VkHelpers::ImageMemoryBarrier(
             currentSwapchainImage,
             subresource,
             VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-            VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT,VK_ACCESS_2_NONE,VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
+            VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
         );
         auto dependencyInfo = Renderer::VkHelpers::DependencyInfo(&barrier);
         vkCmdPipelineBarrier2(cmd, &dependencyInfo);
@@ -283,7 +331,7 @@ void AssetPipeline::Render(Renderer::FrameSynchronization& frameSync)
     VK_CHECK(vkEndCommandBuffer(cmd));
 
     VkCommandBufferSubmitInfo commandBufferSubmitInfo = Renderer::VkHelpers::CommandBufferSubmitInfo(frameSync.commandBuffer);
-    VkSemaphoreSubmitInfo swapchainSemaphoreWaitInfo = Renderer::VkHelpers::SemaphoreSubmitInfo(frameSync.swapchainSemaphore, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT);
+    VkSemaphoreSubmitInfo swapchainSemaphoreWaitInfo = Renderer::VkHelpers::SemaphoreSubmitInfo(frameSync.swapchainSemaphore, VK_PIPELINE_STAGE_2_BLIT_BIT);
     VkSemaphoreSubmitInfo renderSemaphoreSignalInfo = Renderer::VkHelpers::SemaphoreSubmitInfo(frameSync.renderSemaphore, VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT);
     VkSubmitInfo2 submitInfo = Renderer::VkHelpers::SubmitInfo(&commandBufferSubmitInfo, &swapchainSemaphoreWaitInfo, &renderSemaphoreSignalInfo);
 
@@ -348,6 +396,8 @@ void AssetPipeline::CreateBuffers()
         bufferInfo.size = sizeof(Renderer::Model) * Renderer::BINDLESS_MODEL_MATRIX_COUNT;
         jointMatrixBuffers.push_back(Renderer::VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo));
     }
+
+    bindlessResourcesDescriptorBuffer = Renderer::DescriptorBufferBindlessResources(vulkanContext.get());
 }
 
 void AssetPipeline::CreateMeshletModel()

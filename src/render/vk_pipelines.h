@@ -22,48 +22,50 @@ public:
 
     RenderPipelineBuilder();
 
-    VkGraphicsPipelineCreateInfo generatePipelineCreateInfo(VkPipelineCreateFlagBits flags = VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT);
+    VkGraphicsPipelineCreateInfo GeneratePipelineCreateInfo(VkPipelineCreateFlagBits flags = VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT);
 
-    void clear();
+    void Clear();
 
-    void setShaders(VkShaderModule vertexShader);
+    void SetShaders(VkShaderModule vertexShader);
 
-    void setShaders(VkShaderModule vertexShader, VkShaderModule fragmentShader);
+    void SetShaders(VkShaderModule vertexShader, VkShaderModule fragmentShader);
 
-    void setShaders(VkShaderModule vertexShader, VkShaderModule tessControlShader, VkShaderModule tessEvalShader, VkShaderModule fragmentShader);
+    void SetShaders(VkShaderModule vertexShader, VkShaderModule tessControlShader, VkShaderModule tessEvalShader, VkShaderModule fragmentShader);
 
-    void setupVertexInput(const std::vector<VkVertexInputBindingDescription>& bindings, const std::vector<VkVertexInputAttributeDescription>& attributes);
+    void SetTaskMeshShaders(VkShaderModule taskShader, VkShaderModule meshShader, VkShaderModule fragmentShader);
 
-    void setupInputAssembly(VkPrimitiveTopology topology, bool enablePrimitiveRestart = false);
+    void SetupVertexInput(const std::vector<VkVertexInputBindingDescription>& bindings, const std::vector<VkVertexInputAttributeDescription>& attributes);
 
-    void setupRasterization(VkPolygonMode polygonMode, VkCullModeFlags cullMode, VkFrontFace frontFace, float lineWidth = 1.0f, bool rasterizerDiscardEnable = false);
+    void SetupInputAssembly(VkPrimitiveTopology topology, bool enablePrimitiveRestart = false);
 
-    void enableDepthBias(float depthBiasConstantFactor, float depthBiasClamp, float depthBiasSlopeFactor);
+    void SetupRasterization(VkPolygonMode polygonMode, VkCullModeFlags cullMode, VkFrontFace frontFace, float lineWidth = 1.0f, bool rasterizerDiscardEnable = false);
 
-    void setupMultisampling(VkBool32 sampleShadingEnable, VkSampleCountFlagBits rasterizationSamples, float minSampleShading, const VkSampleMask* pSampleMask, VkBool32 alphaToCoverageEnable,
+    void EnableDepthBias(float depthBiasConstantFactor, float depthBiasClamp, float depthBiasSlopeFactor);
+
+    void SetupMultisampling(VkBool32 sampleShadingEnable, VkSampleCountFlagBits rasterizationSamples, float minSampleShading, const VkSampleMask* pSampleMask, VkBool32 alphaToCoverageEnable,
                             VkBool32 alphaToOneEnable);
 
     /**
      * Shortcut to disable multisampling for this pipeline
      */
-    void disableMultisampling();
+    void DisableMultisampling();
 
-    void setupRenderer(const std::vector<VkFormat>& colorAttachmentFormat, VkFormat depthAttachmentFormat = VK_FORMAT_UNDEFINED, VkFormat stencilAttachmentFormat = VK_FORMAT_UNDEFINED);
+    void SetupRenderer(const std::vector<VkFormat>& colorAttachmentFormat, VkFormat depthAttachmentFormat = VK_FORMAT_UNDEFINED, VkFormat stencilAttachmentFormat = VK_FORMAT_UNDEFINED);
 
-    void setupDepthStencil(VkBool32 depthTestEnable, VkBool32 depthWriteEnable, VkCompareOp compareOp, VkBool32 depthBoundsTestEnable, VkBool32 stencilTestEnable, const VkStencilOpState& front,
+    void SetupDepthStencil(VkBool32 depthTestEnable, VkBool32 depthWriteEnable, VkCompareOp compareOp, VkBool32 depthBoundsTestEnable, VkBool32 stencilTestEnable, const VkStencilOpState& front,
                            const VkStencilOpState& back, float minDepthBounds, float maxDepthBounds);
 
-    void enableDepthTest(VkBool32 depthWriteEnable, VkCompareOp op);
+    void EnableDepthTest(VkBool32 depthWriteEnable, VkCompareOp op);
 
-    void disableDepthTest();
+    void DisableDepthTest();
 
-    void setupBlending(const std::vector<VkPipelineColorBlendAttachmentState>& blendAttachmentStates_);
+    void SetupBlending(const std::vector<VkPipelineColorBlendAttachmentState>& blendAttachmentStates_);
 
-    void setupPipelineLayout(VkPipelineLayout pipelineLayout_);
+    void SetupPipelineLayout(VkPipelineLayout pipelineLayout_);
 
-    void setupTessellation(int32_t controlPoints = 4);
+    void SetupTessellation(int32_t controlPoints = 4);
 
-    void addDynamicState(VkDynamicState dynamicState);
+    void AddDynamicState(VkDynamicState dynamicState);
 
 private:
     std::vector<VkPipelineShaderStageCreateInfo> shaderStages;

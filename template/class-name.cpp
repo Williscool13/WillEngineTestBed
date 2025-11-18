@@ -55,16 +55,17 @@ void ClassName::Initialize()
         window_flags);
     SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
     SDL_ShowWindow(window);
-
     int32_t w;
     int32_t h;
     SDL_GetWindowSize(window, &w, &h);
     Input::Get().Init(window, w, h);
 
+    renderContext->RequestRenderExtentResize(w, h);
+    renderContext->ApplyRenderExtentResize();
+
     vulkanContext = std::make_unique<Renderer::VulkanContext>(window);
     swapchain = std::make_unique<Renderer::Swapchain>(vulkanContext.get(), w, h);
     renderTargets = std::make_unique<Renderer::RenderTargets>(vulkanContext.get(), w, h);
-    frameSynchronization.reserve(swapchain->imageCount);
 
     VkBufferCreateInfo bufferInfo = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
     bufferInfo.pNext = nullptr;
@@ -76,6 +77,7 @@ void ClassName::Initialize()
 
     // make 3 even though we may only get 2 from swapchain (optimize for production, simplify for test)
     constexpr int32_t tripleBuffering = 3;
+    frameSynchronization.reserve(tripleBuffering);
     for (int32_t i = 0; i < tripleBuffering; ++i) {
         frameSynchronization.emplace_back(vulkanContext.get());
         frameSynchronization[i].Initialize();
@@ -152,6 +154,20 @@ void ClassName::Run()
     SDL_Event e;
     bool exit = false;
     while (true) {
+        if (input.IsKeyPressed(Key::RETURN)) {
+            Uint32 flags = SDL_GetWindowFlags(window);
+            if (flags & SDL_WINDOW_BORDERLESS) {
+                SDL_SetWindowFullscreen(window, 0);
+                SDL_SetWindowBordered(window, true);
+                bSwapchainOutdated = true;
+            }
+            else {
+                SDL_SetWindowBordered(window, false);
+                SDL_SetWindowFullscreen(window, true);
+                bSwapchainOutdated = true;
+            }
+        }
+
         input.FrameReset();
         while (SDL_PollEvent(&e) != 0) {
             input.ProcessEvent(e);
@@ -238,7 +254,7 @@ void ClassName::Render(uint32_t currentFrameInFlight, Renderer::FrameSynchroniza
             static_cast<float>(scaledRenderExtent[0]) / static_cast<float>(scaledRenderExtent[1]),
             freeCamera.GetFarPlane(),
             freeCamera.GetNearPlane()
-            );
+        );
 
         sceneData.view = view;
         sceneData.proj = proj;
@@ -307,7 +323,7 @@ void ClassName::Render(uint32_t currentFrameInFlight, Renderer::FrameSynchroniza
         vkCmdEndRendering(cmd);
     }
 
-    // Transition 2 - Prepare for copy
+    // Prepare for copy
     {
         VkImageMemoryBarrier2 barriers[2];
         barriers[0] = Renderer::VkHelpers::ImageMemoryBarrier(

@@ -10,6 +10,8 @@ add_executable(asset-pipeline
 target_link_libraries(asset-pipeline PRIVATE
         engine-common
         crash-handling
+        core-lib
+        game-lib
         render-lib
         input-lib
         meshoptimizer
@@ -26,4 +28,9 @@ compile_shaders(asset-pipeline
         #${CMAKE_SOURCE_DIR}/shaders/meshShader.slang mesh meshMain
         ${CMAKE_SOURCE_DIR}/shaders/render.slang vertex vertexMain
         ${CMAKE_SOURCE_DIR}/shaders/render.slang fragment fragmentMain
+        ${CMAKE_SOURCE_DIR}/shaders/render2.slang vertex vertexMain
+        ${CMAKE_SOURCE_DIR}/shaders/render2.slang fragment fragmentMain
+        ${CMAKE_SOURCE_DIR}/shaders/basicMeshShader.slang task taskMain
+        ${CMAKE_SOURCE_DIR}/shaders/basicMeshShader.slang mesh meshMain
+        ${CMAKE_SOURCE_DIR}/shaders/basicMeshShader.slang fragment fragmentMain
 )

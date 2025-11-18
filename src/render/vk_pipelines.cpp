@@ -14,10 +14,10 @@ RenderPipelineBuilder::RenderPipelineBuilder()
 {
     dynamicInfo.pDynamicStates = dynamicStates.data();
     dynamicInfo.dynamicStateCount = dynamicStates.size();
-    clear();
+    Clear();
 }
 
-VkGraphicsPipelineCreateInfo RenderPipelineBuilder::generatePipelineCreateInfo(VkPipelineCreateFlagBits flags)
+VkGraphicsPipelineCreateInfo RenderPipelineBuilder::GeneratePipelineCreateInfo(VkPipelineCreateFlagBits flags)
 {
     constexpr VkPipelineColorBlendAttachmentState colorBlendAttachment{
         VK_FALSE,
@@ -62,7 +62,7 @@ VkGraphicsPipelineCreateInfo RenderPipelineBuilder::generatePipelineCreateInfo(V
     return pipelineInfo;
 }
 
-void RenderPipelineBuilder::clear()
+void RenderPipelineBuilder::Clear()
 {
     shaderStages.clear();
     inputAssembly = {.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
@@ -111,20 +111,20 @@ void RenderPipelineBuilder::clear()
     tessellation = {};
 }
 
-void RenderPipelineBuilder::setShaders(VkShaderModule vertexShader)
+void RenderPipelineBuilder::SetShaders(VkShaderModule vertexShader)
 {
     shaderStages.clear();
     shaderStages.push_back(VkHelpers::PipelineShaderStageCreateInfo(vertexShader, VK_SHADER_STAGE_VERTEX_BIT));
 }
 
-void RenderPipelineBuilder::setShaders(VkShaderModule vertexShader, VkShaderModule fragmentShader)
+void RenderPipelineBuilder::SetShaders(VkShaderModule vertexShader, VkShaderModule fragmentShader)
 {
     shaderStages.clear();
     shaderStages.push_back(VkHelpers::PipelineShaderStageCreateInfo(vertexShader, VK_SHADER_STAGE_VERTEX_BIT));
     shaderStages.push_back(VkHelpers::PipelineShaderStageCreateInfo(fragmentShader, VK_SHADER_STAGE_FRAGMENT_BIT));
 }
 
-void RenderPipelineBuilder::setShaders(VkShaderModule vertexShader, VkShaderModule tessControlShader, VkShaderModule tessEvalShader, VkShaderModule fragmentShader)
+void RenderPipelineBuilder::SetShaders(VkShaderModule vertexShader, VkShaderModule tessControlShader, VkShaderModule tessEvalShader, VkShaderModule fragmentShader)
 {
     shaderStages.clear();
 
@@ -134,7 +134,15 @@ void RenderPipelineBuilder::setShaders(VkShaderModule vertexShader, VkShaderModu
     shaderStages.push_back(VkHelpers::PipelineShaderStageCreateInfo(fragmentShader, VK_SHADER_STAGE_FRAGMENT_BIT));
 }
 
-void RenderPipelineBuilder::setupVertexInput(const std::vector<VkVertexInputBindingDescription>& bindings, const std::vector<VkVertexInputAttributeDescription>& attributes)
+void RenderPipelineBuilder::SetTaskMeshShaders(VkShaderModule taskShader, VkShaderModule meshShader, VkShaderModule fragmentShader)
+{
+    shaderStages.clear();
+    shaderStages.push_back(VkHelpers::PipelineShaderStageCreateInfo(taskShader, VK_SHADER_STAGE_TASK_BIT_EXT));
+    shaderStages.push_back(VkHelpers::PipelineShaderStageCreateInfo(meshShader, VK_SHADER_STAGE_MESH_BIT_EXT));
+    shaderStages.push_back(VkHelpers::PipelineShaderStageCreateInfo( fragmentShader, VK_SHADER_STAGE_FRAGMENT_BIT));
+}
+
+void RenderPipelineBuilder::SetupVertexInput(const std::vector<VkVertexInputBindingDescription>& bindings, const std::vector<VkVertexInputAttributeDescription>& attributes)
 {
     this->vertexBindings = bindings;
     this->vertexAttributes = attributes;
@@ -149,13 +157,13 @@ void RenderPipelineBuilder::setupVertexInput(const std::vector<VkVertexInputBind
     }
 }
 
-void RenderPipelineBuilder::setupInputAssembly(const VkPrimitiveTopology topology, const bool enablePrimitiveRestart)
+void RenderPipelineBuilder::SetupInputAssembly(const VkPrimitiveTopology topology, const bool enablePrimitiveRestart)
 {
     inputAssembly.topology = topology;
     inputAssembly.primitiveRestartEnable = enablePrimitiveRestart;
 }
 
-void RenderPipelineBuilder::setupRasterization(const VkPolygonMode polygonMode, const VkCullModeFlags cullMode, const VkFrontFace frontFace, const float lineWidth, const bool rasterizerDiscardEnable)
+void RenderPipelineBuilder::SetupRasterization(const VkPolygonMode polygonMode, const VkCullModeFlags cullMode, const VkFrontFace frontFace, const float lineWidth, const bool rasterizerDiscardEnable)
 {
     // Draw Mode
     rasterizer.polygonMode = polygonMode;
@@ -168,7 +176,7 @@ void RenderPipelineBuilder::setupRasterization(const VkPolygonMode polygonMode, 
     rasterizer.rasterizerDiscardEnable = rasterizerDiscardEnable;
 }
 
-void RenderPipelineBuilder::enableDepthBias(const float depthBiasConstantFactor, const float depthBiasClamp, const float depthBiasSlopeFactor)
+void RenderPipelineBuilder::EnableDepthBias(const float depthBiasConstantFactor, const float depthBiasClamp, const float depthBiasSlopeFactor)
 {
     rasterizer.depthBiasEnable = true;
     rasterizer.depthBiasConstantFactor = depthBiasConstantFactor;
@@ -176,7 +184,7 @@ void RenderPipelineBuilder::enableDepthBias(const float depthBiasConstantFactor,
     rasterizer.depthBiasSlopeFactor = depthBiasSlopeFactor;
 }
 
-void RenderPipelineBuilder::setupMultisampling(const VkBool32 sampleShadingEnable, const VkSampleCountFlagBits rasterizationSamples,
+void RenderPipelineBuilder::SetupMultisampling(const VkBool32 sampleShadingEnable, const VkSampleCountFlagBits rasterizationSamples,
                                                const float minSampleShading, const VkSampleMask* pSampleMask, const VkBool32 alphaToCoverageEnable,
                                                const VkBool32 alphaToOneEnable)
 {
@@ -190,12 +198,12 @@ void RenderPipelineBuilder::setupMultisampling(const VkBool32 sampleShadingEnabl
     multisampling.alphaToOneEnable = alphaToOneEnable;
 }
 
-void RenderPipelineBuilder::disableMultisampling()
+void RenderPipelineBuilder::DisableMultisampling()
 {
-    setupMultisampling(VK_FALSE, VK_SAMPLE_COUNT_1_BIT, 1.0f, nullptr, VK_FALSE, VK_FALSE);
+    SetupMultisampling(VK_FALSE, VK_SAMPLE_COUNT_1_BIT, 1.0f, nullptr, VK_FALSE, VK_FALSE);
 }
 
-void RenderPipelineBuilder::setupRenderer(const std::vector<VkFormat>& colorAttachmentFormat, const VkFormat depthAttachmentFormat, const VkFormat stencilAttachmentFormat)
+void RenderPipelineBuilder::SetupRenderer(const std::vector<VkFormat>& colorAttachmentFormat, const VkFormat depthAttachmentFormat, const VkFormat stencilAttachmentFormat)
 {
     // Color Format
     if (!colorAttachmentFormat.empty()) {
@@ -212,7 +220,7 @@ void RenderPipelineBuilder::setupRenderer(const std::vector<VkFormat>& colorAtta
     renderInfo.stencilAttachmentFormat = stencilAttachmentFormat;
 }
 
-void RenderPipelineBuilder::setupDepthStencil(const VkBool32 depthTestEnable, const VkBool32 depthWriteEnable, const VkCompareOp compareOp,
+void RenderPipelineBuilder::SetupDepthStencil(const VkBool32 depthTestEnable, const VkBool32 depthWriteEnable, const VkCompareOp compareOp,
                                               const VkBool32 depthBoundsTestEnable, const VkBool32 stencilTestEnable, const VkStencilOpState& front,
                                               const VkStencilOpState& back, const float minDepthBounds, const float maxDepthBounds)
 {
@@ -227,34 +235,34 @@ void RenderPipelineBuilder::setupDepthStencil(const VkBool32 depthTestEnable, co
     depthStencil.maxDepthBounds = maxDepthBounds;
 }
 
-void RenderPipelineBuilder::enableDepthTest(const VkBool32 depthWriteEnable, const VkCompareOp op)
+void RenderPipelineBuilder::EnableDepthTest(const VkBool32 depthWriteEnable, const VkCompareOp op)
 {
-    setupDepthStencil(VK_TRUE, depthWriteEnable, op,VK_FALSE, VK_FALSE, {}, {}, 0.0f, 1.0f);
+    SetupDepthStencil(VK_TRUE, depthWriteEnable, op,VK_FALSE, VK_FALSE, {}, {}, 0.0f, 1.0f);
 }
 
-void RenderPipelineBuilder::disableDepthTest()
+void RenderPipelineBuilder::DisableDepthTest()
 {
-    setupDepthStencil(VK_FALSE, VK_FALSE, VK_COMPARE_OP_NEVER,VK_FALSE, VK_FALSE, {}, {}, 0.0f, 1.0f);
+    SetupDepthStencil(VK_FALSE, VK_FALSE, VK_COMPARE_OP_NEVER,VK_FALSE, VK_FALSE, {}, {}, 0.0f, 1.0f);
 }
 
-void RenderPipelineBuilder::setupBlending(const std::vector<VkPipelineColorBlendAttachmentState>& blendAttachmentStates_)
+void RenderPipelineBuilder::SetupBlending(const std::vector<VkPipelineColorBlendAttachmentState>& blendAttachmentStates_)
 {
     this->blendAttachmentStates = blendAttachmentStates_;
 }
 
-void RenderPipelineBuilder::setupPipelineLayout(VkPipelineLayout pipelineLayout_)
+void RenderPipelineBuilder::SetupPipelineLayout(VkPipelineLayout pipelineLayout_)
 {
     this->pipelineLayout = pipelineLayout_;
 }
 
-void RenderPipelineBuilder::setupTessellation(const int32_t controlPoints)
+void RenderPipelineBuilder::SetupTessellation(const int32_t controlPoints)
 {
     bIsTessellationEnabled = true;
     tessellation.sType = VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_STATE_CREATE_INFO;
     tessellation.patchControlPoints = controlPoints;
 }
 
-void RenderPipelineBuilder::addDynamicState(const VkDynamicState dynamicState)
+void RenderPipelineBuilder::AddDynamicState(const VkDynamicState dynamicState)
 {
     dynamicStates.push_back(dynamicState);
     dynamicInfo.pDynamicStates = dynamicStates.data();

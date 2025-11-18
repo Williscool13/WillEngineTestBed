@@ -231,14 +231,14 @@ void SkeletalMain::CreateResources()
         }
 
         RenderPipelineBuilder renderPipelineBuilder;
-        renderPipelineBuilder.setShaders(vertShader, fragShader);
-        renderPipelineBuilder.setupInputAssembly(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-        renderPipelineBuilder.setupRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_BACK_BIT, VK_FRONT_FACE_CLOCKWISE);
-        renderPipelineBuilder.disableMultisampling();
-        renderPipelineBuilder.enableDepthTest(true, VK_COMPARE_OP_GREATER_OR_EQUAL);
-        renderPipelineBuilder.setupRenderer({DRAW_IMAGE_FORMAT}, VK_FORMAT_D32_SFLOAT);
-        renderPipelineBuilder.setupPipelineLayout(renderPipelineLayout);
-        VkGraphicsPipelineCreateInfo pipelineCreateInfo = renderPipelineBuilder.generatePipelineCreateInfo();
+        renderPipelineBuilder.SetShaders(vertShader, fragShader);
+        renderPipelineBuilder.SetupInputAssembly(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+        renderPipelineBuilder.SetupRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_BACK_BIT, VK_FRONT_FACE_CLOCKWISE);
+        renderPipelineBuilder.DisableMultisampling();
+        renderPipelineBuilder.EnableDepthTest(true, VK_COMPARE_OP_GREATER_OR_EQUAL);
+        renderPipelineBuilder.SetupRenderer({DRAW_IMAGE_FORMAT}, VK_FORMAT_D32_SFLOAT);
+        renderPipelineBuilder.SetupPipelineLayout(renderPipelineLayout);
+        VkGraphicsPipelineCreateInfo pipelineCreateInfo = renderPipelineBuilder.GeneratePipelineCreateInfo();
         VK_CHECK(vkCreateGraphicsPipelines(vulkanContext->device, VK_NULL_HANDLE, 1, &pipelineCreateInfo, nullptr, &renderPipeline));
 
         vkDestroyShaderModule(vulkanContext->device, vertShader, nullptr);

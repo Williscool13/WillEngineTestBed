@@ -67,6 +67,8 @@ add_library(render-lib STATIC
         pipelines/basic_render_pipeline.h
         pipelines/render_pipeline.cpp
         pipelines/render_pipeline.h
+        pipelines/basic_mesh_shader_pipeline.cpp
+        pipelines/basic_mesh_shader_pipeline.h
 )
 
 target_link_libraries(render-lib PUBLIC
