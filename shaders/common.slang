@@ -3,10 +3,13 @@ module common;
 public struct Vertex
 {
     public float3 position;
+    public float padding0;
     public float3 normal;
+    public float padding1;
     public float4 tangent;
     public float4 color;
     public float2 uv;
+    public float2 padding2;
     public uint4 joints;
     public float4 weights;
 };
@@ -39,6 +42,9 @@ public struct Meshlet
     public uint32_t meshletTriangleOffset;
     public uint32_t meshletVerticesCount;
     public uint32_t meshletTriangleCount;
+    uint32_t padding1;
+    uint32_t padding2;
+    uint32_t padding3;
 };
 
 public struct MeshletPrimitive
@@ -141,12 +147,20 @@ public struct MeshletData {
     public Meshlet[] meshlets;
 };
 
+public struct MeshletVertexIndex {
+    public uint32_t vertexIndex;
+}
+
+public struct MeshletTriangleIndex {
+    public uint8_t triangleIndex;
+}
+
 public struct MeshletVerticesData {
-    public uint32_t[] meshletVertices;
+    public MeshletVertexIndex[] meshletVertices;
 };
 
 public struct MeshletTrianglesData {
-    public uint8_t[] meshletTriangles;
+    public MeshletTriangleIndex[] meshletTriangles;
 };
 
 public struct ModelData {

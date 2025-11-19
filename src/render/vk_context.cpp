@@ -89,6 +89,9 @@ VulkanContext::VulkanContext(SDL_Window* window)
     // SV_VertexID
     features11.shaderDrawParameters = VK_TRUE;
 
+    // uint8_t/int8_t support
+    features12.shaderInt8 = VK_TRUE;
+
 
     vkb::PhysicalDeviceSelector selector{vkb_inst};
     vkb::PhysicalDevice targetDevice = selector

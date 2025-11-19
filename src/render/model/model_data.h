@@ -47,6 +47,9 @@ struct Meshlet
     uint32_t meshletTriangleOffset;
     uint32_t meshletVerticesCount;
     uint32_t meshletTriangleCount;
+    uint32_t padding1{0};
+    uint32_t padding2{0};
+    uint32_t padding3{0};
 };
 
 struct MeshletPrimitive

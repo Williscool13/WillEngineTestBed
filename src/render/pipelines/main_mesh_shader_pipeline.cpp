@@ -22,7 +22,7 @@ MainMeshShaderPipeline::MainMeshShaderPipeline(VulkanContext* context, VkDescrip
 {
     VkPushConstantRange renderPushConstantRange{};
     renderPushConstantRange.offset = 0;
-    renderPushConstantRange.size = sizeof(MainMeshShaderPipeline);
+    renderPushConstantRange.size = sizeof(MainMeshShaderPushConstants);
     renderPushConstantRange.stageFlags = VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT;
 
     VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo{};

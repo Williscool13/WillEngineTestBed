@@ -49,6 +49,8 @@ public:
 
     void CreateBuffers();
 
+    void CreateTrivialMeshletModel();
+
     void CreateMeshletModel();
 
 private:
@@ -86,17 +88,13 @@ private:
     OffsetAllocator::Allocator primitiveBufferAllocator{sizeof(Renderer::MeshletPrimitive) * Renderer::MEGA_PRIMITIVE_BUFFER_COUNT};
 
     HandleAllocator<Renderer::ModelMatrix, Renderer::BINDLESS_MODEL_MATRIX_COUNT> modelMatrixAllocator;
-    std::vector<Renderer::AllocatedBuffer> modelBuffers;
+    Renderer::AllocatedBuffer modelBuffer;
     HandleAllocator<Renderer::InstanceEntry, Renderer::BINDLESS_INSTANCE_COUNT> instanceEntryAllocator;
-    std::vector<Renderer::AllocatedBuffer> instanceBuffers;
-    // Joint matrices need to be contiguous because indices are coded in vertices. We could modify vertex properties but...
-    OffsetAllocator::Allocator jointMatrixAllocator{sizeof(Renderer::Model) * Renderer::BINDLESS_MODEL_MATRIX_COUNT};
-    std::vector<Renderer::AllocatedBuffer> jointMatrixBuffers;
+    Renderer::AllocatedBuffer instanceBuffer;
 
     Renderer::MeshletModelData meshletModelData{};
 
     Renderer::BasicMeshShaderPipeline basicMeshShaderPipeline{};
-
     Renderer::MainMeshShaderPipeline meshShaderPipeline{};
 };
 }
