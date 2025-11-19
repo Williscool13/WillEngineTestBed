@@ -29,6 +29,8 @@ struct MainMeshShaderPushConstants
     VkDeviceAddress materialBuffer; // well, this ones not yet dynamic
     VkDeviceAddress modelBuffer;
     VkDeviceAddress instanceBuffer;
+
+    uint32_t instanceIndex;;
 };
 
 

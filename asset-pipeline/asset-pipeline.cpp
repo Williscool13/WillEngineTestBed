@@ -271,9 +271,15 @@ void AssetPipeline::Render(uint32_t currentFrameInFlight, Renderer::FrameSynchro
             .materialBuffer = materialBuffer.address,
             .modelBuffer = modelBuffer.address,
             .instanceBuffer = instanceBuffer.address,
+            .instanceIndex = 0
         };
         // Renderer::BasicMeshShaderPushConstants pushData{glm::mat4(1.0f),currentSceneDataBuffer.address,};
 
+        vkCmdPushConstants(cmd, meshShaderPipeline.pipelineLayout.handle, VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                           sizeof(Renderer::MainMeshShaderPushConstants), &pushConstants);
+        vkCmdDrawMeshTasksEXT(cmd, 1, 1, 1);
+
+        pushConstants.instanceIndex = 1;
         vkCmdPushConstants(cmd, meshShaderPipeline.pipelineLayout.handle, VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                            sizeof(Renderer::MainMeshShaderPushConstants), &pushConstants);
         //vkCmdPushConstants(cmd, basicMeshShaderPipeline.pipelineLayout.handle, VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(Renderer::BasicMeshShaderPushConstants), &pushData);
@@ -715,9 +721,14 @@ void AssetPipeline::CreateMeshletModel()
 
 
     glm::mat4 mat{1.0f};
-    mat = glm::translate(mat, glm::vec3(0.0f, 2.0f, 0.0f));
+    mat = glm::translate(mat, glm::vec3(0.0f, 0.0f, 0.0f));
     Renderer::Model modelMatrix{mat};
     memcpy(static_cast<char*>(modelBuffer.allocationInfo.pMappedData), &modelMatrix, sizeof(Renderer::Model));
+
+    glm::mat4 mat2{1.0f};
+    mat2 = glm::translate(mat2, glm::vec3(2.0f, 2.0f, 0.0f));
+    Renderer::Model modelMatrix2{mat2};
+    memcpy(static_cast<char*>(modelBuffer.allocationInfo.pMappedData) + sizeof(Renderer::Model), &modelMatrix2, sizeof(Renderer::Model));
 
     // Add 1x instance (point to 1x model)
     Renderer::Instance i;
@@ -725,6 +736,19 @@ void AssetPipeline::CreateMeshletModel()
     i.primitiveIndex = 0;
     i.bIsAllocated = 1;
     i.jointMatrixOffset = 0;
+    Renderer::Instance i2;
+    i2.modelIndex = 1;
+    i2.primitiveIndex = 0;
+    i2.bIsAllocated = 1;
+    i2.jointMatrixOffset = 0;
+
+    Renderer::Instance dummyInst{0, 0, 0, false};
     memcpy(static_cast<char*>(instanceBuffer.allocationInfo.pMappedData), &i, sizeof(Renderer::Instance));
+    memcpy(static_cast<char*>(instanceBuffer.allocationInfo.pMappedData) + sizeof(Renderer::Instance), &i2, sizeof(Renderer::Instance));
+    auto a = static_cast<Renderer::Instance*>(instanceBuffer.allocationInfo.pMappedData)[0];
+    auto b = static_cast<Renderer::Instance*>(instanceBuffer.allocationInfo.pMappedData)[0];
+    auto c = static_cast<Renderer::Instance*>(instanceBuffer.allocationInfo.pMappedData)[2];
+    auto d = static_cast<Renderer::Instance*>(instanceBuffer.allocationInfo.pMappedData)[3];
+    //memcpy(static_cast<char*>(instanceBuffer.allocationInfo.pMappedData), &i, sizeof(Renderer::Instance));
 }
 }

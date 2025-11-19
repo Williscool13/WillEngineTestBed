@@ -9,6 +9,7 @@ struct VertexOutput
     float4 color : COLOR0;
     float2 uv : TEXCOORD0;
     nointerpolation uint32_t materialIndex : TEXCOORD4;
+    nointerpolation uint32_t dispatchId : TEXCOORD5;
 };
 
 
@@ -26,6 +27,8 @@ struct PushConsts {
     MaterialData* materialBuffer; // well, this ones not yet dynamic
     ModelData* modelBuffer;
     InstanceData* instanceBuffer;
+
+    uint32_t instanceIndex;
 };
 
 const static int32_t TASK_SHADER_DISPATCH_X = 32;
@@ -42,18 +45,16 @@ struct MeshletPayload
 
 
 [shader("task")]
-[numthreads(TASK_SHADER_DISPATCH_X, 1, 1)]
+[numthreads(1, 1, 1)]
 void taskMain(uniform PushConsts pushConstants, uint3 dispatchThreadId : SV_DispatchThreadID)
 {
-    uint32_t instanceIndex = dispatchThreadId.x;
-    Instance inst = pushConstants.instanceBuffer->instances[instanceIndex];
-    if (inst.bIsAllocated == 0) { return; }
 
+    Instance inst = pushConstants.instanceBuffer->instances[pushConstants.instanceIndex];
+    if (inst.bIsAllocated == 0) { return; }
 
     MeshletPrimitive prim = pushConstants.primitiveBuffer->primitives[inst.primitiveIndex];
 
-    // todo: Instance cull w/ primitive bounds
-    // todo: compacted dispatch with multiple groupshared (32 at a time is good, so 32 groups x 32 threads)
+    // todo: Instance cull w/ primitive bounds and groupshared packing (128 meshlets per task group, 4 processed each)
 
     MeshletPayload payload;
     payload.meshletBaseIndex = prim.meshletOffset;
@@ -93,7 +94,17 @@ void meshMain(
         vertices[i].normal = mul((float3x3)m.modelMatrix, v.normal);
         vertices[i].uv = v.uv;
         vertices[i].tangent = v.tangent;
-        vertices[i].color = v.color;
+
+        uint meshletID = groupId.x;
+        uint hash = meshletID * 747796405u + 2891336453u;
+        float3 color = float3(
+            (hash & 0xFF) / 255.0,
+            ((hash >> 8) & 0xFF) / 255.0,
+            ((hash >> 16) & 0xFF) / 255.0
+        );
+
+        vertices[i].color = float4(color, 1.0);
+        // vertices[i].color = v.color;
         vertices[i].materialIndex = payload.materialIndex;
     }
 
