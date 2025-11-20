@@ -31,7 +31,7 @@ struct PushConsts {
     uint32_t instanceIndex;
 };
 
-const static int32_t TASK_SHADER_DISPATCH_X = 32;
+const static int32_t TASK_SHADER_DISPATCH_X = 1;
 const static int32_t MESH_SHADER_DISPATCH_X = 32;
 const static uint MAX_VERTICES = 64;
 const static uint MAX_PRIMITIVES = 64;
@@ -43,9 +43,11 @@ struct MeshletPayload
     uint32_t materialIndex;
 };
 
+groupshared MeshletPayload sharedPayloads[TASK_SHADER_DISPATCH_X];
+
 
 [shader("task")]
-[numthreads(1, 1, 1)]
+[numthreads(TASK_SHADER_DISPATCH_X, 1, 1)]
 void taskMain(uniform PushConsts pushConstants, uint3 dispatchThreadId : SV_DispatchThreadID)
 {
 
@@ -56,23 +58,23 @@ void taskMain(uniform PushConsts pushConstants, uint3 dispatchThreadId : SV_Disp
 
     // todo: Instance cull w/ primitive bounds and groupshared packing (128 meshlets per task group, 4 processed each)
 
-    MeshletPayload payload;
-    payload.meshletBaseIndex = prim.meshletOffset;
-    payload.modelIndex = inst.modelIndex;
-    payload.materialIndex = prim.materialIndex;
+    sharedPayloads[0].meshletBaseIndex = prim.meshletOffset;
+    sharedPayloads[0].modelIndex = inst.modelIndex;
+    sharedPayloads[0].materialIndex = prim.materialIndex;
 
-    DispatchMesh(prim.meshletCount, 1, 1, payload);
+    DispatchMesh(prim.meshletCount, TASK_SHADER_DISPATCH_X, 1, sharedPayloads);
 }
 
 [shader("mesh")]
 [outputtopology("triangle")]
 [numthreads(MESH_SHADER_DISPATCH_X, 1, 1)]
 void meshMain(
-    in payload MeshletPayload payload,
+    in payload MeshletPayload sharedPayloads[TASK_SHADER_DISPATCH_X],
     out indices uint3 triangles[MAX_PRIMITIVES], out vertices VertexOutput vertices[MAX_VERTICES],
     uint3 groupId : SV_GroupID, uint3 gtid : SV_GroupThreadID,
     uniform PushConsts pushConstants)
 {
+    MeshletPayload payload = sharedPayloads[0];
     uint meshletIdx = payload.meshletBaseIndex + groupId.x;
     uint32_t instanceIndex = gtid.x;
 

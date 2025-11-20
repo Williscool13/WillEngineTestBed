@@ -69,6 +69,23 @@ public struct Instance
     public uint32_t bIsAllocated;
 };
 
+public struct MeshletInstance
+{
+    public uint32_t modelIndex;
+    public uint32_t meshletOffset;
+    public uint32_t meshletCount;
+    public uint32_t materialIndex;
+};
+
+public struct SkinnedMeshletInstance
+{
+    public uint32_t jointMatrixOffset;
+    public uint32_t meshletOffset;
+    public uint32_t meshletCount;
+    public uint32_t materialIndex;
+};
+
+
 public struct MaterialProperties
 {
     // Base PBR properties
@@ -169,6 +186,10 @@ public struct ModelData {
 
 public struct InstanceData {
     public Instance[] instances;
+}
+
+public struct MeshletInstanceData {
+    public MeshletInstance[] instances;
 }
 
 public struct VkDrawIndexedIndirectCommand

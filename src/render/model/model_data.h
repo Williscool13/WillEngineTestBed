@@ -81,6 +81,22 @@ struct Model
     glm::vec4 flags{1.0f}; // x: visible, y: shadow-caster, zw: reserved
 };
 
+struct MeshletInstance
+{
+    uint32_t modelIndex{INT32_MAX};
+    uint32_t meshletOffset{0};
+    uint32_t meshletCount{0};
+    uint32_t materialIndex{0};
+};
+
+struct SkinnedMeshletInstance
+{
+    uint32_t jointMatrixOffset{};
+    uint32_t meshletOffset{0};
+    uint32_t meshletCount{0};
+    uint32_t materialIndex{0};
+};
+
 struct Node
 {
     std::string name{};
