@@ -137,5 +137,5 @@ void meshMain(
 [shader("fragment")]
 float4 fragmentMain(VertexOutput vertexInput)
 {
-    return float4(vertexInput.color.xyz, 1.0f);
+    return float4(vertexInput.normal.xyz, 1.0f);
 }

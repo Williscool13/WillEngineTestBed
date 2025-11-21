@@ -16,6 +16,7 @@
 #include "render/descriptor_buffer/descriptor_buffer_bindless_resources.h"
 #include "render/model/model_data.h"
 #include "render/pipelines/basic_mesh_shader_pipeline.h"
+#include "render/pipelines/indirect_mesh_shader_pipeline.h"
 #include "render/pipelines/main_mesh_shader_pipeline.h"
 #include "render/pipelines/mesh_draw_cull_compute_pipeline.h"
 #include "render/pipelines/render_pipeline.h"
@@ -99,6 +100,7 @@ private:
 
     Renderer::MainMeshShaderPipeline meshShaderPipeline{};
     Renderer::MeshDrawCullComputePipeline meshDrawCullComputePipeline{};
+    Renderer::IndirectMeshShaderPipeline indirectMeshShaderPipeline{};
 };
 }
 

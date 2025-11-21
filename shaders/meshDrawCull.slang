@@ -4,7 +4,6 @@ struct PushConsts {
     SceneData* sceneData;
 
     MeshletPrimitiveData* primitiveBuffer;
-    ModelData* modelBuffer;
     InstanceData* instanceBuffer;
 
     MeshIndirectParameterBuffer* meshIndirectBuffer;

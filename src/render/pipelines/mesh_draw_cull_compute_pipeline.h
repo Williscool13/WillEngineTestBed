@@ -14,7 +14,6 @@ struct MeshDrawCullComputePushConstant
     VkDeviceAddress sceneData;
 
     VkDeviceAddress primitiveBuffer;
-    VkDeviceAddress modelBuffer;
     VkDeviceAddress instanceBuffer;
 
     VkDeviceAddress taskIndirectParameterBuffer;

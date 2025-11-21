@@ -99,6 +99,7 @@ void AssetPipeline::Initialize()
 
     meshShaderPipeline = Renderer::MainMeshShaderPipeline(vulkanContext.get(), bindlessResourcesDescriptorBuffer.descriptorSetLayout.handle);
     meshDrawCullComputePipeline = Renderer::MeshDrawCullComputePipeline(vulkanContext.get());
+    indirectMeshShaderPipeline = Renderer::IndirectMeshShaderPipeline(vulkanContext.get(), bindlessResourcesDescriptorBuffer.descriptorSetLayout.handle);
 }
 
 void AssetPipeline::Run()
@@ -266,7 +267,6 @@ void AssetPipeline::Render(uint32_t currentFrameInFlight, Renderer::FrameSynchro
         Renderer::MeshDrawCullComputePushConstant pushData{
             .sceneData = currentSceneDataBuffer.address,
             . primitiveBuffer = primitiveBuffer.address,
-            .modelBuffer = modelBuffer.address,
             .instanceBuffer = instanceBuffer.address,
             .taskIndirectParameterBuffer = taskIndirectParameterBuffer.address
         };
@@ -297,50 +297,95 @@ void AssetPipeline::Render(uint32_t currentFrameInFlight, Renderer::FrameSynchro
         vkCmdPipelineBarrier2(cmd, &dependencyInfo);
     }
 
-    // Draw
+    // Indirect Draw
     {
-        constexpr VkClearValue colorClear = {.color = {0.3f, 0.0f, 0.0f, 1.0f}};
+        constexpr VkClearValue colorClear = {.color = {0.0f, 0.0f, 1.0f, 1.0f}};
         const VkRenderingAttachmentInfo colorAttachment = Renderer::VkHelpers::RenderingAttachmentInfo(renderTargets->drawImageView.handle, &colorClear, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
         constexpr VkClearValue depthClear = {.depthStencil = {0.0f, 0u}};
         const VkRenderingAttachmentInfo depthAttachment = Renderer::VkHelpers::RenderingAttachmentInfo(renderTargets->depthImageView.handle, &depthClear, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
         const VkRenderingInfo renderInfo = Renderer::VkHelpers::RenderingInfo({scaledRenderExtent[0], scaledRenderExtent[1]}, &colorAttachment, &depthAttachment);
 
-        vkCmdBeginRendering(cmd, &renderInfo);
 
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, meshShaderPipeline.pipeline.handle);
-        //vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, basicMeshShaderPipeline.pipeline.handle);
+        vkCmdBeginRendering(cmd, &renderInfo);
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, indirectMeshShaderPipeline.pipeline.handle);
 
         VkViewport viewport = Renderer::VkHelpers::GenerateViewport(scaledRenderExtent[0], scaledRenderExtent[1]);
         vkCmdSetViewport(cmd, 0, 1, &viewport);
         VkRect2D scissor = Renderer::VkHelpers::GenerateScissor(scaledRenderExtent[0], scaledRenderExtent[1]);
         vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-        Renderer::AllocatedBuffer& currentSceneDataBuffer = sceneDataBuffers[currentFrameInFlight];
-        Renderer::MainMeshShaderPushConstants pushConstants{
+        Renderer::IndirectMeshShaderPushConstants pushData{
             .sceneData = currentSceneDataBuffer.address,
             .vertexBuffer = megaVertexBuffer.address,
-            .primitiveBuffer = primitiveBuffer.address,
             .meshletVerticesBuffer = megaMeshletVerticesBuffer.address,
             .meshletTrianglesBuffer = megaMeshletTrianglesBuffer.address,
             .meshletBuffer = megaMeshletBuffer.address,
+            .meshIndirectParameterBuffer = taskIndirectParameterBuffer.address,
             .materialBuffer = materialBuffer.address,
             .modelBuffer = modelBuffer.address,
-            .instanceBuffer = instanceBuffer.address,
-            .instanceIndex = 0
         };
-        // Renderer::BasicMeshShaderPushConstants pushData{glm::mat4(1.0f),currentSceneDataBuffer.address,};
 
-        vkCmdPushConstants(cmd, meshShaderPipeline.pipelineLayout.handle, VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                           sizeof(Renderer::MainMeshShaderPushConstants), &pushConstants);
-        vkCmdDrawMeshTasksEXT(cmd, 1, 1, 1);
+        vkCmdPushConstants(cmd, indirectMeshShaderPipeline.pipelineLayout.handle, VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                           sizeof(Renderer::IndirectMeshShaderPushConstants), &pushData);
 
-        pushConstants.instanceIndex = 1;
-        vkCmdPushConstants(cmd, meshShaderPipeline.pipelineLayout.handle, VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                           sizeof(Renderer::MainMeshShaderPushConstants), &pushConstants);
-        //vkCmdPushConstants(cmd, basicMeshShaderPipeline.pipelineLayout.handle, VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(Renderer::BasicMeshShaderPushConstants), &pushData);
+        VkDescriptorBufferBindingInfoEXT bindingInfo = bindlessResourcesDescriptorBuffer.GetBindingInfo();
+        vkCmdBindDescriptorBuffersEXT(cmd, 1, &bindingInfo);
 
-        vkCmdDrawMeshTasksEXT(cmd, 1, 1, 1);
+        uint32_t bufferIndexImage = 0;
+        VkDeviceSize bufferOffset = 0;
+        vkCmdSetDescriptorBufferOffsetsEXT(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, indirectMeshShaderPipeline.pipelineLayout.handle, 0, 1, &bufferIndexImage, &bufferOffset);
+
+        vkCmdDrawMeshTasksIndirectCountEXT(cmd,
+                                           taskIndirectParameterBuffer.handle, sizeof(glm::vec4),
+                                           taskIndirectParameterBuffer.handle, 0,
+                                           Renderer::BINDLESS_INSTANCE_COUNT, sizeof(glm::vec4) * 2);
         vkCmdEndRendering(cmd);
+    }
+
+    // Draw
+    {
+        // constexpr VkClearValue colorClear = {.color = {0.3f, 0.0f, 0.0f, 1.0f}};
+        // const VkRenderingAttachmentInfo colorAttachment = Renderer::VkHelpers::RenderingAttachmentInfo(renderTargets->drawImageView.handle, &colorClear, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+        // constexpr VkClearValue depthClear = {.depthStencil = {0.0f, 0u}};
+        // const VkRenderingAttachmentInfo depthAttachment = Renderer::VkHelpers::RenderingAttachmentInfo(renderTargets->depthImageView.handle, &depthClear, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+        // const VkRenderingInfo renderInfo = Renderer::VkHelpers::RenderingInfo({scaledRenderExtent[0], scaledRenderExtent[1]}, &colorAttachment, &depthAttachment);
+        //
+        // vkCmdBeginRendering(cmd, &renderInfo);
+        //
+        // vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, meshShaderPipeline.pipeline.handle);
+        // //vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, basicMeshShaderPipeline.pipeline.handle);
+        //
+        // VkViewport viewport = Renderer::VkHelpers::GenerateViewport(scaledRenderExtent[0], scaledRenderExtent[1]);
+        // vkCmdSetViewport(cmd, 0, 1, &viewport);
+        // VkRect2D scissor = Renderer::VkHelpers::GenerateScissor(scaledRenderExtent[0], scaledRenderExtent[1]);
+        // vkCmdSetScissor(cmd, 0, 1, &scissor);
+        //
+        // Renderer::AllocatedBuffer& currentSceneDataBuffer = sceneDataBuffers[currentFrameInFlight];
+        // Renderer::MainMeshShaderPushConstants pushConstants{
+        //     .sceneData = currentSceneDataBuffer.address,
+        //     .vertexBuffer = megaVertexBuffer.address,
+        //     .primitiveBuffer = primitiveBuffer.address,
+        //     .meshletVerticesBuffer = megaMeshletVerticesBuffer.address,
+        //     .meshletTrianglesBuffer = megaMeshletTrianglesBuffer.address,
+        //     .meshletBuffer = megaMeshletBuffer.address,
+        //     .materialBuffer = materialBuffer.address,
+        //     .modelBuffer = modelBuffer.address,
+        //     .instanceBuffer = instanceBuffer.address,
+        //     .instanceIndex = 0
+        // };
+        // // Renderer::BasicMeshShaderPushConstants pushData{glm::mat4(1.0f),currentSceneDataBuffer.address,};
+        //
+        // vkCmdPushConstants(cmd, meshShaderPipeline.pipelineLayout.handle, VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+        //                    sizeof(Renderer::MainMeshShaderPushConstants), &pushConstants);
+        // vkCmdDrawMeshTasksEXT(cmd, 1, 1, 1);
+        //
+        // pushConstants.instanceIndex = 1;
+        // vkCmdPushConstants(cmd, meshShaderPipeline.pipelineLayout.handle, VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+        //                    sizeof(Renderer::MainMeshShaderPushConstants), &pushConstants);
+        // //vkCmdPushConstants(cmd, basicMeshShaderPipeline.pipelineLayout.handle, VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(Renderer::BasicMeshShaderPushConstants), &pushData);
+        //
+        // vkCmdDrawMeshTasksEXT(cmd, 1, 1, 1);
+        // vkCmdEndRendering(cmd);
     }
 
     // Prepare for copy
