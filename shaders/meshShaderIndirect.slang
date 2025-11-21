@@ -21,7 +21,8 @@ struct PushConsts {
     MeshletVerticesData* meshletVerticesBuffer;
     MeshletTrianglesData* meshletTrianglesBuffer;
     MeshletData* meshletBuffer;
-    MeshletInstanceData* meshletInstanceBuffer;
+
+    MeshIndirectParameterBuffer* meshIndirectParameterBuffer;
 
     // Dynamics
     MaterialData* materialBuffer; // well, this ones not yet dynamic
@@ -33,14 +34,15 @@ const static int32_t MESH_SHADER_DISPATCH_X = 32;
 const static uint MAX_VERTICES = 64;
 const static uint MAX_PRIMITIVES = 64;
 
-struct MeshletPayloadInstance
-{
-    uint32_t meshletIndex;
-    uint32_t modelIndex;
+struct MeshletPayload {
+    float4x4 modelMatrix;
+    float4x4 prevModelMatrix;
     uint32_t materialIndex;
+
+    uint32_t meshletIndices[TASK_SHADER_DISPATCH_X];
 };
 
-groupshared MeshletPayloadInstance sharedPayload[TASK_SHADER_DISPATCH_X];
+groupshared MeshletPayload sharedPayload;
 groupshared Atomic<uint32_t> visibleMeshletCount;
 
 bool isMeshletVisible(uint meshId) {
@@ -49,31 +51,36 @@ bool isMeshletVisible(uint meshId) {
 
 [shader("task")]
 [numthreads(TASK_SHADER_DISPATCH_X, 1, 1)]
-void taskMain(uniform PushConsts pushConstants, uint3 dispatchThreadId : SV_DispatchThreadID, uint drawIndex : SV_DrawIndex)
+void taskMain(uniform PushConsts pushConstants,
+    uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID, uint drawIndex : SV_DrawIndex)
 {
-    if (dispatchThreadId.x == 0) {
+    MeshIndirectDrawParameters indirectParameters = pushConstants.meshIndirectParameterBuffer.parameters[drawIndex];
+
+    if (gtid.x == 0) {
         visibleMeshletCount.store(0);
+
+        Model m = pushConstants.modelBuffer->models[indirectParameters.modelIndex];
+        sharedPayload.modelMatrix = m.modelMatrix;
+        sharedPayload.prevModelMatrix = m.prevModelMatrix;
+        sharedPayload.materialIndex = indirectParameters.materialIndex;
     }
+
     GroupMemoryBarrierWithGroupSync();
 
-    uint meshletID = dispatchThreadId.x;
-
-    // Each meshlet instance should not exceed
-    MeshletInstance meshletPrimitive = pushConstants.meshletInstanceBuffer.instances[drawIndex];
+    uint meshletID = gtid.x;
+    uint globalMeshletID = indirectParameters.meshletOffset + (gid.x * TASK_SHADER_DISPATCH_X) + meshletID;
+    uint localMeshletCount = min(32, indirectParameters.meshletCount - (gid.x * 32));
 
     // culling on meshlet level seems wasteful, can try but I doubt it'd be worth it
     //if (meshletID < meshletPrimitive.meshletCount && isMeshletVisible(meshletPrimitive.meshletOffset + meshletID)) {
-    if (meshletID < meshletPrimitive.meshletCount) {
+    if (meshletID < localMeshletCount) {
         uint index = visibleMeshletCount.add(1);
-        // todo: maybe add the modelMatrixData directly to reduce indirection
-        sharedPayload[index].meshletIndex = meshletPrimitive.meshletOffset + meshletID;
-        sharedPayload[index].modelIndex = meshletPrimitive.modelIndex;
-        sharedPayload[index].materialIndex = meshletPrimitive.materialIndex;
+        sharedPayload.meshletIndices[index] = globalMeshletID;
     }
 
     GroupMemoryBarrierWithGroupSync();
 
-    if (dispatchThreadId.x == 0) {
+    if (gtid.x == 0) {
         uint count = visibleMeshletCount.load();
         DispatchMesh(count, 1, 1, sharedPayload);
     }
@@ -83,27 +90,25 @@ void taskMain(uniform PushConsts pushConstants, uint3 dispatchThreadId : SV_Disp
 [outputtopology("triangle")]
 [numthreads(MESH_SHADER_DISPATCH_X, 1, 1)]
 void meshMain(
-    in payload MeshletPayloadInstance inPayload[TASK_SHADER_DISPATCH_X],
+    in payload MeshletPayload inPayload,
     out indices uint3 triangles[MAX_PRIMITIVES], out vertices VertexOutput vertices[MAX_VERTICES],
     uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID,
     uniform PushConsts pushConstants)
 {
-    MeshletPayloadInstance meshletPayload = inPayload[gid.x];
-
-    Model m = pushConstants.modelBuffer->models[meshletPayload.modelIndex];
-    Meshlet meshlet = pushConstants.meshletBuffer->meshlets[meshletPayload.meshletIndex];
+    Meshlet meshlet = pushConstants.meshletBuffer->meshlets[inPayload.meshletIndices[gid.x]];
 
     float4x4 viewProj = pushConstants.sceneData->viewProj;
+
     SetMeshOutputCounts(meshlet.meshletVerticesCount, meshlet.meshletTriangleCount);
     uint32_t threadIndex = gtid.x;
     for (uint i = threadIndex; i < meshlet.meshletVerticesCount; i += MESH_SHADER_DISPATCH_X) {
         uint localVertexIndex = pushConstants.meshletVerticesBuffer->meshletVertices[meshlet.meshletVerticesOffset + i].vertexIndex;
         Vertex v = pushConstants.vertexBuffer->vertices[meshlet.vertexOffset + localVertexIndex];
-        float4 worldPos = mul(m.modelMatrix, float4(v.position, 1.0));
+        float4 worldPos = mul(inPayload.modelMatrix, float4(v.position, 1.0));
         float4 clipPos = mul(viewProj, worldPos);
         vertices[i].position = clipPos;
         vertices[i].worldPos = worldPos.xyz;
-        vertices[i].normal = mul((float3x3)m.modelMatrix, v.normal);
+        vertices[i].normal = mul((float3x3)inPayload.modelMatrix, v.normal);
         vertices[i].uv = v.uv;
         vertices[i].tangent = v.tangent;
 
@@ -118,7 +123,7 @@ void meshMain(
         vertices[i].color = float4(color, 1.0);
         // vertices[i].color = v.color;
 
-        vertices[i].materialIndex = meshletPayload.materialIndex;
+        vertices[i].materialIndex = inPayload.materialIndex;
     }
     for (uint i = threadIndex; i < meshlet.meshletTriangleCount; i += MESH_SHADER_DISPATCH_X) {
         uint triOffset = meshlet.meshletTriangleOffset + i * 3;

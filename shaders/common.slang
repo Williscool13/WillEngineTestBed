@@ -88,22 +88,6 @@ public struct Instance
     public uint32_t bIsAllocated;
 };
 
-public struct MeshletInstance
-{
-    public uint32_t modelIndex;
-    public uint32_t meshletOffset;
-    public uint32_t meshletCount;
-    public uint32_t materialIndex;
-};
-
-public struct SkinnedMeshletInstance
-{
-    public uint32_t jointMatrixOffset;
-    public uint32_t meshletOffset;
-    public uint32_t meshletCount;
-    public uint32_t materialIndex;
-};
-
 
 public struct MaterialProperties
 {
@@ -207,10 +191,6 @@ public struct InstanceData {
     public Instance[] instances;
 }
 
-public struct MeshletInstanceData {
-    public MeshletInstance[] instances;
-}
-
 public struct VkDrawIndexedIndirectCommand
 {
     public uint32_t indexCount;
@@ -220,12 +200,33 @@ public struct VkDrawIndexedIndirectCommand
     public uint32_t firstInstance;
 };
 
+public struct IndexedIndirectBuffer {
+    public VkDrawIndexedIndirectCommand[] instances;
+}
+
 public struct IndirectCount
 {
     public Atomic<uint32_t> drawCount;
 };
 
-public struct IndexedIndirectBuffer
-{
-    public VkDrawIndexedIndirectCommand[] instances;
+public struct MeshIndirectDrawParameters {
+    // indirect parameters
+    public uint32_t groupCountX;
+    public uint32_t groupCountY;
+    public uint32_t groupCountZ;
+    public uint32_t padding;
+
+    // instance/primitive properties
+    public uint32_t modelIndex; // public uint32_t jointMatrixOffset; - they are mutually exclusive, but for simplcity maybe just have both?
+    public uint32_t materialIndex;
+    public uint32_t meshletOffset;
+    public uint32_t meshletCount;
+};
+
+public struct MeshIndirectParameterBuffer {
+    public Atomic<uint32_t> meshIndirectCount;
+    uint32_t padding0;
+    uint32_t padding1;
+    uint32_t padding2;
+    public MeshIndirectDrawParameters[] parameters;
 }

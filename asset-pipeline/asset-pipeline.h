@@ -17,6 +17,7 @@
 #include "render/model/model_data.h"
 #include "render/pipelines/basic_mesh_shader_pipeline.h"
 #include "render/pipelines/main_mesh_shader_pipeline.h"
+#include "render/pipelines/mesh_draw_cull_compute_pipeline.h"
 #include "render/pipelines/render_pipeline.h"
 
 
@@ -92,10 +93,12 @@ private:
     HandleAllocator<Renderer::InstanceEntry, Renderer::BINDLESS_INSTANCE_COUNT> instanceEntryAllocator;
     Renderer::AllocatedBuffer instanceBuffer;
 
+    Renderer::AllocatedBuffer taskIndirectParameterBuffer;
+
     Renderer::MeshletModelData meshletModelData{};
 
-    Renderer::BasicMeshShaderPipeline basicMeshShaderPipeline{};
     Renderer::MainMeshShaderPipeline meshShaderPipeline{};
+    Renderer::MeshDrawCullComputePipeline meshDrawCullComputePipeline{};
 };
 }
 

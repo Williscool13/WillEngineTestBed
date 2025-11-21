@@ -97,8 +97,8 @@ void AssetPipeline::Initialize()
 
     CreateMeshletModel();
 
-    basicMeshShaderPipeline = Renderer::BasicMeshShaderPipeline(vulkanContext.get());
     meshShaderPipeline = Renderer::MainMeshShaderPipeline(vulkanContext.get(), bindlessResourcesDescriptorBuffer.descriptorSetLayout.handle);
+    meshDrawCullComputePipeline = Renderer::MeshDrawCullComputePipeline(vulkanContext.get());
 }
 
 void AssetPipeline::Run()
@@ -196,6 +196,7 @@ void AssetPipeline::Render(uint32_t currentFrameInFlight, Renderer::FrameSynchro
     const float deltaTime = Time::Get().GetDeltaTime();
     VkImage currentSwapchainImage = swapchain->swapchainImages[swapchainImageIndex];
 
+    Renderer::AllocatedBuffer& currentSceneDataBuffer = sceneDataBuffers[currentFrameInFlight];
     //
     {
         freeCamera.Update(deltaTime);
@@ -219,7 +220,6 @@ void AssetPipeline::Render(uint32_t currentFrameInFlight, Renderer::FrameSynchro
         sceneData.renderTargetSize.y = static_cast<float>(scaledRenderExtent[1]);
         sceneData.deltaTime = deltaTime;
 
-        Renderer::AllocatedBuffer& currentSceneDataBuffer = sceneDataBuffers[currentFrameInFlight];
         auto* currentSceneData = static_cast<Renderer::SceneData*>(currentSceneDataBuffer.allocationInfo.pMappedData);
         *currentSceneData = sceneData;
     }
@@ -228,6 +228,61 @@ void AssetPipeline::Render(uint32_t currentFrameInFlight, Renderer::FrameSynchro
     VK_CHECK(vkResetCommandBuffer(cmd, 0));
     VkCommandBufferBeginInfo commandBufferBeginInfo = Renderer::VkHelpers::CommandBufferBeginInfo();
     VK_CHECK(vkBeginCommandBuffer(cmd, &commandBufferBeginInfo));
+
+
+    //
+    {
+        VkBufferMemoryBarrier2 bufferBarriers[2];
+        bufferBarriers[0] = Renderer::VkHelpers::BufferMemoryBarrier(
+            taskIndirectParameterBuffer.handle, 0, sizeof(uint32_t),
+            VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT, VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT,
+            VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT);
+        bufferBarriers[1] = Renderer::VkHelpers::BufferMemoryBarrier(
+            taskIndirectParameterBuffer.handle, sizeof(glm::vec4), sizeof(Renderer::TaskIndirectDrawParameters) * Renderer::BINDLESS_INSTANCE_COUNT * 4,
+            VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT, VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT,
+            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT);
+
+        VkDependencyInfo depInfo{};
+        depInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        depInfo.pNext = nullptr;
+        depInfo.dependencyFlags = 0;
+        depInfo.bufferMemoryBarrierCount = 2;
+        depInfo.pBufferMemoryBarriers = bufferBarriers;
+        vkCmdPipelineBarrier2(cmd, &depInfo);
+
+        vkCmdFillBuffer(cmd, taskIndirectParameterBuffer.handle, 0, sizeof(uint32_t), 0);
+
+        VkBufferMemoryBarrier2 bufferBarrier = Renderer::VkHelpers::BufferMemoryBarrier(
+            taskIndirectParameterBuffer.handle, 0, sizeof(uint32_t),
+            VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT);
+
+        depInfo.bufferMemoryBarrierCount = 1;
+        depInfo.pBufferMemoryBarriers = &bufferBarrier;
+
+        vkCmdPipelineBarrier2(cmd, &depInfo);
+
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, meshDrawCullComputePipeline.pipeline.handle);
+        Renderer::MeshDrawCullComputePushConstant pushData{
+            .sceneData = currentSceneDataBuffer.address,
+            . primitiveBuffer = primitiveBuffer.address,
+            .modelBuffer = modelBuffer.address,
+            .instanceBuffer = instanceBuffer.address,
+            .taskIndirectParameterBuffer = taskIndirectParameterBuffer.address
+        };
+
+        vkCmdPushConstants(cmd, meshDrawCullComputePipeline.pipelineLayout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(Renderer::MeshDrawCullComputePushConstant), &pushData);
+        uint32_t groupsX = (1 + 63) / 64;
+        vkCmdDispatch(cmd, groupsX, 1, 1);
+
+
+        bufferBarrier = Renderer::VkHelpers::BufferMemoryBarrier(
+            taskIndirectParameterBuffer.handle, 0, VK_WHOLE_SIZE,
+            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT,
+            VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT, VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT);
+        depInfo.pBufferMemoryBarriers = &bufferBarrier;
+        vkCmdPipelineBarrier2(cmd, &depInfo);
+    }
 
     // Prepare to render draw
     {
@@ -410,6 +465,14 @@ void AssetPipeline::CreateBuffers()
     bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
     bufferInfo.size = sizeof(Renderer::Instance) * Renderer::BINDLESS_INSTANCE_COUNT;
     instanceBuffer = Renderer::VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
+
+    vmaAllocInfo.flags = 0;
+    vmaAllocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+    vmaAllocInfo.requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    bufferInfo.usage = VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_TRANSFER_DST_BIT;
+    // vec4 for indirect count + padding. Instance_count * 4 is an assumption that each instance is likely to have at most 4 * 32 meshlets
+    bufferInfo.size = sizeof(glm::vec4) + sizeof(Renderer::TaskIndirectDrawParameters) * Renderer::BINDLESS_INSTANCE_COUNT * 4;
+    taskIndirectParameterBuffer = Renderer::VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
 
     bindlessResourcesDescriptorBuffer = Renderer::DescriptorBufferBindlessResources(vulkanContext.get());
 }

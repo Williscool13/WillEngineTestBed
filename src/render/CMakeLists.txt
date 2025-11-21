@@ -71,6 +71,10 @@ add_library(render-lib STATIC
         pipelines/basic_mesh_shader_pipeline.h
         pipelines/main_mesh_shader_pipeline.cpp
         pipelines/main_mesh_shader_pipeline.h
+        pipelines/mesh_draw_cull_compute_pipeline.cpp
+        pipelines/mesh_draw_cull_compute_pipeline.h
+        pipelines/indirect_mesh_shader_pipeline.cpp
+        pipelines/indirect_mesh_shader_pipeline.h
 )
 
 target_link_libraries(render-lib PUBLIC

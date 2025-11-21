@@ -81,20 +81,18 @@ struct Model
     glm::vec4 flags{1.0f}; // x: visible, y: shadow-caster, zw: reserved
 };
 
-struct MeshletInstance
+struct TaskIndirectDrawParameters
 {
-    uint32_t modelIndex{INT32_MAX};
-    uint32_t meshletOffset{0};
-    uint32_t meshletCount{0};
-    uint32_t materialIndex{0};
-};
+    uint32_t groupCountX;
+    uint32_t groupCountY;
+    uint32_t groupCountZ;
+    uint32_t padding;
 
-struct SkinnedMeshletInstance
-{
-    uint32_t jointMatrixOffset{};
-    uint32_t meshletOffset{0};
-    uint32_t meshletCount{0};
-    uint32_t materialIndex{0};
+    // instance/primitive properties
+    uint32_t modelIndex; // public uint32_t jointMatrixOffset; - they are mutually exclusive, but for simplcity maybe just have both?
+    uint32_t materialIndex;
+    uint32_t meshletOffset;
+    uint32_t meshletCount;
 };
 
 struct Node
