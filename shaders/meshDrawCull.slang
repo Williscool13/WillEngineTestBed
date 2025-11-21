@@ -3,43 +3,47 @@ import common;
 struct PushConsts {
     SceneData* sceneData;
 
-    PrimitiveData* primitiveBuffer;
+    MeshletPrimitiveData* primitiveBuffer;
     ModelData* modelBuffer;
     InstanceData* instanceBuffer;
 
-    IndexedIndirectBuffer* indirectBuffer;
+    MeshletInstanceData* indirectBuffer;
     IndirectCount* indirectCount;
-
-    IndexedIndirectBuffer* skeletalIndirectBuffer;
-    IndirectCount* skeletalIndirectCount;
 };
 
-[shader("compute")]
+bool isInstanceVisible(Instance inst, MeshletPrimitive prim) {
+    return true;
+}
+
+const static int32_t TASK_SHADER_DISPATCH_X = 32;
+
 [numthreads(64, 1, 1)]
-void computeMain(uniform PushConsts pushConstants, uint3 threadId : SV_DispatchThreadID)
-{
-    uint32_t invocationId = threadId.x;
-    Instance i = (*pushConstants.instanceBuffer).instances[invocationId];
-    if (i.bIsAllocated == 0) { return; }
-    Model m = (*pushConstants.modelBuffer).models[i.modelIndex];
-    Primitive p = (*pushConstants.primitiveBuffer).primitives[i.primitiveIndex];
+void computeMain(uniform PushConsts pushConstants, uint3 dtid : SV_DispatchThreadID) {
+    uint instanceID = dtid.x;
 
-    VkDrawIndexedIndirectCommand cmd;
-    cmd.indexCount = p.indexCount;
-    cmd.firstIndex = p.firstIndex;
-    cmd.vertexOffset = p.vertexOffset;
-    cmd.instanceCount = 1;
-    cmd.firstInstance = invocationId;
+    Instance inst = pushConstants.instanceBuffer.instances[instanceID];
+    if (inst.bIsAllocated == 0) { return; }
 
+    MeshletPrimitive prim = pushConstants.primitiveBuffer.primitives[inst.primitiveIndex];
 
-    if (p.bHasSkinning == 1) {
-        uint outputIndex;
-        InterlockedAdd(pushConstants.skeletalIndirectCount->opaqueCount, 1, outputIndex);
-        pushConstants.skeletalIndirectBuffer->instances[outputIndex] = cmd;
-    } else {
-        uint outputIndex;
-        InterlockedAdd(pushConstants.indirectCount->opaqueCount, 1, outputIndex);
-        pushConstants.indirectBuffer->instances[outputIndex] = cmd;
+    if (!isInstanceVisible(inst, prim)) return;
+
+    // prim.bHasTransparent;
+    // prim.bHasSkinning
+    // prim.boundingSphere
+
+    uint totalMeshlets = prim.meshletCount;
+    uint numChunks = (totalMeshlets + (TASK_SHADER_DISPATCH_X - 1)) / TASK_SHADER_DISPATCH_X;
+
+    uint baseIdx = pushConstants.indirectCount->drawCount.add(numChunks);
+
+    for (uint chunk = 0; chunk < numChunks; chunk++) {
+        MeshletInstance mi;
+        mi.modelIndex = inst.modelIndex;
+        mi.meshletOffset = prim.meshletOffset + (chunk * 32);
+        mi.meshletCount = min(32, totalMeshlets - (chunk * 32));
+        mi.materialIndex = prim.materialIndex;
+
+        pushConstants.indirectBuffer.instances[baseIdx + chunk] = mi;
     }
-
 }

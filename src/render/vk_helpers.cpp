@@ -210,6 +210,8 @@ VkImageCreateInfo VkHelpers::ImageCreateInfo(VkFormat format, VkExtent3D extent,
         // Tiling Optimal has the best performance
         .tiling = VK_IMAGE_TILING_OPTIMAL,
         .usage = usageFlags,
+
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
     };
 }
 

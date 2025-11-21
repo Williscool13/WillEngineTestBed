@@ -65,6 +65,7 @@ void taskMain(uniform PushConsts pushConstants, uint3 dispatchThreadId : SV_Disp
     //if (meshletID < meshletPrimitive.meshletCount && isMeshletVisible(meshletPrimitive.meshletOffset + meshletID)) {
     if (meshletID < meshletPrimitive.meshletCount) {
         uint index = visibleMeshletCount.add(1);
+        // todo: maybe add the modelMatrixData directly to reduce indirection
         sharedPayload[index].meshletIndex = meshletPrimitive.meshletOffset + meshletID;
         sharedPayload[index].modelIndex = meshletPrimitive.modelIndex;
         sharedPayload[index].materialIndex = meshletPrimitive.materialIndex;

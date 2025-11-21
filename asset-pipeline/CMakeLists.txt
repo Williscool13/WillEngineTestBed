@@ -38,4 +38,5 @@ compile_shaders(asset-pipeline
         ${CMAKE_SOURCE_DIR}/shaders/meshShaderIndirect.slang task taskMain
         ${CMAKE_SOURCE_DIR}/shaders/meshShaderIndirect.slang mesh meshMain
         ${CMAKE_SOURCE_DIR}/shaders/meshShaderIndirect.slang fragment fragmentMain
+        ${CMAKE_SOURCE_DIR}/shaders/meshDrawCull.slang compute computeMain
 )

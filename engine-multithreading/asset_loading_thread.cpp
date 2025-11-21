@@ -872,10 +872,8 @@ ModelEntryHandle AssetLoadingThread::LoadGltf(const std::filesystem::path& path)
                 resourceManager->primitiveBuffer.handle,
                 newModel->data.primitiveAllocation.offset,
                 sizePrimitives,
-                VK_PIPELINE_STAGE_2_NONE,
-                VK_ACCESS_2_NONE,
-                VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-                VK_ACCESS_2_SHADER_STORAGE_READ_BIT
+                VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE,
+                VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_READ_BIT
             )
         );
         VkBufferMemoryBarrier2& acquireBarrier = newModel->modelAcquires.bufferAcquireOps.back();
@@ -1060,7 +1058,7 @@ void AssetLoadingThread::CreateDefaultResources()
         .unnormalizedCoordinates = VK_FALSE
     };
     defaultSamplerLinear = VkResources::CreateSampler(context, samplerInfo);
-    samplerLinearDescriptorIndex =resourceManager->bindlessResourcesDescriptorBuffer.AllocateSampler(defaultSamplerLinear.handle);
+    samplerLinearDescriptorIndex = resourceManager->bindlessResourcesDescriptorBuffer.AllocateSampler(defaultSamplerLinear.handle);
     assert(samplerLinearDescriptorIndex == 0);
 
     StartUploadStaging(*currentUploadStaging);

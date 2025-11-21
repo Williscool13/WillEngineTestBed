@@ -3,13 +3,32 @@ module common;
 public struct Vertex
 {
     public float3 position;
-    public float padding0;
     public float3 normal;
-    public float padding1;
     public float4 tangent;
     public float4 color;
     public float2 uv;
-    public float2 padding2;
+    public uint4 joints;
+    public float4 weights;
+};
+
+public struct VertexPacked
+{
+    public float3 position;
+    public float uv_x;
+    public float3 normal;
+    public float uv_y;
+    public float4 tangent;
+    public float4 color;
+};
+
+public struct VertexSkeletonPacked
+{
+    public float3 position;
+    public float uv_x;
+    public float3 normal;
+    public float uv_y;
+    public float4 tangent;
+    public float4 color;
     public uint4 joints;
     public float4 weights;
 };
@@ -203,7 +222,7 @@ public struct VkDrawIndexedIndirectCommand
 
 public struct IndirectCount
 {
-    public uint32_t opaqueCount;
+    public Atomic<uint32_t> drawCount;
 };
 
 public struct IndexedIndirectBuffer

@@ -33,12 +33,10 @@ void computeMain(uniform PushConsts pushConstants, uint3 threadId : SV_DispatchT
 
 
     if (p.bHasSkinning == 1) {
-        uint outputIndex;
-        InterlockedAdd(pushConstants.skeletalIndirectCount->opaqueCount, 1, outputIndex);
+        uint outputIndex = pushConstants.skeletalIndirectCount->drawCount.add(1);
         pushConstants.skeletalIndirectBuffer->instances[outputIndex] = cmd;
     } else {
-        uint outputIndex;
-        InterlockedAdd(pushConstants.indirectCount->opaqueCount, 1, outputIndex);
+        uint outputIndex = pushConstants.indirectCount->drawCount.add(1);
         pushConstants.indirectBuffer->instances[outputIndex] = cmd;
     }
 
