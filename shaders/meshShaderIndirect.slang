@@ -29,17 +29,20 @@ struct PushConsts {
     ModelData* modelBuffer;
 };
 
-const static int32_t TASK_SHADER_DISPATCH_X = 32;
+const static int32_t TASK_SHADER_DISPATCH_X = 64;
 const static int32_t MESH_SHADER_DISPATCH_X = 32;
 const static uint MAX_VERTICES = 64;
 const static uint MAX_PRIMITIVES = 64;
 
+// Per https://developer.nvidia.com/blog/using-mesh-shaders-for-professional-graphics/
+// Task shader output should ideally be below 236/108. We can hit 236 if we turn uint32_t to uint8_t and store offsets in the payload.
+// 4 + 4 + 4 + 64 = 86
 struct MeshletPayload {
-    float4x4 modelMatrix;
-    float4x4 prevModelMatrix;
+    uint32_t modelIndex;
     uint32_t materialIndex;
+    uint32_t groupMeshletOffset;
 
-    uint32_t meshletIndices[TASK_SHADER_DISPATCH_X];
+    uint8_t meshletIndices[TASK_SHADER_DISPATCH_X];
 };
 
 groupshared MeshletPayload sharedPayload;
@@ -59,23 +62,23 @@ void taskMain(uniform PushConsts pushConstants,
     if (gtid.x == 0) {
         visibleMeshletCount.store(0);
 
-        Model m = pushConstants.modelBuffer->models[indirectParameters.modelIndex];
-        sharedPayload.modelMatrix = m.modelMatrix;
-        sharedPayload.prevModelMatrix = m.prevModelMatrix;
+        sharedPayload.modelIndex = indirectParameters.modelIndex;
         sharedPayload.materialIndex = indirectParameters.materialIndex;
+        sharedPayload.groupMeshletOffset = indirectParameters.meshletOffset + (gid.x * TASK_SHADER_DISPATCH_X);
     }
 
     GroupMemoryBarrierWithGroupSync();
 
-    uint meshletID = gtid.x;
-    uint globalMeshletID = indirectParameters.meshletOffset + (gid.x * TASK_SHADER_DISPATCH_X) + meshletID;
-    uint localMeshletCount = min(32, indirectParameters.meshletCount - (gid.x * 32));
+
+    // group thread count is only 32, will never exceed uint8
+    uint8_t meshletID = (uint8_t)gtid.x;
+    uint localMeshletCount = min(TASK_SHADER_DISPATCH_X, indirectParameters.meshletCount - (gid.x * TASK_SHADER_DISPATCH_X));
 
     // culling on meshlet level seems wasteful, can try but I doubt it'd be worth it
     //if (meshletID < meshletPrimitive.meshletCount && isMeshletVisible(meshletPrimitive.meshletOffset + meshletID)) {
     if (meshletID < localMeshletCount) {
         uint index = visibleMeshletCount.add(1);
-        sharedPayload.meshletIndices[index] = globalMeshletID;
+        sharedPayload.meshletIndices[index] = meshletID;
     }
 
     GroupMemoryBarrierWithGroupSync();
@@ -95,8 +98,11 @@ void meshMain(
     uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID,
     uniform PushConsts pushConstants)
 {
-    Meshlet meshlet = pushConstants.meshletBuffer->meshlets[inPayload.meshletIndices[gid.x]];
+    uint32_t payloadMeshletIndex = gid.x;
+    uint32_t meshletIndex = inPayload.groupMeshletOffset + inPayload.meshletIndices[payloadMeshletIndex];
+    Meshlet meshlet = pushConstants.meshletBuffer->meshlets[meshletIndex];
 
+    Model m = pushConstants.modelBuffer->models[inPayload.modelIndex];
     float4x4 viewProj = pushConstants.sceneData->viewProj;
 
     SetMeshOutputCounts(meshlet.meshletVerticesCount, meshlet.meshletTriangleCount);
@@ -104,11 +110,11 @@ void meshMain(
     for (uint i = threadIndex; i < meshlet.meshletVerticesCount; i += MESH_SHADER_DISPATCH_X) {
         uint localVertexIndex = pushConstants.meshletVerticesBuffer->meshletVertices[meshlet.meshletVerticesOffset + i].vertexIndex;
         Vertex v = pushConstants.vertexBuffer->vertices[meshlet.vertexOffset + localVertexIndex];
-        float4 worldPos = mul(inPayload.modelMatrix, float4(v.position, 1.0));
+        float4 worldPos = mul(m.modelMatrix, float4(v.position, 1.0));
         float4 clipPos = mul(viewProj, worldPos);
         vertices[i].position = clipPos;
         vertices[i].worldPos = worldPos.xyz;
-        vertices[i].normal = mul((float3x3)inPayload.modelMatrix, v.normal);
+        vertices[i].normal = mul((float3x3)m.modelMatrix, v.normal);
         vertices[i].uv = v.uv;
         vertices[i].tangent = v.tangent;
 
@@ -137,5 +143,5 @@ void meshMain(
 [shader("fragment")]
 float4 fragmentMain(VertexOutput vertexInput)
 {
-    return float4(vertexInput.normal.xyz, 1.0f);
+    return float4(vertexInput.color.xyz, 1.0f);
 }

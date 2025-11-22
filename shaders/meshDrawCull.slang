@@ -13,7 +13,7 @@ bool isInstanceVisible(Instance inst, MeshletPrimitive prim) {
     return true;
 }
 
-const static int32_t TASK_SHADER_DISPATCH_X = 32;
+const static int32_t TASK_SHADER_DISPATCH_X = 64;
 
 [numthreads(64, 1, 1)]
 void computeMain(uniform PushConsts pushConstants, uint3 dtid : SV_DispatchThreadID) {
