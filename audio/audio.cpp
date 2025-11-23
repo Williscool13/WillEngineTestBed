@@ -12,9 +12,6 @@
 
 namespace Audio
 {
-void SDLCALL Audio::AudioCallback(void* userdata, SDL_AudioStream* stream, int additional, int total)
-{}
-
 void Audio::Init()
 {
     SDL_SetAppMetadata("AUDIO", "1.0", "nothin");
@@ -121,8 +118,6 @@ void Audio::Update()
             auto thread = std::jthread(&Audio::TestDopplerEffect, this);
             thread.join();
         }
-
-
 
         audioSystem.ProcessGameCommands();
 

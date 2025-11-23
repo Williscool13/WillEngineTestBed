@@ -2,8 +2,6 @@ add_executable(asset-pipeline
         main.cpp
         asset-pipeline.cpp
         asset-pipeline.h
-        mesh_shader_types.cpp
-        mesh_shader_types.h
 )
 
 

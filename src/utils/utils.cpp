@@ -54,10 +54,25 @@ void FrameTimeTracker::UpdateRollingAverage()
 
 bool FrameTimeTracker::IsSpikeDetected(float frameTimeMs) const
 {
-    // Need at least 10 samples to detect spikes reliably
     if (sampleCount < 10) return false;
-
     return frameTimeMs > rollingAverage * spikeThreshold;
+}
+
+float FrameTimeTracker::GetPercentile(const float percentile) const
+{
+    if (sampleCount == 0) return 0.0f;
+
+    std::vector<float> sorted;
+    const size_t count = std::min(sampleCount, historySize);
+    sorted.reserve(count);
+
+    for (size_t i = 0; i < count; i++) {
+        sorted.push_back(history[i]);
+    }
+
+    std::ranges::sort(sorted);
+    const auto index = static_cast<size_t>(percentile * (static_cast<float>(sorted.size()) - 1));
+    return sorted[index];
 }
 
 bool DllLoader::Load(const std::string& dllPath, const std::string& tempCopyName)

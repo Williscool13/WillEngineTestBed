@@ -87,38 +87,7 @@ void SkeletalMain::CreateResources()
         renderTargets = std::make_unique<DescriptorBufferStorageImage>(vulkanContext.get(), renderTargetSetLayout, 1);
         renderTargets->AllocateDescriptorSet();
     }
-    // //
-    // {
-    //     layoutBuilder.Clear();
-    //     layoutBuilder.AddBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, BINDLESS_UNIFORM_BUFFER_COUNT);
-    //     VkDescriptorSetLayoutCreateInfo layoutCreateInfo = layoutBuilder.Build(
-    //         static_cast<VkShaderStageFlagBits>(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT),
-    //         VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT
-    //     );
-    //     VK_CHECK(vkCreateDescriptorSetLayout(vulkanContext->device, &layoutCreateInfo, nullptr, &bindlessUniformSetLayout));
-    //     bindlessUniforms = std::make_unique<DescriptorBufferUniform>(vulkanContext.get(), bindlessUniformSetLayout, renderFramesInFlight);
-    //
-    //     for (int32_t i = 0; i < renderFramesInFlight; ++i) {
-    //         bindlessUniforms->AllocateDescriptorSet();
-    //     }
-    // }
-    //
-    // //
-    // {
-    //     layoutBuilder.Clear();
-    //     layoutBuilder.AddBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, BINDLESS_COMBINED_IMAGE_SAMPLER_COUNT);
-    //     VkDescriptorSetLayoutCreateInfo layoutCreateInfo = layoutBuilder.Build(
-    //         static_cast<VkShaderStageFlagBits>(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT),
-    //         VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT
-    //     );
-    //     VK_CHECK(vkCreateDescriptorSetLayout(vulkanContext->device, &layoutCreateInfo, nullptr, &bindlessCombinedImageSamplerSetLayout));
-    //     bindlessCombinedImageSamplers = std::make_unique<DescriptorBufferCombinedImageSampler>(vulkanContext.get(), bindlessCombinedImageSamplerSetLayout, renderFramesInFlight);
-    //
-    //     for (int32_t i = 0; i < renderFramesInFlight; ++i) {
-    //         bindlessCombinedImageSamplers->AllocateDescriptorSet();
-    //     }
-    // }
-    //
+
     //
     {
         layoutBuilder.Clear();

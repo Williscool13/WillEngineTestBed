@@ -4,6 +4,7 @@
 
 #ifndef WILLENGINETESTBED_TIME_H
 #define WILLENGINETESTBED_TIME_H
+#include <chrono>
 #include <cstdint>
 
 namespace Core
@@ -17,7 +18,6 @@ public:
         return instance;
     }
 
-
     Time();
 
     void Reset();
@@ -29,8 +29,8 @@ public:
     [[nodiscard]] float GetTime() const;
 
 private:
-    uint64_t deltaTime = 0;
-    uint64_t lastTime = 0;
+    uint64_t deltaTime{};
+    std::chrono::time_point<std::chrono::steady_clock> lastTime;
 };
 } // Core
 

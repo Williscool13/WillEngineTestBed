@@ -4,28 +4,27 @@
 
 #include "time.h"
 
-#include <SDL3/SDL.h>
-
 namespace Core
 {
 Time::Time()
 {
-    lastTime = SDL_GetTicks();
+    lastTime = std::chrono::steady_clock::now();
 }
 
 void Time::Reset()
 {
-    lastTime = SDL_GetTicks();
+    lastTime = std::chrono::steady_clock::now();
 }
 
 void Time::Update()
 {
-    const uint64_t last = SDL_GetTicks();
-    deltaTime = last - lastTime;
+    const auto now = std::chrono::steady_clock::now();
+    const auto delta = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastTime);
+    deltaTime = delta.count();
+
     // Breakpoint resume case
     if (deltaTime > 1000) { deltaTime = 333; }
-    lastTime = last;
-
+    lastTime = now;
 }
 
 float Time::GetDeltaTime() const
@@ -35,6 +34,7 @@ float Time::GetDeltaTime() const
 
 float Time::GetTime() const
 {
-    return static_cast<float>(lastTime) / 1000.0f;
+    const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(lastTime.time_since_epoch());
+    return static_cast<float>(elapsed.count()) / 1000.0f;
 }
 } // Core

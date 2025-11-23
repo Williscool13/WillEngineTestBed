@@ -51,6 +51,13 @@ public:
     void SetSpikeThreshold(float threshold) { spikeThreshold = threshold; }
     float GetSpikeThreshold() const { return spikeThreshold; }
 
+    // Get percentile value (0.0 to 1.0, e.g., 0.5 for median, 0.95 for p95)
+    float GetPercentile(float percentile) const;
+
+    float GetMedian() const { return GetPercentile(0.5f); }
+    float GetP95() const { return GetPercentile(0.95f); }
+    float GetP99() const { return GetPercentile(0.99f); }
+
 private:
     static constexpr size_t MAX_HISTORY_SIZE = 1000;
 

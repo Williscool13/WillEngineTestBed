@@ -25,15 +25,6 @@ public:
 
     void TestDopplerEffect();
 
-    /**
-     * Runs on a background thread, use carefully.
-     * @param userdata
-     * @param stream
-     * @param additional
-     * @param total
-     */
-    static void AudioCallback(void* userdata, SDL_AudioStream* stream, int additional, int total);
-
 private:
     SDL_Window* window{};
     SDL_AudioStream *stream{};

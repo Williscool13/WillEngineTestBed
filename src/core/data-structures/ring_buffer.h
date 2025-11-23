@@ -5,7 +5,6 @@
 #ifndef WILLENGINETESTBED_RING_BUFFER_H
 #define WILLENGINETESTBED_RING_BUFFER_H
 
-#include <algorithm>
 #include <array>
 
 template<typename T, size_t Capacity>

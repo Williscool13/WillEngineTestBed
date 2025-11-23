@@ -109,17 +109,11 @@ void StagingBuffer::CreateResources()
 
     // Static data will be uploaded through a staging
     {
-        // todo: swap around when ready to start staging
         VkBufferCreateInfo bufferInfo = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
         bufferInfo.pNext = nullptr;
         VmaAllocationCreateInfo vmaAllocInfo = {};
         vmaAllocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
         vmaAllocInfo.requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-        // VkBufferCreateInfo bufferInfo = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
-        // bufferInfo.pNext = nullptr;
-        // VmaAllocationCreateInfo vmaAllocInfo = {};
-        // vmaAllocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
-        // vmaAllocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
         bufferInfo.usage = VK_BUFFER_USAGE_2_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
         bufferInfo.size = sizeof(Renderer::Vertex) * Renderer::MEGA_VERTEX_BUFFER_COUNT;
@@ -238,6 +232,7 @@ void StagingBuffer::Run()
         frameNumber++;
     }
 }
+
 void StagingBuffer::Render()
 {
     std::array<uint32_t, 2> scaledRenderExtent = renderContext->GetScaledRenderExtent();
@@ -535,6 +530,7 @@ void StagingBuffer::Render()
         fmt::print("Swapchain out of date or suboptimal (Present)\n");
     }
 }
+
 void StagingBuffer::Cleanup()
 {
     vkDeviceWaitIdle(vulkanContext->device);
@@ -552,76 +548,63 @@ bool StagingBuffer::LoadModelIntoBuffers(const std::filesystem::path& modelPath,
     modelData.name = modelPath.filename().string();
     modelData.path = modelPath;
 
-    Renderer::AllocatedBuffer stagingBuffer{};
-    OffsetAllocator::Allocator stagingAllocator{Renderer::STAGING_BUFFER_SIZE};
-    // Vertices
     size_t sizeVertexPos = model.vertices.size() * sizeof(Renderer::Vertex);
     modelData.vertexAllocation = vertexBufferAllocator.allocate(sizeVertexPos);
-    // if (modelData.vertexAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
-    //     LOG_WARN("[ModelLoading::LoadModelIntoBuffers] Not enough space in vertex buffer");
-    //     return false;
-    // }
-    //memcpy(static_cast<char*>(megaVertexBuffer.allocationInfo.pMappedData) + modelData.vertexAllocation.offset, model.vertices.data(), sizeVertexPos);
-
-    // Indices
-    // todo: index upload
     size_t sizeIndices = model.indices.size() * sizeof(uint32_t);
     modelData.indexAllocation = indexBufferAllocator.allocate(sizeIndices);
-    // if (modelData.indexAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
-    //     LOG_WARN("[ModelLoading::LoadModelIntoBuffers] Not enough space in index buffer");
-    //     return false;
-    // }
-    // memcpy(static_cast<char*>(megaIndexBuffer.allocationInfo.pMappedData) + modelData.indexAllocation.offset, model.indices.data(), sizeIndices);
 
-    // Descriptor assignment can happen here. Resource upload, will need to be staged and
-    auto remapIndices = [](auto& indices, const std::vector<int32_t>& map) {
-        indices.x = indices.x >= 0 ? map[indices.x] : -1;
-        indices.y = indices.y >= 0 ? map[indices.y] : -1;
-        indices.z = indices.z >= 0 ? map[indices.z] : -1;
-        indices.w = indices.w >= 0 ? map[indices.w] : -1;
-    };
+    // Samplers / Textures / Materials
+    {
+        auto remapIndices = [](auto& indices, const std::vector<int32_t>& map) {
+            indices.x = indices.x >= 0 ? map[indices.x] : -1;
+            indices.y = indices.y >= 0 ? map[indices.y] : -1;
+            indices.z = indices.z >= 0 ? map[indices.z] : -1;
+            indices.w = indices.w >= 0 ? map[indices.w] : -1;
+        };
 
-    std::vector<int32_t> materialToBufferMap;
+        std::vector<int32_t> materialToBufferMap;
 
-    // Samplers
-    materialToBufferMap.resize(model.samplers.size());
-    for (int32_t i = 0; i < model.samplers.size(); ++i) {
-        materialToBufferMap[i] = bindlessResourcesDescriptorBuffer.AllocateSampler(model.samplers[i].handle);
+        // Samplers
+        materialToBufferMap.resize(model.samplers.size());
+        for (int32_t i = 0; i < model.samplers.size(); ++i) {
+            materialToBufferMap[i] = bindlessResourcesDescriptorBuffer.AllocateSampler(model.samplers[i].handle);
+        }
+
+        for (Renderer::MaterialProperties& material : model.materials) {
+            remapIndices(material.textureSamplerIndices, materialToBufferMap);
+            remapIndices(material.textureSamplerIndices2, materialToBufferMap);
+        }
+
+        modelData.samplerIndexToDescriptorBufferIndexMap = std::move(materialToBufferMap);
+
+        // Textures
+        materialToBufferMap.clear();
+        materialToBufferMap.resize(model.imageViews.size());
+
+        for (int32_t i = 0; i < model.imageViews.size(); ++i) {
+            materialToBufferMap[i] = bindlessResourcesDescriptorBuffer.AllocateTexture({
+                .imageView = model.imageViews[i].handle,
+                .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+            });
+        }
+
+        for (Renderer::MaterialProperties& material : model.materials) {
+            remapIndices(material.textureImageIndices, materialToBufferMap);
+            remapIndices(material.textureImageIndices2, materialToBufferMap);
+        }
+
+        modelData.textureIndexToDescriptorBufferIndexMap = std::move(materialToBufferMap);
+        // Materials
+        size_t sizeMaterials = model.materials.size() * sizeof(Renderer::MaterialProperties);
+        modelData.materialAllocation = materialBufferAllocator.allocate(sizeMaterials);
+        // memcpy(static_cast<char*>(materialBuffer.allocationInfo.pMappedData) + modelData.materialAllocation.offset, model.materials.data(), sizeMaterials);
     }
 
-    for (Renderer::MaterialProperties& material : model.materials) {
-        remapIndices(material.textureSamplerIndices, materialToBufferMap);
-        remapIndices(material.textureSamplerIndices2, materialToBufferMap);
-    }
-
-    modelData.samplerIndexToDescriptorBufferIndexMap = std::move(materialToBufferMap);
-
-    // Textures
-    materialToBufferMap.clear();
-    materialToBufferMap.resize(model.imageViews.size());
-
-    for (int32_t i = 0; i < model.imageViews.size(); ++i) {
-        materialToBufferMap[i] = bindlessResourcesDescriptorBuffer.AllocateTexture({
-            .imageView = model.imageViews[i].handle,
-            .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-        });
-    }
-
-    for (Renderer::MaterialProperties& material : model.materials) {
-        remapIndices(material.textureImageIndices, materialToBufferMap);
-        remapIndices(material.textureImageIndices2, materialToBufferMap);
-    }
-
-    modelData.textureIndexToDescriptorBufferIndexMap = std::move(materialToBufferMap);
-    // Materials
-    size_t sizeMaterials = model.materials.size() * sizeof(Renderer::MaterialProperties);
-    modelData.materialAllocation = materialBufferAllocator.allocate(sizeMaterials);
-    // memcpy(static_cast<char*>(materialBuffer.allocationInfo.pMappedData) + modelData.materialAllocation.offset, model.materials.data(), sizeMaterials);
 
     // Primitives
-    uint32_t firstIndexCount = modelData.indexAllocation.offset / sizeof(uint32_t);
-    uint32_t vertexOffsetCount = modelData.vertexAllocation.offset / sizeof(Renderer::Vertex);
-    uint32_t materialOffsetCount = modelData.materialAllocation.offset / sizeof(Renderer::MaterialProperties);
+    const uint32_t firstIndexCount = modelData.indexAllocation.offset / sizeof(uint32_t);
+    const uint32_t vertexOffsetCount = modelData.vertexAllocation.offset / sizeof(Renderer::Vertex);
+    const uint32_t materialOffsetCount = modelData.materialAllocation.offset / sizeof(Renderer::MaterialProperties);
 
     for (auto& primitive : model.primitives) {
         primitive.firstIndex += firstIndexCount;
@@ -629,12 +612,10 @@ bool StagingBuffer::LoadModelIntoBuffers(const std::filesystem::path& modelPath,
         primitive.materialIndex += materialOffsetCount;
     }
 
-    size_t sizePrimitives = model.primitives.size() * sizeof(fastgltf::Primitive);
+    const size_t sizePrimitives = model.primitives.size() * sizeof(fastgltf::Primitive);
     modelData.primitiveAllocation = primitiveBufferAllocator.allocate(sizePrimitives);
-    // memcpy(static_cast<char*>(primitiveBuffer.allocationInfo.pMappedData) + modelData.primitiveAllocation.offset,
-    //        model.primitives.data(), sizePrimitives);
 
-    uint32_t primitiveOffsetCount = modelData.primitiveAllocation.offset / sizeof(fastgltf::Primitive);
+    const uint32_t primitiveOffsetCount = modelData.primitiveAllocation.offset / sizeof(fastgltf::Primitive);
     modelData.meshes = std::move(model.meshes);
     for (auto& mesh : modelData.meshes) {
         for (auto& primitiveIndex : mesh.primitiveIndices) {

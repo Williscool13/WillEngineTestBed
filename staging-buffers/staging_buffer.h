@@ -9,7 +9,6 @@
 #include "offsetAllocator.hpp"
 #include <volk/volk.h>
 
-#include "core/constants.h"
 #include "render/render_constants.h"
 #include "render/render_context.h"
 #include "render/render_targets.h"

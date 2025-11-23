@@ -11,7 +11,6 @@
 #include <fastgltf/tools.hpp>
 #include <VkBootstrap.h>
 #include <backends/imgui_impl_vulkan.h>
-#include <core/constants.h>
 
 #include "meshoptimizer.h"
 #include "core/time.h"
@@ -299,7 +298,7 @@ void AssetPipeline::Render(uint32_t currentFrameInFlight, Renderer::FrameSynchro
 
     // Indirect Draw
     {
-        constexpr VkClearValue colorClear = {.color = {0.0f, 0.0f, 1.0f, 1.0f}};
+        constexpr VkClearValue colorClear = {.color = {1.0f, 1.0f, 1.0f, 1.0f}};
         const VkRenderingAttachmentInfo colorAttachment = Renderer::VkHelpers::RenderingAttachmentInfo(renderTargets->drawImageView.handle, &colorClear, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
         constexpr VkClearValue depthClear = {.depthStencil = {0.0f, 0u}};
         const VkRenderingAttachmentInfo depthAttachment = Renderer::VkHelpers::RenderingAttachmentInfo(renderTargets->depthImageView.handle, &depthClear, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
@@ -522,183 +521,6 @@ void AssetPipeline::CreateBuffers()
     bindlessResourcesDescriptorBuffer = Renderer::DescriptorBufferBindlessResources(vulkanContext.get());
 }
 
-void AssetPipeline::CreateTrivialMeshletModel()
-{
-    // setup basic cube
-    std::vector<Renderer::Vertex> cubeVertices = {
-        // Front face (z+)
-        {{-0.5f, -0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
-        {{0.5f, -0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
-        {{0.5f, 0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
-        {{-0.5f, 0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
-        // Back face (z-)
-        {{0.5f, -0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 0.0f, 1.0f}},
-        {{-0.5f, -0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 0.0f, 1.0f}},
-        {{-0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 0.0f, 1.0f}},
-        {{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 0.0f, 1.0f}},
-        // Top face (y+)
-        {{-0.5f, 0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f, 1.0f}},
-        {{0.5f, 0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f, 1.0f}},
-        {{0.5f, 0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f, 1.0f}},
-        {{-0.5f, 0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f, 1.0f}},
-        // Bottom face (y-)
-        {{-0.5f, -0.5f, -0.5f}, {0.0f, -1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 0.0f, 1.0f}},
-        {{0.5f, -0.5f, -0.5f}, {0.0f, -1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 0.0f, 1.0f}},
-        {{0.5f, -0.5f, 0.5f}, {0.0f, -1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 0.0f, 1.0f}},
-        {{-0.5f, -0.5f, 0.5f}, {0.0f, -1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 0.0f, 1.0f}},
-        // Right face (x+)
-        {{0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f, 1.0f}},
-        {{0.5f, -0.5f, 0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f, 1.0f}},
-        {{0.5f, 0.5f, 0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f, 1.0f}},
-        {{0.5f, 0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f, 1.0f}},
-        // Left face (x-)
-        {{-0.5f, -0.5f, 0.5f}, {-1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f, 1.0f}},
-        {{-0.5f, -0.5f, -0.5f}, {-1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f, 1.0f}},
-        {{-0.5f, 0.5f, -0.5f}, {-1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f, 1.0f}},
-        {{-0.5f, 0.5f, 0.5f}, {-1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f, 1.0f}},
-    };
-    std::vector<uint32_t> cubeIndices = {
-        0, 1, 2, 2, 3, 0, // Front
-        4, 5, 6, 6, 7, 4, // Back
-        8, 9, 10, 10, 11, 8, // Top
-        12, 13, 14, 14, 15, 12, // Bottom
-        16, 17, 18, 18, 19, 16, // Right
-        20, 21, 22, 22, 23, 20 // Left
-    };
-
-    const size_t max_vertices = 64;
-    const size_t max_triangles = 64;
-    const size_t target_group_size = 8;
-
-    // build clusters (meshlets) out of the mesh
-    size_t max_meshlets = meshopt_buildMeshletsBound(cubeIndices.size(), max_vertices, max_triangles);
-    std::vector<meshopt_Meshlet> meshlets(max_meshlets);
-    std::vector<unsigned int> meshletVertices(cubeIndices.size());
-    std::vector<unsigned char> meshletTriangles(cubeIndices.size());
-
-    std::vector<uint32_t> primitiveVertexPositions;
-    meshlets.resize(meshopt_buildMeshlets(&meshlets[0], &meshletVertices[0], &meshletTriangles[0],
-                                          cubeIndices.data(), cubeIndices.size(),
-                                          reinterpret_cast<const float*>(cubeVertices.data()), cubeVertices.size(), sizeof(Renderer::Vertex),
-                                          max_vertices, max_triangles, 0.f));
-
-    // Optimize each meshlet's micro index buffer/vertex layout individually
-    for (auto& meshlet : meshlets) {
-        meshopt_optimizeMeshlet(&meshletVertices[meshlet.vertex_offset], &meshletTriangles[meshlet.triangle_offset], meshlet.triangle_count, meshlet.vertex_count);
-    }
-
-    // Trim the meshlet data to minimize waste for meshletVertices/meshletTriangles
-    {
-        // this is an example of how to trim the vertex/triangle arrays when copying data out to GPU storage
-        const meshopt_Meshlet& last = meshlets.back();
-        meshletVertices.resize(last.vertex_offset + last.vertex_count);
-        meshletTriangles.resize(last.triangle_offset + last.triangle_count * 3);
-    }
-
-
-    // todo: meshlet bounding volume and cone
-    Renderer::MeshletPrimitive primitiveData;
-    primitiveData.meshletOffset = 0;
-    primitiveData.meshletCount = meshlets.size();
-    primitiveData.boundingSphere = Renderer::ModelLoadUtils::GenerateBoundingSphere(cubeVertices);
-
-    // meshData.primitiveIndices.push_back(meshletModel.primitives.size());
-    // meshletModel.primitives.push_back(primitiveData);
-
-    uint32_t vertexOffset = 0;
-    uint32_t meshletVertexOffset = 0;
-    uint32_t meshletTrianglesOffset = 0;
-
-    // meshletModel.vertices.insert(meshletModel.vertices.end(), primitiveVertices.begin(), primitiveVertices.end());
-    // meshletModel.meshletVertices.insert(meshletModel.meshletVertices.end(), meshletVertices.begin(), meshletVertices.end());
-    // meshletModel.meshletTriangles.insert(meshletModel.meshletTriangles.end(), meshletTriangles.begin(), meshletTriangles.end());
-
-    std::vector<Renderer::Meshlet> outputMeshlets; {};
-    for (meshopt_Meshlet meshlet : meshlets) {
-        outputMeshlets.push_back({
-            .vertexOffset = vertexOffset,
-            .meshletVerticesOffset = meshletVertexOffset + meshlet.vertex_offset,
-            .meshletTriangleOffset = meshletTrianglesOffset + meshlet.triangle_offset,
-            .meshletVerticesCount = meshlet.vertex_count,
-            .meshletTriangleCount = meshlet.triangle_count,
-        });
-    }
-
-    Renderer::MeshletModelData trivialMeshletModelData{};
-
-    // Vertices
-    size_t sizeVertices = cubeVertices.size() * sizeof(Renderer::Vertex);
-    trivialMeshletModelData.vertexAllocation = vertexBufferAllocator.allocate(sizeVertices);
-    if (trivialMeshletModelData.vertexAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
-        LOG_WARN("[ModelLoading::LoadModelIntoBuffers] Not enough space in vertex buffer");
-        return;
-    }
-    memcpy(static_cast<char*>(megaVertexBuffer.allocationInfo.pMappedData) + trivialMeshletModelData.vertexAllocation.offset, cubeVertices.data(), sizeVertices);
-
-    // Meshlet Vertices
-    size_t sizeMeshletVertices = meshletVertices.size() * sizeof(uint32_t);
-    trivialMeshletModelData.meshletVerticesAllocation = meshletVerticesBufferAllocator.allocate(sizeMeshletVertices);
-    if (trivialMeshletModelData.meshletVerticesAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
-        LOG_WARN("[ModelLoading::LoadModelIntoBuffers] Not enough space in meshletVertices buffer");
-        return;
-    }
-    memcpy(static_cast<char*>(megaMeshletVerticesBuffer.allocationInfo.pMappedData) + trivialMeshletModelData.meshletVerticesAllocation.offset, meshletVertices.data(), sizeMeshletVertices);
-
-    // Meshlet Triangles
-    size_t sizeMeshletTriangles = meshletTriangles.size() * sizeof(uint8_t);
-    trivialMeshletModelData.meshletTrianglesAllocation = meshletTrianglesBufferAllocator.allocate(sizeMeshletTriangles);
-    if (trivialMeshletModelData.meshletTrianglesAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
-        LOG_WARN("[ModelLoading::LoadModelIntoBuffers] Not enough space in meshletTriangles buffer");
-        return;
-    }
-    memcpy(static_cast<char*>(megaMeshletTrianglesBuffer.allocationInfo.pMappedData) + trivialMeshletModelData.meshletTrianglesAllocation.offset, meshletTriangles.data(), sizeMeshletTriangles);
-
-    // Meshlets
-    uint32_t _vertexOffset = trivialMeshletModelData.vertexAllocation.offset / sizeof(Renderer::Vertex);
-    uint32_t meshletVerticesOffset = trivialMeshletModelData.meshletVerticesAllocation.offset / sizeof(uint32_t);
-    uint32_t meshletTriangleOffset = trivialMeshletModelData.meshletTrianglesAllocation.offset / sizeof(uint8_t);
-    for (Renderer::Meshlet& meshlet : outputMeshlets) {
-        meshlet.vertexOffset += _vertexOffset;
-        meshlet.meshletVerticesOffset += meshletVerticesOffset;
-        meshlet.meshletTriangleOffset += meshletTriangleOffset;
-    }
-
-    size_t sizeMeshlets = outputMeshlets.size() * sizeof(Renderer::Meshlet);
-    trivialMeshletModelData.meshletAllocation = meshletBufferAllocator.allocate(sizeMeshlets);
-    if (trivialMeshletModelData.meshletAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
-        LOG_WARN("[ModelLoading::LoadModelIntoBuffers] Not enough space in meshlets buffer");
-        return;
-    }
-    memcpy(static_cast<char*>(megaMeshletBuffer.allocationInfo.pMappedData) + trivialMeshletModelData.meshletAllocation.offset, outputMeshlets.data(), sizeMeshlets);
-
-
-    // Primitives
-    uint32_t meshletOffset = trivialMeshletModelData.meshletAllocation.offset / sizeof(Renderer::Meshlet);
-    uint32_t materialOffsetCount = 0;
-
-    primitiveData.meshletOffset += meshletOffset;
-    primitiveData.materialIndex += materialOffsetCount;
-    size_t sizePrimitives = 1 * sizeof(Renderer::MeshletPrimitive);
-    trivialMeshletModelData.primitiveAllocation = primitiveBufferAllocator.allocate(sizePrimitives);
-    if (trivialMeshletModelData.primitiveAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
-        LOG_WARN("[ModelLoading::LoadModelIntoBuffers] Not enough space in primitives buffer");
-        return;
-    }
-    memcpy(static_cast<char*>(primitiveBuffer.allocationInfo.pMappedData) + trivialMeshletModelData.primitiveAllocation.offset, &primitiveData, sizePrimitives);
-
-
-    Renderer::Model modelMatrix = {1.0f};
-    memcpy(static_cast<char*>(modelBuffer.allocationInfo.pMappedData), &modelMatrix, sizeof(Renderer::Model));
-
-    // Add 1x instance (point to 1x model)
-    Renderer::Instance i;
-    i.modelIndex = 0;
-    i.primitiveIndex = 0;
-    i.bIsAllocated = 1;
-    i.jointMatrixOffset = 0;
-    memcpy(static_cast<char*>(instanceBuffer.allocationInfo.pMappedData), &i, sizeof(Renderer::Instance));
-}
-
 void AssetPipeline::CreateMeshletModel()
 {
     auto bunnyPath = std::filesystem::path("../assets/stanford_bunny/stanford_bunny.gltf");
@@ -851,12 +673,7 @@ void AssetPipeline::CreateMeshletModel()
     i2.jointMatrixOffset = 0;
 
     Renderer::Instance dummyInst{0, 0, 0, false};
-    memcpy(static_cast<char*>(instanceBuffer.allocationInfo.pMappedData), &i, sizeof(Renderer::Instance));
+    memcpy(instanceBuffer.allocationInfo.pMappedData, &i, sizeof(Renderer::Instance));
     memcpy(static_cast<char*>(instanceBuffer.allocationInfo.pMappedData) + sizeof(Renderer::Instance), &i2, sizeof(Renderer::Instance));
-    auto a = static_cast<Renderer::Instance*>(instanceBuffer.allocationInfo.pMappedData)[0];
-    auto b = static_cast<Renderer::Instance*>(instanceBuffer.allocationInfo.pMappedData)[0];
-    auto c = static_cast<Renderer::Instance*>(instanceBuffer.allocationInfo.pMappedData)[2];
-    auto d = static_cast<Renderer::Instance*>(instanceBuffer.allocationInfo.pMappedData)[3];
-    //memcpy(static_cast<char*>(instanceBuffer.allocationInfo.pMappedData), &i, sizeof(Renderer::Instance));
 }
 }

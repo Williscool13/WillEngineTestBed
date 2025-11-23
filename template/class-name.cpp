@@ -5,9 +5,7 @@
 #include "class-name.h"
 
 #include "VkBootstrap.h"
-#include "backends/imgui_impl_sdl3.h"
 #include "backends/imgui_impl_vulkan.h"
-#include "core/constants.h"
 #include "core/time.h"
 
 #include "crash-handling/crash_handler.h"
@@ -17,7 +15,6 @@
 
 #include "render/vk_context.h"
 #include "render/vk_swapchain.h"
-#include "render/vk_descriptors.h"
 #include "render/vk_helpers.h"
 #include "render/render_utils.h"
 #include "render/render_constants.h"
@@ -25,8 +22,6 @@
 
 #include "input/input.h"
 #include "render/render_context.h"
-#include "utils/utils.h"
-#include "utils/world_constants.h"
 
 namespace Template
 {
@@ -36,7 +31,6 @@ ClassName::~ClassName() = default;
 
 void ClassName::Initialize()
 {
-    Utils::ScopedTimer timer{"Template Initialization"};
     bool sdlInitSuccess = SDL_Init(SDL_INIT_VIDEO);
     if (!sdlInitSuccess) {
         LOG_ERROR("SDL_Init failed: {}", SDL_GetError());
@@ -97,35 +91,35 @@ void ClassName::Initialize()
     // setup basic cube
     std::vector<Renderer::Vertex> cubeVertices = {
         // Front face (z+)
-        {{-0.5f, -0.5f, 0.5f}, 0.0f, {0.0f, 0.0f, 1.0f}, 0.0f, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
-        {{0.5f, -0.5f, 0.5f}, 0.0f, {0.0f, 0.0f, 1.0f}, 0.0f, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
-        {{0.5f, 0.5f, 0.5f}, 0.0f, {0.0f, 0.0f, 1.0f}, 0.0f, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
-        {{-0.5f, 0.5f, 0.5f}, 0.0f, {0.0f, 0.0f, 1.0f}, 0.0f, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
+        {{-0.5f, -0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
+        {{0.5f, -0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
+        {{0.5f, 0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
+        {{-0.5f, 0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
         // Back face (z-)
-        {{0.5f, -0.5f, -0.5f}, 0.0f, {0.0f, 0.0f, -1.0f}, 0.0f, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 0.0f, 1.0f}},
-        {{-0.5f, -0.5f, -0.5f}, 0.0f, {0.0f, 0.0f, -1.0f}, 0.0f, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 0.0f, 1.0f}},
-        {{-0.5f, 0.5f, -0.5f}, 0.0f, {0.0f, 0.0f, -1.0f}, 0.0f, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 0.0f, 1.0f}},
-        {{0.5f, 0.5f, -0.5f}, 0.0f, {0.0f, 0.0f, -1.0f}, 0.0f, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 0.0f, 1.0f}},
+        {{0.5f, -0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 0.0f, 1.0f}},
+        {{-0.5f, -0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 0.0f, 1.0f}},
+        {{-0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 0.0f, 1.0f}},
+        {{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 0.0f, 1.0f}},
         // Top face (y+)
-        {{-0.5f, 0.5f, -0.5f}, 0.0f, {0.0f, 1.0f, 0.0f}, 0.0f, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f, 1.0f}},
-        {{0.5f, 0.5f, -0.5f}, 0.0f, {0.0f, 1.0f, 0.0f}, 0.0f, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f, 1.0f}},
-        {{0.5f, 0.5f, 0.5f}, 0.0f, {0.0f, 1.0f, 0.0f}, 0.0f, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f, 1.0f}},
-        {{-0.5f, 0.5f, 0.5f}, 0.0f, {0.0f, 1.0f, 0.0f}, 0.0f, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f, 1.0f}},
+        {{-0.5f, 0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f, 1.0f}},
+        {{0.5f, 0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f, 1.0f}},
+        {{0.5f, 0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f, 1.0f}},
+        {{-0.5f, 0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f, 1.0f}},
         // Bottom face (y-)
-        {{-0.5f, -0.5f, -0.5f}, 0.0f, {0.0f, -1.0f, 0.0f}, 0.0f, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 0.0f, 1.0f}},
-        {{0.5f, -0.5f, -0.5f}, 0.0f, {0.0f, -1.0f, 0.0f}, 0.0f, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 0.0f, 1.0f}},
-        {{0.5f, -0.5f, 0.5f}, 0.0f, {0.0f, -1.0f, 0.0f}, 0.0f, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 0.0f, 1.0f}},
-        {{-0.5f, -0.5f, 0.5f}, 0.0f, {0.0f, -1.0f, 0.0f}, 0.0f, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 0.0f, 1.0f}},
+        {{-0.5f, -0.5f, -0.5f}, {0.0f, -1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 0.0f, 1.0f}},
+        {{0.5f, -0.5f, -0.5f}, {0.0f, -1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 0.0f, 1.0f}},
+        {{0.5f, -0.5f, 0.5f}, {0.0f, -1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 0.0f, 1.0f}},
+        {{-0.5f, -0.5f, 0.5f}, {0.0f, -1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 0.0f, 1.0f}},
         // Right face (x+)
-        {{0.5f, -0.5f, -0.5f}, 0.0f, {1.0f, 0.0f, 0.0f}, 0.0f, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f, 1.0f}},
-        {{0.5f, -0.5f, 0.5f}, 0.0f, {1.0f, 0.0f, 0.0f}, 0.0f, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f, 1.0f}},
-        {{0.5f, 0.5f, 0.5f}, 0.0f, {1.0f, 0.0f, 0.0f}, 0.0f, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f, 1.0f}},
-        {{0.5f, 0.5f, -0.5f}, 0.0f, {1.0f, 0.0f, 0.0f}, 0.0f, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f, 1.0f}},
+        {{0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f, 1.0f}},
+        {{0.5f, -0.5f, 0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f, 1.0f}},
+        {{0.5f, 0.5f, 0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f, 1.0f}},
+        {{0.5f, 0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f, 1.0f}},
         // Left face (x-)
-        {{-0.5f, -0.5f, 0.5f}, 0.0f, {-1.0f, 0.0f, 0.0f}, 0.0f, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f, 1.0f}},
-        {{-0.5f, -0.5f, -0.5f}, 0.0f, {-1.0f, 0.0f, 0.0f}, 0.0f, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f, 1.0f}},
-        {{-0.5f, 0.5f, -0.5f}, 0.0f, {-1.0f, 0.0f, 0.0f}, 0.0f, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f, 1.0f}},
-        {{-0.5f, 0.5f, 0.5f}, 0.0f, {-1.0f, 0.0f, 0.0f}, 0.0f, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f, 1.0f}},
+        {{-0.5f, -0.5f, 0.5f}, {-1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f, 1.0f}},
+        {{-0.5f, -0.5f, -0.5f}, {-1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f, 1.0f}},
+        {{-0.5f, 0.5f, -0.5f}, {-1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f, 1.0f}},
+        {{-0.5f, 0.5f, 0.5f}, {-1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f, 1.0f}},
     };
 
     std::vector<uint32_t> cubeIndices = {
@@ -187,8 +181,6 @@ void ClassName::Run()
             break;
         }
 
-        input.UpdateFocus(SDL_GetWindowFlags(window));
-        time.Update();
         if (bSwapchainOutdated) {
             vkDeviceWaitIdle(vulkanContext->device);
 
@@ -205,6 +197,7 @@ void ClassName::Run()
 
             bSwapchainOutdated = false;
         }
+
         if (renderContext->HasPendingRenderExtentChanges()) {
             vkDeviceWaitIdle(vulkanContext->device);
             renderContext->ApplyRenderExtentResize();
@@ -213,36 +206,27 @@ void ClassName::Run()
             renderTargets->Recreate(newExtents[0], newExtents[1]);
         }
 
+        input.UpdateFocus(SDL_GetWindowFlags(window));
+        time.Update();
+
+        const float deltaTime = Time::Get().GetDeltaTime();
+        freeCamera.Update(deltaTime);
         const uint32_t currentFrameInFlight = frameNumber % swapchain->imageCount;
         auto& currentFrameSync = frameSynchronization[currentFrameInFlight];
-        Render(currentFrameInFlight, currentFrameSync);
+        Render(deltaTime, currentFrameInFlight, currentFrameSync);
         frameNumber++;
     }
 }
 
-void ClassName::Render(uint32_t currentFrameInFlight, Renderer::FrameSynchronization& frameSync)
+void ClassName::Render(float deltaTime, uint32_t currentFrameInFlight, Renderer::FrameSynchronization& frameSync)
 {
-    // Wait for the GPU to finish the last frame that used this frame-in-flight's resources (N - imageCount).
     VK_CHECK(vkWaitForFences(vulkanContext->device, 1, &frameSync.renderFence, true, UINT64_MAX));
     VK_CHECK(vkResetFences(vulkanContext->device, 1, &frameSync.renderFence));
 
-    // Acquire swapchain image index. Signal semaphore when the actual image is ready for use.
-    uint32_t swapchainImageIndex;
-    VkResult e = vkAcquireNextImageKHR(vulkanContext->device, swapchain->handle, UINT64_MAX, frameSync.swapchainSemaphore, nullptr, &swapchainImageIndex);
-    if (e == VK_ERROR_OUT_OF_DATE_KHR || e == VK_SUBOPTIMAL_KHR) {
-        bSwapchainOutdated = true;
-        LOG_WARN("Swapchain out of date or suboptimal (Acquire)");
-        return;
-    }
-
     std::array<uint32_t, 2> scaledRenderExtent = renderContext->GetScaledRenderExtent();
-    const Input& input = Input::Input::Get();
-    const float deltaTime = Time::Get().GetDeltaTime();
-    VkImage currentSwapchainImage = swapchain->swapchainImages[swapchainImageIndex];
 
     //
     {
-        freeCamera.Update(deltaTime);
         const glm::vec3 cameraPos = freeCamera.GetPosition();
         const glm::vec3 forward = freeCamera.GetForward();
         const glm::vec3 up = freeCamera.GetUp();
@@ -264,7 +248,7 @@ void ClassName::Render(uint32_t currentFrameInFlight, Renderer::FrameSynchroniza
         sceneData.deltaTime = deltaTime;
 
         Renderer::AllocatedBuffer& currentSceneDataBuffer = sceneDataBuffers[currentFrameInFlight];
-        Renderer::SceneData* currentSceneData = static_cast<Renderer::SceneData*>(currentSceneDataBuffer.allocationInfo.pMappedData);
+        auto currentSceneData = static_cast<Renderer::SceneData*>(currentSceneDataBuffer.allocationInfo.pMappedData);
         *currentSceneData = sceneData;
     }
 
@@ -272,7 +256,6 @@ void ClassName::Render(uint32_t currentFrameInFlight, Renderer::FrameSynchroniza
     VK_CHECK(vkResetCommandBuffer(cmd, 0));
     VkCommandBufferBeginInfo commandBufferBeginInfo = Renderer::VkHelpers::CommandBufferBeginInfo();
     VK_CHECK(vkBeginCommandBuffer(cmd, &commandBufferBeginInfo));
-
 
     //
     {
@@ -308,7 +291,6 @@ void ClassName::Render(uint32_t currentFrameInFlight, Renderer::FrameSynchroniza
         Renderer::RenderPushConstants pushData{
             glm::mat4(1.0f),
             currentSceneDataBuffer.address,
-
         };
 
         vkCmdPushConstants(cmd, renderPipeline.pipelineLayout.handle, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(Renderer::RenderPushConstants), &pushData);
@@ -322,6 +304,16 @@ void ClassName::Render(uint32_t currentFrameInFlight, Renderer::FrameSynchroniza
 
         vkCmdEndRendering(cmd);
     }
+
+    uint32_t swapchainImageIndex;
+    VkResult e = vkAcquireNextImageKHR(vulkanContext->device, swapchain->handle, UINT64_MAX, frameSync.swapchainSemaphore, nullptr, &swapchainImageIndex);
+    if (e == VK_ERROR_OUT_OF_DATE_KHR || e == VK_SUBOPTIMAL_KHR) {
+        bSwapchainOutdated = true;
+        LOG_WARN("Swapchain out of date or suboptimal (Acquire)");
+        return;
+    }
+    VkImage currentSwapchainImage = swapchain->swapchainImages[swapchainImageIndex];
+
 
     // Prepare for copy
     {
@@ -393,11 +385,8 @@ void ClassName::Render(uint32_t currentFrameInFlight, Renderer::FrameSynchroniza
     VkSemaphoreSubmitInfo swapchainSemaphoreWaitInfo = Renderer::VkHelpers::SemaphoreSubmitInfo(frameSync.swapchainSemaphore, VK_PIPELINE_STAGE_2_BLIT_BIT);
     VkSemaphoreSubmitInfo renderSemaphoreSignalInfo = Renderer::VkHelpers::SemaphoreSubmitInfo(frameSync.renderSemaphore, VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT);
     VkSubmitInfo2 submitInfo = Renderer::VkHelpers::SubmitInfo(&commandBufferSubmitInfo, &swapchainSemaphoreWaitInfo, &renderSemaphoreSignalInfo);
-
-    // Wait for swapchain semaphore, then submit command buffer. When finished, signal render semaphore and render fence.
     VK_CHECK(vkQueueSubmit2(vulkanContext->graphicsQueue, 1, &submitInfo, frameSync.renderFence));
 
-    // Wait for render semaphore, then present frame.
     VkPresentInfoKHR presentInfo = Renderer::VkHelpers::PresentInfo(&swapchain->handle, nullptr, &swapchainImageIndex);
     presentInfo.pWaitSemaphores = &frameSync.renderSemaphore;
     const VkResult presentResult = vkQueuePresentKHR(vulkanContext->graphicsQueue, &presentInfo);

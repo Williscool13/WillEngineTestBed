@@ -51,8 +51,6 @@ public:
 
     void CreateBuffers();
 
-    void CreateTrivialMeshletModel();
-
     void CreateMeshletModel();
 
 private:

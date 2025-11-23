@@ -40,7 +40,7 @@ public:
 
     void Run();
 
-    void Render(uint32_t currentFrameInFlight, Renderer::FrameSynchronization& frameSync);
+    void Render(float deltaTime, uint32_t currentFrameInFlight, Renderer::FrameSynchronization& frameSync);
 
     void Cleanup();
 
