@@ -2,7 +2,7 @@
 // Created by William on 2025-10-09.
 //
 
-#include "asset-pipeline.h"
+#include "meshlet-rendering.h"
 
 #include <filesystem>
 
@@ -30,13 +30,13 @@
 #include "render/model/model_load_utils.h"
 #include "utils/utils.h"
 
-namespace AssetPipeline
+namespace MeshletRendering
 {
-AssetPipeline::AssetPipeline() = default;
+MeshletRendering::MeshletRendering() = default;
 
-AssetPipeline::~AssetPipeline() = default;
+MeshletRendering::~MeshletRendering() = default;
 
-void AssetPipeline::Initialize()
+void MeshletRendering::Initialize()
 {
     Utils::ScopedTimer timer{"Asset Pipeline Initialization"};
     bool sdlInitSuccess = SDL_Init(SDL_INIT_VIDEO);
@@ -101,7 +101,7 @@ void AssetPipeline::Initialize()
     indirectMeshShaderPipeline = Renderer::IndirectMeshShaderPipeline(vulkanContext.get(), bindlessResourcesDescriptorBuffer.descriptorSetLayout.handle);
 }
 
-void AssetPipeline::Run()
+void MeshletRendering::Run()
 {
     Input& input = Input::Input::Get();
     Time& time = Time::Get();
@@ -176,7 +176,7 @@ void AssetPipeline::Run()
     }
 }
 
-void AssetPipeline::Render(uint32_t currentFrameInFlight, Renderer::FrameSynchronization& frameSync)
+void MeshletRendering::Render(uint32_t currentFrameInFlight, Renderer::FrameSynchronization& frameSync)
 {
     // Wait for the GPU to finish the last frame that used this frame-in-flight's resources (N - imageCount).
     VK_CHECK(vkWaitForFences(vulkanContext->device, 1, &frameSync.renderFence, true, 1000000000));
@@ -470,14 +470,14 @@ void AssetPipeline::Render(uint32_t currentFrameInFlight, Renderer::FrameSynchro
     }
 }
 
-void AssetPipeline::Cleanup()
+void MeshletRendering::Cleanup()
 {
     vkDeviceWaitIdle(vulkanContext->device);
 
     SDL_DestroyWindow(window);
 }
 
-void AssetPipeline::CreateBuffers()
+void MeshletRendering::CreateBuffers()
 {
     VkBufferCreateInfo bufferInfo = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
     bufferInfo.pNext = nullptr;
@@ -521,7 +521,7 @@ void AssetPipeline::CreateBuffers()
     bindlessResourcesDescriptorBuffer = Renderer::DescriptorBufferBindlessResources(vulkanContext.get());
 }
 
-void AssetPipeline::CreateMeshletModel()
+void MeshletRendering::CreateMeshletModel()
 {
     auto bunnyPath = std::filesystem::path("../assets/stanford_bunny/stanford_bunny.gltf");
     Renderer::ExtractedMeshletModel meshletModel = modelLoader->LoadMeshletGltf(bunnyPath);

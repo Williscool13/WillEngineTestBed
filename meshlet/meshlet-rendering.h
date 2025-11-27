@@ -32,14 +32,14 @@ struct Swapchain;
 struct RenderTargets;
 }
 
-namespace AssetPipeline
+namespace MeshletRendering
 {
-class AssetPipeline
+class MeshletRendering
 {
 public:
-    AssetPipeline();
+    MeshletRendering();
 
-    ~AssetPipeline();
+    ~MeshletRendering();
 
     void Initialize();
 

@@ -6,23 +6,23 @@
 
 #include <fmt/format.h>
 
-#include "asset-pipeline.h"
+#include "meshlet-rendering.h"
 #include "src/crash-handling/crash_context.h"
 #include "src/crash-handling/crash_handler.h"
 #include "src/crash-handling/logger.h"
 
 int main()
 {
-    fmt::println("=== Asset Pipeline ===");
+    fmt::println("=== Meshlet Rendering ===");
 
     CrashHandler::Initialize("crashes/");
     CrashContext::Initialize();
-    Logger::Initialize("logs/asset-pipeline.log");
+    Logger::Initialize("logs/meshlet-rendering.log");
 
-    AssetPipeline::AssetPipeline ap{};
-    ap.Initialize();
-    ap.Run();
-    ap.Cleanup();
+    MeshletRendering::MeshletRendering mr{};
+    mr.Initialize();
+    mr.Run();
+    mr.Cleanup();
 
     return 0;
 }
