@@ -3,11 +3,13 @@ import common_instancing;
 
 // =============== Compute Shader (Instance Visibility and Primitive Accumulation Count) ===============
 struct VisibilityPushConstant {
+    // Read-Only
     SceneData* sceneData;
     MeshletPrimitiveData* primitiveBuffer;
     ModelData* modelBuffer;
     InstanceData* instanceBuffer;
 
+    // Read-Write
     PackedVisibilityBuffer* packedVisibilityBuffer;
     InstancePrimitiveOffsetBuffer* instanceOffsetBuffer;
     PrimitiveCountBuffer* primitiveCountBuffer;
@@ -60,54 +62,83 @@ void computeVisibility(uniform VisibilityPushConstant pushConstant, uint3 dtid :
     }
 }
 
-// rate - 1 instance per thread
-
-// Out
-// instance visibility buffer [uint8_t * sizeof(instanceBuffer)]
-//   uint8_t bIsVisible;
-//   uint16_t primitiveOffset; // later take `offset` from PrimitiveAccumulationData and write to `finalInstancedDrawBuffer[primAccData.offset + primitiveOffset]`
-// primitive count buffer [uint16_t * sizeof(primitiveBuffer)] - Each primitive is limited to 65536 instances, can easily increase for scenes with over that number of a single primitive.
-//   Counts number of instances
-//   Atomic<uint16_t> count;
-
 // =============== Compute Shader (Accumulation to determine offset of each instance) ===============
-// In
-// primitive count buffer
+// Note: This is a simple single threaded prefix sum implementation. It is unlikely to be the real bottleneck of the packed instance buffer generation.
+//     If needed, expand this with multi-pass complex GPU prefix sum and intermediate buffers.
+struct PrefixSumPushConstant {
+    // Read-Write
+    PrimitiveCountBuffer* primitiveCountBuffer;
 
-// rate - 1 primitive per thread
+    // Read-Only
+    uint32_t highestPrimitiveIndex;
+};
 
-// Out
-// struct PrimitiveAccumulationData {
-//    uint32_t offset;
-// }
-// primitive accumulation buffer [PrimitiveAccumulationData * sizeof(primitiveBuffer)]
-
+[shader("compute")]
+[numthreads(1, 1, 1)]
+void computePrefixSum(uniform PrefixSumPushConstant pushConstant) {
+    uint sum = 0;
+    for (uint i = 0; i < pushConstant.highestPrimitiveIndex; i++) {
+        pushConstant.primitiveCountBuffer->primitiveCounts[i].offset = sum;
+        sum += pushConstant.primitiveCountBuffer->primitiveCounts[i].count.load();
+    }
+}
 
 // =============== Compute Shader (Instance Draw buffer write) ===============
-// In
-// instance buffer
-// visibility buffer
-// primitive accumulation buffer
+struct IndirectWritePushConstant {
+    // Read-Only
+    SceneData* sceneData;
+    MeshletPrimitiveData* primitiveBuffer;
+    ModelData* modelBuffer;
+    InstanceData* instanceBuffer;
 
-// rate - 1 instance per thread
+    PackedVisibilityBuffer* packedVisibilityBuffer;
+    InstancePrimitiveOffsetBuffer* instanceOffsetBuffer;
+    PrimitiveCountBuffer* primitiveCountBuffer;
 
-// Out
-// final instanced draw buffer [Instance * sizeof(instanceBuffer)]
-//   Only contains visible and sorted by primitive instances. Worst case, all instances are visible so this must be equal to the number of instances present.
-//   Practically, we can just use an indirection to point to the instance location in the instance buffer. But I feel like indirection is why min all my profiles my L1 cache hit rate is awful, so I'm copying the instance data. FYI the reason I think this is bad for L! is because of the indirection.
-//  for reference: public struct Instance
-// {
-//     public uint32_t primitiveIndex;
-//     public uint32_t modelIndex;
-//     public uint32_t jointMatrixOffset;
-//     public uint32_t bIsAllocated;
-// };
+    // Read-Write
+    // todo: packed doesn't need bIsAllocated, can be optimized
+    InstanceData* compactedInstanceBuffer;
+    InstancedMeshIndirectParameterBuffer* indirectBuffer;
+};
 
+const static int32_t TASK_SHADER_DISPATCH_X = 64;
 
-// =============== Compute Shader (Indirect draw generation) ===============
-// In
-// final instanced draw buffer
+[shader("compute")]
+[numthreads(64, 1, 1)]
+void computeCompactAndGenerateIndirect(uniform IndirectWritePushConstant pushConstant, uint3 dtid : SV_DispatchThreadID)
+{
+    uint instanceID = dtid.x;
 
-// rate - 1 primitive per thread
+    uint visChunkIndex = instanceID / 32;
+    uint visChunkBit = instanceID % 32;
+    uint32_t visChunk = pushConstant.packedVisibilityBuffer->packedVisibilities[visChunkIndex].visibilityChunk;
+    bool visible = (visChunk & (1u << visChunkBit)) != 0;
 
-// the draw task/mesh indirect buffer to be used to draw the whole scene
+    if (!visible) return;
+
+    Instance inst = pushConstant.instanceBuffer->instances[instanceID];
+    uint16_t primitiveOffset = pushConstant.instanceOffsetBuffer->instancePrimitiveOffsets[instanceID].primitiveOffset;
+    uint32_t globalOffset = pushConstant.primitiveCountBuffer->primitiveCounts[inst.primitiveIndex].offset;
+
+    pushConstant.compactedInstanceBuffer->instances[globalOffset + primitiveOffset] = inst;
+
+    if (primitiveOffset == 0) {
+        MeshletPrimitive prim = pushConstant.primitiveBuffer->primitives[inst.primitiveIndex];
+        uint totalMeshlets = prim.meshletCount;
+        uint numChunks = (totalMeshlets + (TASK_SHADER_DISPATCH_X - 1)) / TASK_SHADER_DISPATCH_X;
+        uint32_t count = pushConstant.primitiveCountBuffer->primitiveCounts[inst.primitiveIndex].count.load();
+
+        InstancedMeshIndirectDrawParameters parameters;
+        parameters.groupCountX = numChunks;
+        parameters.groupCountY = count;
+        parameters.groupCountZ = 1;
+        parameters.compactedInstanceStart = globalOffset;
+
+        parameters.materialIndex = prim.materialIndex; // or inst.materialIndex later on in the task shader if per-instance
+        parameters.meshletCount = prim.meshletCount;
+        parameters.meshletOffset = prim.meshletOffset;
+
+        uint32_t indirectIndex = pushConstant.indirectBuffer->meshIndirectCount.add(1);
+        pushConstant.indirectBuffer->parameters[indirectIndex] = parameters;
+    }
+}

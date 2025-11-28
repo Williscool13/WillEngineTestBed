@@ -39,31 +39,77 @@ struct PackedVisibility
     uint32_t visibilityChunk;
 };
 
-
-
 struct InstancePrimitiveOffset
 {
     uint16_t primitiveOffset;
 };
 
-
 struct PrimitiveCount
 {
     uint32_t count;
+    uint32_t offset;
 };
 
-
-
-struct VisibilityPushConstant {
+struct VisibilityPushConstant
+{
     VkDeviceAddress sceneData;
     VkDeviceAddress primitiveBuffer;
     VkDeviceAddress modelBuffer;
     VkDeviceAddress instanceBuffer;
 
     VkDeviceAddress packedVisibilityBuffer; // sizeof(instance / 32), visibility is packed into 32 bit chunks
-    VkDeviceAddress instanceOffsetBuffer;   // sizeof(instance) * uint32_t (I would use 16_t but only 32_t can be atomic)
-    VkDeviceAddress primitiveCountBuffer;   // sizeof(primitive) * uint16_t
+    VkDeviceAddress instanceOffsetBuffer; // sizeof(instance) * PrimitiveCount
+    VkDeviceAddress primitiveCountBuffer; // sizeof(primitive) * InstancePrimitiveOffset (increase to uint32 if want to have more than 65536 instances per primitive)
 };
+
+struct PrefixSumPushConstant
+{
+    VkDeviceAddress primitiveCountBuffer;
+    uint32_t highestPrimitiveIndex;
+};
+
+struct InstancedMeshIndirectDrawParameters
+{
+    uint32_t groupCountX;
+    uint32_t groupCountY;
+    uint32_t groupCountZ;
+    uint32_t compactedInstanceStart;
+
+    uint32_t meshletOffset;
+    uint32_t meshletCount;
+    uint32_t materialIndex;
+    uint32_t padding;
+};
+
+struct IndirectWritePushConstant
+{
+    // Read-Only
+    VkDeviceAddress sceneData;
+    VkDeviceAddress primitiveBuffer;
+    VkDeviceAddress modelBuffer;
+    VkDeviceAddress instanceBuffer;
+
+    VkDeviceAddress packedVisibilityBuffer;
+    VkDeviceAddress instanceOffsetBuffer;
+    VkDeviceAddress primitiveCountBuffer;
+
+    // Read-Write
+    VkDeviceAddress compactedInstanceBuffer;
+    VkDeviceAddress indirectBuffer;
+};
+
+struct IndirectMainDrawPushConstant {
+    VkDeviceAddress sceneData;
+    VkDeviceAddress vertexBuffer;
+    VkDeviceAddress meshletVerticesBuffer;
+    VkDeviceAddress meshletTrianglesBuffer;
+    VkDeviceAddress meshletBuffer;
+    VkDeviceAddress indirectBuffer;
+    VkDeviceAddress compactedInstanceBuffer;
+    VkDeviceAddress materialBuffer;
+    VkDeviceAddress modelBuffer;
+};
+
 
 class InstancedRendering
 {
@@ -125,20 +171,23 @@ private:
     HandleAllocator<Renderer::InstanceEntry, Renderer::BINDLESS_INSTANCE_COUNT> instanceEntryAllocator;
     Renderer::AllocatedBuffer instanceBuffer;
 
-    Renderer::AllocatedBuffer taskIndirectParameterBuffer;
-
     Renderer::MeshletModelData bunnyModel{};
-    // Renderer::MeshletModelData dragonModel{};
+    Renderer::MeshletModelData dragonModel{};
 
-    Renderer::MeshDrawCullComputePipeline meshDrawCullComputePipeline{};
-    Renderer::IndirectMeshShaderPipeline indirectMeshShaderPipeline{};
-
-    Renderer::PipelineLayout pipelineLayout;
-    Renderer::Pipeline pipeline;
+    Renderer::PipelineLayout instancingVisibilityPipelineLayout;
+    Renderer::Pipeline instancingVisibilityPipeline;
+    Renderer::PipelineLayout instancingPrefixSumPipelineLayout;
+    Renderer::Pipeline instancingPrefixSumPipeline;
+    Renderer::PipelineLayout instancingCompactAndGenerateIndirectPipelineLayout;
+    Renderer::Pipeline instancingCompactAndGenerateIndirectPipeline;
+    Renderer::PipelineLayout instanceIndirectMeshPipelineLayout;
+    Renderer::Pipeline instanceIndirectMeshPipeline;
 
     Renderer::AllocatedBuffer packedVisibilityBuffer;
     Renderer::AllocatedBuffer instanceOffsetBuffer;
     Renderer::AllocatedBuffer primitiveCountBuffer;
+    Renderer::AllocatedBuffer compactedInstanceBuffer;
+    Renderer::AllocatedBuffer indirectBuffer;
 };
 }
 

@@ -93,6 +93,7 @@ VulkanContext::VulkanContext(SDL_Window* window)
     features12.shaderInt8 = VK_TRUE;
 
     // uint64_t/uint64 support
+    otherFeatures.shaderInt16 = VK_TRUE;
     otherFeatures.shaderInt64 = VK_TRUE;
 
 

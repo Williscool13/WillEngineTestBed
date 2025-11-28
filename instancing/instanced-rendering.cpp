@@ -25,6 +25,7 @@
 #include "input/input.h"
 #include "render/render_context.h"
 #include "render/render_targets.h"
+#include "render/vk_pipelines.h"
 #include "render/descriptor_buffer/descriptor_buffer_bindless_resources.h"
 #include "render/model/model_loader.h"
 #include "render/model/model_load_utils.h"
@@ -38,34 +39,151 @@ InstancedRendering::~InstancedRendering() = default;
 
 void InstancedRendering::TestShaders()
 {
-    VkPipelineLayoutCreateInfo computePipelineLayoutCreateInfo{};
-    computePipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    computePipelineLayoutCreateInfo.pNext = nullptr;
-    computePipelineLayoutCreateInfo.pSetLayouts = nullptr;
-    computePipelineLayoutCreateInfo.setLayoutCount = 0;
+    // instancingVisibility
+    {
+        VkPipelineLayoutCreateInfo computePipelineLayoutCreateInfo{};
+        computePipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        computePipelineLayoutCreateInfo.pNext = nullptr;
+        computePipelineLayoutCreateInfo.pSetLayouts = nullptr;
+        computePipelineLayoutCreateInfo.setLayoutCount = 0;
 
-    VkPushConstantRange pushConstant{};
-    pushConstant.offset = 0;
-    pushConstant.size = sizeof(VisibilityPushConstant);
-    pushConstant.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-    computePipelineLayoutCreateInfo.pPushConstantRanges = &pushConstant;
-    computePipelineLayoutCreateInfo.pushConstantRangeCount = 1;
+        VkPushConstantRange pushConstant{};
+        pushConstant.offset = 0;
+        pushConstant.size = sizeof(VisibilityPushConstant);
+        pushConstant.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+        computePipelineLayoutCreateInfo.pPushConstantRanges = &pushConstant;
+        computePipelineLayoutCreateInfo.pushConstantRangeCount = 1;
 
-    pipelineLayout = Renderer::VkResources::CreatePipelineLayout(vulkanContext.get(), computePipelineLayoutCreateInfo);
+        instancingVisibilityPipelineLayout = Renderer::VkResources::CreatePipelineLayout(vulkanContext.get(), computePipelineLayoutCreateInfo);
 
-    VkShaderModule computeShader;
-    std::filesystem::path shaderPath = {"shaders/instancingVisibility_compute.spv"};
-    if (!Renderer::VkHelpers::LoadShaderModule(shaderPath.string().c_str(), vulkanContext->device, &computeShader)) {
-        LOG_ERROR("Failed to load {}", shaderPath.string());
-        exit(1);
+        VkShaderModule computeShader;
+        std::filesystem::path shaderPath = {"shaders/instancingVisibility_compute.spv"};
+        if (!Renderer::VkHelpers::LoadShaderModule(shaderPath.string().c_str(), vulkanContext->device, &computeShader)) {
+            LOG_ERROR("Failed to load {}", shaderPath.string());
+            exit(1);
+        }
+
+        VkPipelineShaderStageCreateInfo pipelineShaderStageCreateInfo = Renderer::VkHelpers::PipelineShaderStageCreateInfo(computeShader, VK_SHADER_STAGE_COMPUTE_BIT);
+        VkComputePipelineCreateInfo computePipelineCreateInfo = Renderer::VkHelpers::ComputePipelineCreateInfo(instancingVisibilityPipelineLayout.handle, pipelineShaderStageCreateInfo);
+        instancingVisibilityPipeline = Renderer::VkResources::CreateComputePipeline(vulkanContext.get(), computePipelineCreateInfo);
+
+        // Cleanup
+        vkDestroyShaderModule(vulkanContext->device, computeShader, nullptr);
     }
 
-    VkPipelineShaderStageCreateInfo pipelineShaderStageCreateInfo = Renderer::VkHelpers::PipelineShaderStageCreateInfo(computeShader, VK_SHADER_STAGE_COMPUTE_BIT);
-    VkComputePipelineCreateInfo computePipelineCreateInfo = Renderer::VkHelpers::ComputePipelineCreateInfo(pipelineLayout.handle, pipelineShaderStageCreateInfo);
-    pipeline = Renderer::VkResources::CreateComputePipeline(vulkanContext.get(), computePipelineCreateInfo);
+    // instancingPrefixSum
+    {
+        VkPipelineLayoutCreateInfo computePipelineLayoutCreateInfo{};
+        computePipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        computePipelineLayoutCreateInfo.pNext = nullptr;
+        computePipelineLayoutCreateInfo.pSetLayouts = nullptr;
+        computePipelineLayoutCreateInfo.setLayoutCount = 0;
 
-    // Cleanup
-    vkDestroyShaderModule(vulkanContext->device, computeShader, nullptr);
+        VkPushConstantRange pushConstant{};
+        pushConstant.offset = 0;
+        pushConstant.size = sizeof(PrefixSumPushConstant);
+        pushConstant.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+        computePipelineLayoutCreateInfo.pPushConstantRanges = &pushConstant;
+        computePipelineLayoutCreateInfo.pushConstantRangeCount = 1;
+
+        instancingPrefixSumPipelineLayout = Renderer::VkResources::CreatePipelineLayout(vulkanContext.get(), computePipelineLayoutCreateInfo);
+
+        VkShaderModule computeShader;
+        std::filesystem::path shaderPath = {"shaders/instancingPrefixSum_compute.spv"};
+        if (!Renderer::VkHelpers::LoadShaderModule(shaderPath.string().c_str(), vulkanContext->device, &computeShader)) {
+            LOG_ERROR("Failed to load {}", shaderPath.string());
+            exit(1);
+        }
+
+        VkPipelineShaderStageCreateInfo pipelineShaderStageCreateInfo = Renderer::VkHelpers::PipelineShaderStageCreateInfo(computeShader, VK_SHADER_STAGE_COMPUTE_BIT);
+        VkComputePipelineCreateInfo computePipelineCreateInfo = Renderer::VkHelpers::ComputePipelineCreateInfo(instancingPrefixSumPipelineLayout.handle, pipelineShaderStageCreateInfo);
+        instancingPrefixSumPipeline = Renderer::VkResources::CreateComputePipeline(vulkanContext.get(), computePipelineCreateInfo);
+
+        // Cleanup
+        vkDestroyShaderModule(vulkanContext->device, computeShader, nullptr);
+    }
+
+    // instancingCompactAndGenerateIndirect
+    {
+        VkPipelineLayoutCreateInfo computePipelineLayoutCreateInfo{};
+        computePipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        computePipelineLayoutCreateInfo.pNext = nullptr;
+        computePipelineLayoutCreateInfo.pSetLayouts = nullptr;
+        computePipelineLayoutCreateInfo.setLayoutCount = 0;
+
+        VkPushConstantRange pushConstant{};
+        pushConstant.offset = 0;
+        pushConstant.size = sizeof(IndirectWritePushConstant);
+        pushConstant.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+        computePipelineLayoutCreateInfo.pPushConstantRanges = &pushConstant;
+        computePipelineLayoutCreateInfo.pushConstantRangeCount = 1;
+
+        instancingCompactAndGenerateIndirectPipelineLayout = Renderer::VkResources::CreatePipelineLayout(vulkanContext.get(), computePipelineLayoutCreateInfo);
+
+        VkShaderModule computeShader;
+        std::filesystem::path shaderPath = {"shaders/instancingCompactAndGenerateIndirect_compute.spv"};
+        if (!Renderer::VkHelpers::LoadShaderModule(shaderPath.string().c_str(), vulkanContext->device, &computeShader)) {
+            LOG_ERROR("Failed to load {}", shaderPath.string());
+            exit(1);
+        }
+
+        VkPipelineShaderStageCreateInfo pipelineShaderStageCreateInfo = Renderer::VkHelpers::PipelineShaderStageCreateInfo(computeShader, VK_SHADER_STAGE_COMPUTE_BIT);
+        VkComputePipelineCreateInfo computePipelineCreateInfo =
+                Renderer::VkHelpers::ComputePipelineCreateInfo(instancingCompactAndGenerateIndirectPipelineLayout.handle, pipelineShaderStageCreateInfo);
+        instancingCompactAndGenerateIndirectPipeline = Renderer::VkResources::CreateComputePipeline(vulkanContext.get(), computePipelineCreateInfo);
+
+
+        // Cleanup
+        vkDestroyShaderModule(vulkanContext->device, computeShader, nullptr);
+    }
+
+
+    // Indirect Draw
+    {
+        VkPushConstantRange renderPushConstantRange{};
+        renderPushConstantRange.offset = 0;
+        renderPushConstantRange.size = sizeof(IndirectMainDrawPushConstant);
+        renderPushConstantRange.stageFlags = VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT;
+
+        VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo{};
+        pipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        pipelineLayoutCreateInfo.pSetLayouts = &bindlessResourcesDescriptorBuffer.descriptorSetLayout.handle;
+        pipelineLayoutCreateInfo.setLayoutCount = 1;
+        pipelineLayoutCreateInfo.pPushConstantRanges = &renderPushConstantRange;
+        pipelineLayoutCreateInfo.pushConstantRangeCount = 1;
+
+
+        instanceIndirectMeshPipelineLayout = Renderer::VkResources::CreatePipelineLayout(vulkanContext.get(), pipelineLayoutCreateInfo);
+
+        VkShaderModule taskShader;
+        VkShaderModule meshShader;
+        VkShaderModule fragmentShader;
+        if (!Renderer::VkHelpers::LoadShaderModule("shaders\\meshShaderInstancing_task.spv", vulkanContext->device, &taskShader)) {
+            throw std::runtime_error("Error when building the vertex shader (meshShader_task.spv)");
+        }
+        if (!Renderer::VkHelpers::LoadShaderModule("shaders\\meshShaderInstancing_mesh.spv", vulkanContext->device, &meshShader)) {
+            throw std::runtime_error("Error when building the fragment shader (meshShader_mesh.spv)");
+        }
+        if (!Renderer::VkHelpers::LoadShaderModule("shaders\\meshShaderInstancing_fragment.spv", vulkanContext->device, &fragmentShader)) {
+            throw std::runtime_error("Error when building the fragment shader (meshShader_fragment.spv)");
+        }
+
+        Renderer::RenderPipelineBuilder pipelineBuilder;
+
+        pipelineBuilder.SetTaskMeshShaders(taskShader, meshShader, fragmentShader);
+        pipelineBuilder.SetupInputAssembly(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+        pipelineBuilder.SetupRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_BACK_BIT, VK_FRONT_FACE_COUNTER_CLOCKWISE);
+        pipelineBuilder.DisableMultisampling();
+        pipelineBuilder.EnableDepthTest(true, VK_COMPARE_OP_GREATER_OR_EQUAL);
+        pipelineBuilder.SetupRenderer({Renderer::DRAW_IMAGE_FORMAT}, Renderer::DEPTH_IMAGE_FORMAT);
+        pipelineBuilder.SetupPipelineLayout(instanceIndirectMeshPipelineLayout.handle);
+        VkGraphicsPipelineCreateInfo pipelineCreateInfo = pipelineBuilder.GeneratePipelineCreateInfo();
+        instanceIndirectMeshPipeline = Renderer::VkResources::CreateGraphicsPipeline(vulkanContext.get(), pipelineCreateInfo);
+
+        vkDestroyShaderModule(vulkanContext->device, taskShader, nullptr);
+        vkDestroyShaderModule(vulkanContext->device, meshShader, nullptr);
+        vkDestroyShaderModule(vulkanContext->device, fragmentShader, nullptr);
+    }
 }
 
 void InstancedRendering::Initialize()
@@ -124,55 +242,54 @@ void InstancedRendering::Initialize()
 
     CreateBuffers();
 
-    meshDrawCullComputePipeline = Renderer::MeshDrawCullComputePipeline(vulkanContext.get());
-    indirectMeshShaderPipeline = Renderer::IndirectMeshShaderPipeline(vulkanContext.get(), bindlessResourcesDescriptorBuffer.descriptorSetLayout.handle);
-
     auto bunnyPath = std::filesystem::path("../assets/stanford_bunny/stanford_bunny.gltf");
     auto dragonPath = std::filesystem::path("../assets/dragon/dragon.gltf");
     bunnyModel = CreateMeshletModel(bunnyPath);
-    // dragonModel = CreateMeshletModel(dragonPath);
+    dragonModel = CreateMeshletModel(dragonPath);
 
+    constexpr int INSTANCES_PER_PRIMITIVE = 100;
+    constexpr int TOTAL_INSTANCES = INSTANCES_PER_PRIMITIVE * 2; // 200 total
 
-    std::array<Renderer::Model, 10> modelMatrices{};
-    float spacing = 3.0f;
-    float rowSpacing = 3.0f;
+    std::array<Renderer::Model, TOTAL_INSTANCES> modelMatrices{};
 
-    for (int i = 0; i < 5; i++) {
-        // Dragon in row 0
+    // Create a 10x10 grid for dragons and a 10x10 grid for bunnies
+    float spacing = 5.0f;
+    float gridSeparation = 60.0f; // Space between dragon and bunny grids
+
+    for (int i = 0; i < INSTANCES_PER_PRIMITIVE; i++) {
+        int row = i / 10;
+        int col = i % 10;
+
+        // Dragon grid (left side)
         glm::mat4 dragonMat{1.0f};
-        dragonMat = glm::translate(dragonMat, glm::vec3(i * spacing, 0.0f, 0.0f));
+        dragonMat = glm::translate(dragonMat, glm::vec3(col * spacing, 0.0f, row * spacing));
         modelMatrices[i] = Renderer::Model{dragonMat};
 
-        // Bunny in row 1
+        // Bunny grid (right side, offset by gridSeparation)
         glm::mat4 bunnyMat{1.0f};
-        bunnyMat = glm::translate(bunnyMat, glm::vec3(i * spacing, rowSpacing, 0.0f));
-        modelMatrices[i + 5] = Renderer::Model{bunnyMat};
+        bunnyMat = glm::translate(bunnyMat, glm::vec3(col * spacing + gridSeparation, 0.0f, row * spacing));
+        modelMatrices[i + INSTANCES_PER_PRIMITIVE] = Renderer::Model{bunnyMat};
     }
 
-    memcpy(modelBuffer.allocationInfo.pMappedData, modelMatrices.data(), sizeof(Renderer::Model) * 10);
+    memcpy(modelBuffer.allocationInfo.pMappedData, modelMatrices.data(), sizeof(Renderer::Model) * TOTAL_INSTANCES);
 
-    std::array<Renderer::Instance, 10> instances{};
+    std::array<Renderer::Instance, TOTAL_INSTANCES> instances{};
 
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < INSTANCES_PER_PRIMITIVE; i++) {
         // Dragon instances
-        // instances[i].modelIndex = i;
-        // instances[i].primitiveIndex = 0;
-        // instances[i].bIsAllocated = 1;
-        // instances[i].jointMatrixOffset = 0;
-
-        // Bunny instances
-        // instances[i + 5].modelIndex = i + 5;
-        // instances[i + 5].primitiveIndex = 1;
-        // instances[i + 5].bIsAllocated = 1;
-        // instances[i + 5].jointMatrixOffset = 0;
-
         instances[i].modelIndex = i;
-        instances[i].primitiveIndex = 0;
+        instances[i].primitiveIndex = 0; // Dragon primitive
         instances[i].bIsAllocated = 1;
         instances[i].jointMatrixOffset = 0;
+
+        // Bunny instances
+        instances[i + INSTANCES_PER_PRIMITIVE].modelIndex = i + INSTANCES_PER_PRIMITIVE;
+        instances[i + INSTANCES_PER_PRIMITIVE].primitiveIndex = 1; // Bunny primitive
+        instances[i + INSTANCES_PER_PRIMITIVE].bIsAllocated = 1;
+        instances[i + INSTANCES_PER_PRIMITIVE].jointMatrixOffset = 0;
     }
 
-    memcpy(instanceBuffer.allocationInfo.pMappedData, instances.data(), sizeof(Renderer::Instance) * 5);
+    memcpy(instanceBuffer.allocationInfo.pMappedData, instances.data(), sizeof(Renderer::Instance) * TOTAL_INSTANCES);
 
     TestShaders();
 }
@@ -307,135 +424,161 @@ void InstancedRendering::Render(uint32_t currentFrameInFlight, Renderer::FrameSy
     VkCommandBufferBeginInfo commandBufferBeginInfo = Renderer::VkHelpers::CommandBufferBeginInfo();
     VK_CHECK(vkBeginCommandBuffer(cmd, &commandBufferBeginInfo));
 
-    if (input.IsKeyDown(Key::O)) {
-        vkCmdFillBuffer(cmd, packedVisibilityBuffer.handle, 0, VK_WHOLE_SIZE, 0);
-        vkCmdFillBuffer(cmd, instanceOffsetBuffer.handle, 0, VK_WHOLE_SIZE, 0);
-        vkCmdFillBuffer(cmd, primitiveCountBuffer.handle, 0, VK_WHOLE_SIZE, 0);
+    // ==================== CLEAR PASS ====================
+    // Barrier: Transition buffers for clearing
+    VkBufferMemoryBarrier2 clearBarriers[5];
+    clearBarriers[0] = Renderer::VkHelpers::BufferMemoryBarrier(
+        packedVisibilityBuffer.handle, 0, VK_WHOLE_SIZE,
+        VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT,
+        VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT);
+    clearBarriers[1] = Renderer::VkHelpers::BufferMemoryBarrier(
+        instanceOffsetBuffer.handle, 0, VK_WHOLE_SIZE,
+        VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT,
+        VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT);
+    clearBarriers[2] = Renderer::VkHelpers::BufferMemoryBarrier(
+        primitiveCountBuffer.handle, 0, VK_WHOLE_SIZE,
+        VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT,
+        VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT);
+    clearBarriers[3] = Renderer::VkHelpers::BufferMemoryBarrier(
+        compactedInstanceBuffer.handle, 0, VK_WHOLE_SIZE,
+        VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT,
+        VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT);
+    clearBarriers[4] = Renderer::VkHelpers::BufferMemoryBarrier(
+        indirectBuffer.handle, 0, VK_WHOLE_SIZE,
+        VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT,
+        VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT);
+
+    VkDependencyInfo clearDepInfo{};
+    clearDepInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+    clearDepInfo.bufferMemoryBarrierCount = 5;
+    clearDepInfo.pBufferMemoryBarriers = clearBarriers;
+    vkCmdPipelineBarrier2(cmd, &clearDepInfo);
+
+    vkCmdFillBuffer(cmd, packedVisibilityBuffer.handle, 0, VK_WHOLE_SIZE, 0);
+    vkCmdFillBuffer(cmd, instanceOffsetBuffer.handle, 0, VK_WHOLE_SIZE, 0);
+    vkCmdFillBuffer(cmd, primitiveCountBuffer.handle, 0, VK_WHOLE_SIZE, 0);
+    vkCmdFillBuffer(cmd, compactedInstanceBuffer.handle, 0, VK_WHOLE_SIZE, 0);
+    vkCmdFillBuffer(cmd, indirectBuffer.handle, 0, VK_WHOLE_SIZE, 0);
+
+    // ==================== VISIBILITY PASS ====================
+    // Barrier: Clear → Compute (Pass 1 writes visibility, offsets, counts)
+    VkBufferMemoryBarrier2 visibilityBarriers[3];
+    visibilityBarriers[0] = Renderer::VkHelpers::BufferMemoryBarrier(
+        packedVisibilityBuffer.handle, 0, VK_WHOLE_SIZE,
+        VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+        VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT);
+    visibilityBarriers[1] = Renderer::VkHelpers::BufferMemoryBarrier(
+        instanceOffsetBuffer.handle, 0, VK_WHOLE_SIZE,
+        VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+        VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT);
+    visibilityBarriers[2] = Renderer::VkHelpers::BufferMemoryBarrier(
+        primitiveCountBuffer.handle, 0, VK_WHOLE_SIZE,
+        VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+        VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT);
+
+    VkDependencyInfo visibilityDepInfo{};
+    visibilityDepInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+    visibilityDepInfo.bufferMemoryBarrierCount = 3;
+    visibilityDepInfo.pBufferMemoryBarriers = visibilityBarriers;
+    vkCmdPipelineBarrier2(cmd, &visibilityDepInfo);
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, instancingVisibilityPipeline.handle);
+    VisibilityPushConstant visibilityPushData{
+        .sceneData = currentSceneDataBuffer.address,
+        .primitiveBuffer = primitiveBuffer.address,
+        .modelBuffer = modelBuffer.address,
+        .instanceBuffer = instanceBuffer.address,
+        .packedVisibilityBuffer = packedVisibilityBuffer.address,
+        .instanceOffsetBuffer = instanceOffsetBuffer.address,
+        .primitiveCountBuffer = primitiveCountBuffer.address,
+    };
+    vkCmdPushConstants(cmd, instancingVisibilityPipelineLayout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(VisibilityPushConstant), &visibilityPushData);
+    vkCmdDispatch(cmd, (200 + 63) / 64, 1, 1);
+
+    // ==================== PREFIX SUM PASS ====================
+    // Barrier: Pass 1 writes primitiveCountBuffer → Pass 2 reads/writes it
+    VkBufferMemoryBarrier2 prefixSumBarrier = Renderer::VkHelpers::BufferMemoryBarrier(
+        primitiveCountBuffer.handle, 0, VK_WHOLE_SIZE,
+        VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT,
+        VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT);
+
+    VkDependencyInfo prefixSumDepInfo{};
+    prefixSumDepInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+    prefixSumDepInfo.bufferMemoryBarrierCount = 1;
+    prefixSumDepInfo.pBufferMemoryBarriers = &prefixSumBarrier;
+    vkCmdPipelineBarrier2(cmd, &prefixSumDepInfo);
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, instancingPrefixSumPipeline.handle);
+    PrefixSumPushConstant prefixSumPushData{
+        .primitiveCountBuffer = primitiveCountBuffer.address,
+        .highestPrimitiveIndex = 2, // 2 primitives (0 and 1)
+    };
+    vkCmdPushConstants(cmd, instancingPrefixSumPipelineLayout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PrefixSumPushConstant), &prefixSumPushData);
+    vkCmdDispatch(cmd, 1, 1, 1);
+
+    // ==================== COMPACTION PASS ====================
+    // Barrier: Pass 1 & Pass 2 complete → Pass 3 reads all, writes compacted buffers
+    VkBufferMemoryBarrier2 compactionBarriers[5];
+    compactionBarriers[0] = Renderer::VkHelpers::BufferMemoryBarrier(
+        packedVisibilityBuffer.handle, 0, VK_WHOLE_SIZE,
+        VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT,
+        VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+    compactionBarriers[1] = Renderer::VkHelpers::BufferMemoryBarrier(
+        instanceOffsetBuffer.handle, 0, VK_WHOLE_SIZE,
+        VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT,
+        VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+    compactionBarriers[2] = Renderer::VkHelpers::BufferMemoryBarrier(
+        primitiveCountBuffer.handle, 0, VK_WHOLE_SIZE,
+        VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT,
+        VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT);
+    compactionBarriers[3] = Renderer::VkHelpers::BufferMemoryBarrier(
+        compactedInstanceBuffer.handle, 0, VK_WHOLE_SIZE,
+        VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+        VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT);
+    compactionBarriers[4] = Renderer::VkHelpers::BufferMemoryBarrier(
+        indirectBuffer.handle, 0, VK_WHOLE_SIZE,
+        VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+        VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT);
+
+    VkDependencyInfo compactionDepInfo{};
+    compactionDepInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+    compactionDepInfo.bufferMemoryBarrierCount = 5;
+    compactionDepInfo.pBufferMemoryBarriers = compactionBarriers;
+    vkCmdPipelineBarrier2(cmd, &compactionDepInfo);
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, instancingCompactAndGenerateIndirectPipeline.handle);
+    IndirectWritePushConstant indirectWritePushData{
+        .sceneData = currentSceneDataBuffer.address,
+        .primitiveBuffer = primitiveBuffer.address,
+        .modelBuffer = modelBuffer.address,
+        .instanceBuffer = instanceBuffer.address,
+        .packedVisibilityBuffer = packedVisibilityBuffer.address,
+        .instanceOffsetBuffer = instanceOffsetBuffer.address,
+        .primitiveCountBuffer = primitiveCountBuffer.address,
+        .compactedInstanceBuffer = compactedInstanceBuffer.address,
+        .indirectBuffer = indirectBuffer.address
+    };
+    vkCmdPushConstants(cmd, instancingCompactAndGenerateIndirectPipelineLayout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(IndirectWritePushConstant), &indirectWritePushData);
+    vkCmdDispatch(cmd, (200 + 63) / 64, 1, 1); // Dispatch enough groups for 10 instances
 
 
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline.handle);
-        VisibilityPushConstant pushData{
-            .sceneData = currentSceneDataBuffer.address,
-            .primitiveBuffer = primitiveBuffer.address,
-            .modelBuffer = modelBuffer.address,
-            .instanceBuffer = instanceBuffer.address,
-            .packedVisibilityBuffer = packedVisibilityBuffer.address,
-            .instanceOffsetBuffer = instanceOffsetBuffer.address,
-            .primitiveCountBuffer = primitiveCountBuffer.address,
-        };
+    // ==================== RENDER PASS ====================
+    // Barrier: Compaction complete → Rendering reads indirect + compacted buffers
+    VkBufferMemoryBarrier2 renderBarriers[2];
+    renderBarriers[0] = Renderer::VkHelpers::BufferMemoryBarrier(
+        indirectBuffer.handle, 0, VK_WHOLE_SIZE,
+        VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT,
+        VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT, VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT);
+    renderBarriers[1] = Renderer::VkHelpers::BufferMemoryBarrier(
+        compactedInstanceBuffer.handle, 0, VK_WHOLE_SIZE,
+        VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT,
+        VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT, VK_ACCESS_2_SHADER_READ_BIT);
 
-        vkCmdPushConstants(cmd, pipelineLayout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(VisibilityPushConstant), &pushData);
-        vkCmdDispatch(cmd, 1, 1, 1);
-    }
-
-    if (input.IsKeyDown(Key::P)) {
-        // Read back the buffers
-        PackedVisibility* visData = static_cast<PackedVisibility*>(packedVisibilityBuffer.allocationInfo.pMappedData);
-        InstancePrimitiveOffset* offsetData = static_cast<InstancePrimitiveOffset*>(instanceOffsetBuffer.allocationInfo.pMappedData);
-        PrimitiveCount* countData = static_cast<PrimitiveCount*>(primitiveCountBuffer.allocationInfo.pMappedData);
-
-        LOG_INFO("=== Culling Debug Info ===");
-
-        // Check visibility bits (5 instances = first chunk only)
-        uint32_t visChunk = visData[0].visibilityChunk;
-        LOG_INFO("Visibility chunk [0]: 0x{:08X} (binary: {:032b})", visChunk, visChunk);
-
-        for (int i = 0; i < 5; i++) {
-            bool visible = (visChunk & (1u << i)) != 0;
-            LOG_INFO("  Instance {}: {}", i, visible ? "VISIBLE" : "CULLED");
-        }
-
-        // Check primitive offsets
-        LOG_INFO("\nPrimitive Offsets:");
-        for (int i = 0; i < 5; i++) {
-            LOG_INFO("  Instance {}: offset = {}", i, offsetData[i].primitiveOffset);
-        }
-
-        // Check primitive count (should be number of visible instances for primitive 0)
-        uint32_t primCount = countData[0].count;
-        LOG_INFO("\nPrimitive 0 total count: {}", primCount);
-
-        // Verify logic
-        LOG_INFO("\n=== Verification ===");
-
-        uint32_t visibleCount = std::popcount(visChunk & 0x1F); // Count bits 0-4
-        LOG_INFO("Visible instances (from bitfield): {}", visibleCount);
-        LOG_INFO("Primitive count (from atomic): {}", primCount);
-        if (visibleCount == primCount) {
-            LOG_INFO("✅ Counts match!");
-        }
-        else {
-            LOG_ERROR("❌ MISMATCH! Bitfield: {} vs Atomic: {}", visibleCount, primCount);
-        }
-
-        // Check offsets are sequential (should be 0,1,2,3,4 for visible instances)
-        LOG_INFO("\n=== Expected Offsets (for visible instances) ===");
-        uint16_t expectedOffset = 0;
-        for (int i = 0; i < 5; i++) {
-            bool visible = (visChunk & (1u << i)) != 0;
-            if (visible) {
-                uint16_t actualOffset = offsetData[i].primitiveOffset;
-                LOG_INFO("  Instance {}: expected={}, actual={} {}",
-                         i, expectedOffset, actualOffset,
-                         (expectedOffset == actualOffset) ? "✅" : "❌");
-                expectedOffset++;
-            }
-        }
-    }
-
-    //
-    {
-        VkBufferMemoryBarrier2 bufferBarriers[2];
-        bufferBarriers[0] = Renderer::VkHelpers::BufferMemoryBarrier(
-            taskIndirectParameterBuffer.handle, 0, sizeof(uint32_t),
-            VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT, VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT,
-            VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT);
-        bufferBarriers[1] = Renderer::VkHelpers::BufferMemoryBarrier(
-            taskIndirectParameterBuffer.handle, sizeof(glm::vec4), sizeof(Renderer::TaskIndirectDrawParameters) * Renderer::BINDLESS_INSTANCE_COUNT * 4,
-            VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT, VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT,
-            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT);
-
-        VkDependencyInfo depInfo{};
-        depInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        depInfo.pNext = nullptr;
-        depInfo.dependencyFlags = 0;
-        depInfo.bufferMemoryBarrierCount = 2;
-        depInfo.pBufferMemoryBarriers = bufferBarriers;
-        vkCmdPipelineBarrier2(cmd, &depInfo);
-
-        vkCmdFillBuffer(cmd, taskIndirectParameterBuffer.handle, 0, sizeof(uint32_t), 0);
-
-        VkBufferMemoryBarrier2 bufferBarrier = Renderer::VkHelpers::BufferMemoryBarrier(
-            taskIndirectParameterBuffer.handle, 0, sizeof(uint32_t),
-            VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
-            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT);
-
-        depInfo.bufferMemoryBarrierCount = 1;
-        depInfo.pBufferMemoryBarriers = &bufferBarrier;
-
-        vkCmdPipelineBarrier2(cmd, &depInfo);
-
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, meshDrawCullComputePipeline.pipeline.handle);
-        Renderer::MeshDrawCullComputePushConstant pushData{
-            .sceneData = currentSceneDataBuffer.address,
-            .primitiveBuffer = primitiveBuffer.address,
-            .instanceBuffer = instanceBuffer.address,
-            .modelBuffer = modelBuffer.address,
-            .taskIndirectParameterBuffer = taskIndirectParameterBuffer.address
-        };
-
-        vkCmdPushConstants(cmd, meshDrawCullComputePipeline.pipelineLayout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(Renderer::MeshDrawCullComputePushConstant), &pushData);
-        uint32_t groupsX = (1 + 63) / 64;
-        vkCmdDispatch(cmd, groupsX, 1, 1);
-
-
-        bufferBarrier = Renderer::VkHelpers::BufferMemoryBarrier(
-            taskIndirectParameterBuffer.handle, 0, VK_WHOLE_SIZE,
-            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT,
-            VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT, VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT);
-        depInfo.pBufferMemoryBarriers = &bufferBarrier;
-        vkCmdPipelineBarrier2(cmd, &depInfo);
-    }
+    VkDependencyInfo renderDepInfo{};
+    renderDepInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+    renderDepInfo.bufferMemoryBarrierCount = 2;
+    renderDepInfo.pBufferMemoryBarriers = renderBarriers;
+    vkCmdPipelineBarrier2(cmd, &renderDepInfo);
 
     // Prepare to render draw
     {
@@ -450,96 +593,54 @@ void InstancedRendering::Render(uint32_t currentFrameInFlight, Renderer::FrameSy
         vkCmdPipelineBarrier2(cmd, &dependencyInfo);
     }
 
-    // Indirect Draw
-    {
-        constexpr VkClearValue colorClear = {.color = {1.0f, 1.0f, 1.0f, 1.0f}};
-        const VkRenderingAttachmentInfo colorAttachment = Renderer::VkHelpers::RenderingAttachmentInfo(renderTargets->drawImageView.handle, &colorClear, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
-        constexpr VkClearValue depthClear = {.depthStencil = {0.0f, 0u}};
-        const VkRenderingAttachmentInfo depthAttachment = Renderer::VkHelpers::RenderingAttachmentInfo(renderTargets->depthImageView.handle, &depthClear, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
-        const VkRenderingInfo renderInfo = Renderer::VkHelpers::RenderingInfo({scaledRenderExtent[0], scaledRenderExtent[1]}, &colorAttachment, &depthAttachment);
+    constexpr VkClearValue colorClear = {.color = {0.0f, 0.3f, 0.3f, 1.0f}};
+    const VkRenderingAttachmentInfo colorAttachment = Renderer::VkHelpers::RenderingAttachmentInfo(renderTargets->drawImageView.handle, &colorClear, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+    constexpr VkClearValue depthClear = {.depthStencil = {0.0f, 0u}};
+    const VkRenderingAttachmentInfo depthAttachment = Renderer::VkHelpers::RenderingAttachmentInfo(renderTargets->depthImageView.handle, &depthClear, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+    const VkRenderingInfo renderInfo = Renderer::VkHelpers::RenderingInfo({scaledRenderExtent[0], scaledRenderExtent[1]}, &colorAttachment, &depthAttachment);
 
+    vkCmdBeginRendering(cmd, &renderInfo);
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, instanceIndirectMeshPipeline.handle);
 
-        vkCmdBeginRendering(cmd, &renderInfo);
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, indirectMeshShaderPipeline.pipeline.handle);
+    VkViewport viewport = Renderer::VkHelpers::GenerateViewport(scaledRenderExtent[0], scaledRenderExtent[1]);
+    vkCmdSetViewport(cmd, 0, 1, &viewport);
+    VkRect2D scissor = Renderer::VkHelpers::GenerateScissor(scaledRenderExtent[0], scaledRenderExtent[1]);
+    vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-        VkViewport viewport = Renderer::VkHelpers::GenerateViewport(scaledRenderExtent[0], scaledRenderExtent[1]);
-        vkCmdSetViewport(cmd, 0, 1, &viewport);
-        VkRect2D scissor = Renderer::VkHelpers::GenerateScissor(scaledRenderExtent[0], scaledRenderExtent[1]);
-        vkCmdSetScissor(cmd, 0, 1, &scissor);
+    IndirectMainDrawPushConstant pushData{
+        .sceneData = currentSceneDataBuffer.address,
+        .vertexBuffer = megaVertexBuffer.address,
+        .meshletVerticesBuffer = megaMeshletVerticesBuffer.address,
+        .meshletTrianglesBuffer = megaMeshletTrianglesBuffer.address,
+        .meshletBuffer = megaMeshletBuffer.address,
+        .indirectBuffer = indirectBuffer.address,
+        .compactedInstanceBuffer = compactedInstanceBuffer.address,
+        .materialBuffer = materialBuffer.address,
+        .modelBuffer = modelBuffer.address,
+    };
 
-        Renderer::IndirectMeshShaderPushConstants pushData{
-            .sceneData = currentSceneDataBuffer.address,
-            .vertexBuffer = megaVertexBuffer.address,
-            .meshletVerticesBuffer = megaMeshletVerticesBuffer.address,
-            .meshletTrianglesBuffer = megaMeshletTrianglesBuffer.address,
-            .meshletBuffer = megaMeshletBuffer.address,
-            .meshIndirectParameterBuffer = taskIndirectParameterBuffer.address,
-            .materialBuffer = materialBuffer.address,
-            .modelBuffer = modelBuffer.address,
-        };
+    vkCmdPushConstants(cmd, instanceIndirectMeshPipelineLayout.handle,
+                       VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                       0, sizeof(IndirectMainDrawPushConstant), &pushData);
 
-        vkCmdPushConstants(cmd, indirectMeshShaderPipeline.pipelineLayout.handle, VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                           sizeof(Renderer::IndirectMeshShaderPushConstants), &pushData);
+    VkDescriptorBufferBindingInfoEXT bindingInfo = bindlessResourcesDescriptorBuffer.GetBindingInfo();
+    vkCmdBindDescriptorBuffersEXT(cmd, 1, &bindingInfo);
 
-        VkDescriptorBufferBindingInfoEXT bindingInfo = bindlessResourcesDescriptorBuffer.GetBindingInfo();
-        vkCmdBindDescriptorBuffersEXT(cmd, 1, &bindingInfo);
+    uint32_t bufferIndexImage = 0;
+    VkDeviceSize bufferOffset = 0;
+    vkCmdSetDescriptorBufferOffsetsEXT(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, instanceIndirectMeshPipelineLayout.handle, 0, 1, &bufferIndexImage, &bufferOffset);
 
-        uint32_t bufferIndexImage = 0;
-        VkDeviceSize bufferOffset = 0;
-        vkCmdSetDescriptorBufferOffsetsEXT(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, indirectMeshShaderPipeline.pipelineLayout.handle, 0, 1, &bufferIndexImage, &bufferOffset);
+    vkCmdDrawMeshTasksIndirectCountEXT(
+        cmd,
+        indirectBuffer.handle,
+        sizeof(glm::vec4),
+        indirectBuffer.handle,
+        0,
+        2,
+        sizeof(InstancedMeshIndirectDrawParameters)
+    );
 
-        vkCmdDrawMeshTasksIndirectCountEXT(cmd,
-                                           taskIndirectParameterBuffer.handle, sizeof(glm::vec4),
-                                           taskIndirectParameterBuffer.handle, 0,
-                                           Renderer::BINDLESS_INSTANCE_COUNT, sizeof(glm::vec4) * 2);
-        vkCmdEndRendering(cmd);
-    }
-
-    // Draw
-    {
-        // constexpr VkClearValue colorClear = {.color = {0.3f, 0.0f, 0.0f, 1.0f}};
-        // const VkRenderingAttachmentInfo colorAttachment = Renderer::VkHelpers::RenderingAttachmentInfo(renderTargets->drawImageView.handle, &colorClear, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
-        // constexpr VkClearValue depthClear = {.depthStencil = {0.0f, 0u}};
-        // const VkRenderingAttachmentInfo depthAttachment = Renderer::VkHelpers::RenderingAttachmentInfo(renderTargets->depthImageView.handle, &depthClear, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
-        // const VkRenderingInfo renderInfo = Renderer::VkHelpers::RenderingInfo({scaledRenderExtent[0], scaledRenderExtent[1]}, &colorAttachment, &depthAttachment);
-        //
-        // vkCmdBeginRendering(cmd, &renderInfo);
-        //
-        // vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, meshShaderPipeline.pipeline.handle);
-        // //vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, basicMeshShaderPipeline.pipeline.handle);
-        //
-        // VkViewport viewport = Renderer::VkHelpers::GenerateViewport(scaledRenderExtent[0], scaledRenderExtent[1]);
-        // vkCmdSetViewport(cmd, 0, 1, &viewport);
-        // VkRect2D scissor = Renderer::VkHelpers::GenerateScissor(scaledRenderExtent[0], scaledRenderExtent[1]);
-        // vkCmdSetScissor(cmd, 0, 1, &scissor);
-        //
-        // Renderer::AllocatedBuffer& currentSceneDataBuffer = sceneDataBuffers[currentFrameInFlight];
-        // Renderer::MainMeshShaderPushConstants pushConstants{
-        //     .sceneData = currentSceneDataBuffer.address,
-        //     .vertexBuffer = megaVertexBuffer.address,
-        //     .primitiveBuffer = primitiveBuffer.address,
-        //     .meshletVerticesBuffer = megaMeshletVerticesBuffer.address,
-        //     .meshletTrianglesBuffer = megaMeshletTrianglesBuffer.address,
-        //     .meshletBuffer = megaMeshletBuffer.address,
-        //     .materialBuffer = materialBuffer.address,
-        //     .modelBuffer = modelBuffer.address,
-        //     .instanceBuffer = instanceBuffer.address,
-        //     .instanceIndex = 0
-        // };
-        // // Renderer::BasicMeshShaderPushConstants pushData{glm::mat4(1.0f),currentSceneDataBuffer.address,};
-        //
-        // vkCmdPushConstants(cmd, meshShaderPipeline.pipelineLayout.handle, VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-        //                    sizeof(Renderer::MainMeshShaderPushConstants), &pushConstants);
-        // vkCmdDrawMeshTasksEXT(cmd, 1, 1, 1);
-        //
-        // pushConstants.instanceIndex = 1;
-        // vkCmdPushConstants(cmd, meshShaderPipeline.pipelineLayout.handle, VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-        //                    sizeof(Renderer::MainMeshShaderPushConstants), &pushConstants);
-        // //vkCmdPushConstants(cmd, basicMeshShaderPipeline.pipelineLayout.handle, VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(Renderer::BasicMeshShaderPushConstants), &pushData);
-        //
-        // vkCmdDrawMeshTasksEXT(cmd, 1, 1, 1);
-        // vkCmdEndRendering(cmd);
-    }
+    vkCmdEndRendering(cmd);
 
     // Prepare for copy
     {
@@ -664,21 +765,21 @@ void InstancedRendering::CreateBuffers()
     bufferInfo.size = sizeof(Renderer::Instance) * Renderer::BINDLESS_INSTANCE_COUNT;
     instanceBuffer = Renderer::VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
 
-    bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
-    bufferInfo.size = Renderer::BINDLESS_INSTANCE_COUNT / 32 * sizeof(uint32_t);
-    packedVisibilityBuffer = Renderer::VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
-    bufferInfo.size = Renderer::BINDLESS_INSTANCE_COUNT * sizeof(uint16_t);
-    instanceOffsetBuffer = Renderer::VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
-    bufferInfo.size = Renderer::MEGA_PRIMITIVE_BUFFER_COUNT * sizeof(uint32_t);
-    primitiveCountBuffer = Renderer::VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
-
     vmaAllocInfo.flags = 0;
     vmaAllocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
     vmaAllocInfo.requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_TRANSFER_DST_BIT;
+    bufferInfo.size = Renderer::BINDLESS_INSTANCE_COUNT / 32 * sizeof(PackedVisibility);
+    packedVisibilityBuffer = Renderer::VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
+    bufferInfo.size = Renderer::BINDLESS_INSTANCE_COUNT * sizeof(InstancePrimitiveOffset);
+    instanceOffsetBuffer = Renderer::VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
+    bufferInfo.size = Renderer::MEGA_PRIMITIVE_BUFFER_COUNT * sizeof(PrimitiveCount);
+    primitiveCountBuffer = Renderer::VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
+    bufferInfo.size = Renderer::BINDLESS_INSTANCE_COUNT * sizeof(Renderer::Instance);
+    compactedInstanceBuffer = Renderer::VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
+    bufferInfo.size = sizeof(glm::vec4) * Renderer::BINDLESS_INSTANCE_COUNT * sizeof(InstancedMeshIndirectDrawParameters);
     bufferInfo.usage = VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_TRANSFER_DST_BIT;
-    // vec4 for indirect count + padding. Instance_count * 4 is an assumption that each instance is likely to have at most 4 * 32 meshlets
-    bufferInfo.size = sizeof(glm::vec4) + sizeof(Renderer::TaskIndirectDrawParameters) * Renderer::BINDLESS_INSTANCE_COUNT * 4;
-    taskIndirectParameterBuffer = Renderer::VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
+    indirectBuffer = Renderer::VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
 
     bindlessResourcesDescriptorBuffer = Renderer::DescriptorBufferBindlessResources(vulkanContext.get());
 }
