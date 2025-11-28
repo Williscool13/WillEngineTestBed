@@ -2,7 +2,7 @@
 // Created by William on 2025-10-09.
 //
 
-#include "meshlet-rendering.h"
+#include "instanced-rendering.h"
 
 #include <filesystem>
 
@@ -30,13 +30,13 @@
 #include "render/model/model_load_utils.h"
 #include "utils/utils.h"
 
-namespace MeshletRendering
+namespace InstancedRendering
 {
-MeshletRendering::MeshletRendering() = default;
+InstancedRendering::InstancedRendering() = default;
 
-MeshletRendering::~MeshletRendering() = default;
+InstancedRendering::~InstancedRendering() = default;
 
-void MeshletRendering::Initialize()
+void InstancedRendering::Initialize()
 {
     Utils::ScopedTimer timer{"Asset Pipeline Initialization"};
     bool sdlInitSuccess = SDL_Init(SDL_INIT_VIDEO);
@@ -138,7 +138,7 @@ void MeshletRendering::Initialize()
     memcpy(instanceBuffer.allocationInfo.pMappedData, instances.data(), sizeof(Renderer::Instance) * 10);
 }
 
-void MeshletRendering::Run()
+void InstancedRendering::Run()
 {
     Input& input = Input::Input::Get();
     Time& time = Time::Get();
@@ -213,7 +213,7 @@ void MeshletRendering::Run()
     }
 }
 
-void MeshletRendering::Render(uint32_t currentFrameInFlight, Renderer::FrameSynchronization& frameSync)
+void InstancedRendering::Render(uint32_t currentFrameInFlight, Renderer::FrameSynchronization& frameSync)
 {
     // Wait for the GPU to finish the last frame that used this frame-in-flight's resources (N - imageCount).
     VK_CHECK(vkWaitForFences(vulkanContext->device, 1, &frameSync.renderFence, true, 1000000000));
@@ -269,7 +269,7 @@ void MeshletRendering::Render(uint32_t currentFrameInFlight, Renderer::FrameSync
     VK_CHECK(vkBeginCommandBuffer(cmd, &commandBufferBeginInfo));
 
 
-    // Compute
+    //
     {
         VkBufferMemoryBarrier2 bufferBarriers[2];
         bufferBarriers[0] = Renderer::VkHelpers::BufferMemoryBarrier(
@@ -381,6 +381,52 @@ void MeshletRendering::Render(uint32_t currentFrameInFlight, Renderer::FrameSync
         vkCmdEndRendering(cmd);
     }
 
+    // Draw
+    {
+        // constexpr VkClearValue colorClear = {.color = {0.3f, 0.0f, 0.0f, 1.0f}};
+        // const VkRenderingAttachmentInfo colorAttachment = Renderer::VkHelpers::RenderingAttachmentInfo(renderTargets->drawImageView.handle, &colorClear, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+        // constexpr VkClearValue depthClear = {.depthStencil = {0.0f, 0u}};
+        // const VkRenderingAttachmentInfo depthAttachment = Renderer::VkHelpers::RenderingAttachmentInfo(renderTargets->depthImageView.handle, &depthClear, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+        // const VkRenderingInfo renderInfo = Renderer::VkHelpers::RenderingInfo({scaledRenderExtent[0], scaledRenderExtent[1]}, &colorAttachment, &depthAttachment);
+        //
+        // vkCmdBeginRendering(cmd, &renderInfo);
+        //
+        // vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, meshShaderPipeline.pipeline.handle);
+        // //vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, basicMeshShaderPipeline.pipeline.handle);
+        //
+        // VkViewport viewport = Renderer::VkHelpers::GenerateViewport(scaledRenderExtent[0], scaledRenderExtent[1]);
+        // vkCmdSetViewport(cmd, 0, 1, &viewport);
+        // VkRect2D scissor = Renderer::VkHelpers::GenerateScissor(scaledRenderExtent[0], scaledRenderExtent[1]);
+        // vkCmdSetScissor(cmd, 0, 1, &scissor);
+        //
+        // Renderer::AllocatedBuffer& currentSceneDataBuffer = sceneDataBuffers[currentFrameInFlight];
+        // Renderer::MainMeshShaderPushConstants pushConstants{
+        //     .sceneData = currentSceneDataBuffer.address,
+        //     .vertexBuffer = megaVertexBuffer.address,
+        //     .primitiveBuffer = primitiveBuffer.address,
+        //     .meshletVerticesBuffer = megaMeshletVerticesBuffer.address,
+        //     .meshletTrianglesBuffer = megaMeshletTrianglesBuffer.address,
+        //     .meshletBuffer = megaMeshletBuffer.address,
+        //     .materialBuffer = materialBuffer.address,
+        //     .modelBuffer = modelBuffer.address,
+        //     .instanceBuffer = instanceBuffer.address,
+        //     .instanceIndex = 0
+        // };
+        // // Renderer::BasicMeshShaderPushConstants pushData{glm::mat4(1.0f),currentSceneDataBuffer.address,};
+        //
+        // vkCmdPushConstants(cmd, meshShaderPipeline.pipelineLayout.handle, VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+        //                    sizeof(Renderer::MainMeshShaderPushConstants), &pushConstants);
+        // vkCmdDrawMeshTasksEXT(cmd, 1, 1, 1);
+        //
+        // pushConstants.instanceIndex = 1;
+        // vkCmdPushConstants(cmd, meshShaderPipeline.pipelineLayout.handle, VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+        //                    sizeof(Renderer::MainMeshShaderPushConstants), &pushConstants);
+        // //vkCmdPushConstants(cmd, basicMeshShaderPipeline.pipelineLayout.handle, VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(Renderer::BasicMeshShaderPushConstants), &pushData);
+        //
+        // vkCmdDrawMeshTasksEXT(cmd, 1, 1, 1);
+        // vkCmdEndRendering(cmd);
+    }
+
     // Prepare for copy
     {
         VkImageMemoryBarrier2 barriers[2];
@@ -464,14 +510,14 @@ void MeshletRendering::Render(uint32_t currentFrameInFlight, Renderer::FrameSync
     }
 }
 
-void MeshletRendering::Cleanup()
+void InstancedRendering::Cleanup()
 {
     vkDeviceWaitIdle(vulkanContext->device);
 
     SDL_DestroyWindow(window);
 }
 
-void MeshletRendering::CreateBuffers()
+void InstancedRendering::CreateBuffers()
 {
     VkBufferCreateInfo bufferInfo = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
     bufferInfo.pNext = nullptr;
@@ -515,7 +561,7 @@ void MeshletRendering::CreateBuffers()
     bindlessResourcesDescriptorBuffer = Renderer::DescriptorBufferBindlessResources(vulkanContext.get());
 }
 
-Renderer::MeshletModelData MeshletRendering::CreateMeshletModel(const std::filesystem::path& path)
+Renderer::MeshletModelData InstancedRendering::CreateMeshletModel(const std::filesystem::path& path)
 {
     Renderer::MeshletModelData model;
     Renderer::ExtractedMeshletModel meshletModel = modelLoader->LoadMeshletGltf(path);

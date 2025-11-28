@@ -27,8 +27,9 @@ inline static constexpr int32_t MEGA_INDEX_BUFFER_COUNT = 2097152; // 1 << 21
 inline static constexpr int32_t MEGA_PRIMITIVE_BUFFER_COUNT = 65536;
 inline static constexpr int32_t MEGA_MATERIAL_BUFFER_COUNT = 16384;
 
-inline static constexpr int32_t MEGA_MESHLET_VERTEX_BUFFER_SIZE = INT32_MAX;
-inline static constexpr int32_t MEGA_MESHLET_TRIANGLE_BUFFER_SIZE = INT32_MAX;
+// Hard coded raw values instead of count supported
+inline static constexpr int32_t MEGA_MESHLET_VERTEX_BUFFER_SIZE = 1 << 25;
+inline static constexpr int32_t MEGA_MESHLET_TRIANGLE_BUFFER_SIZE = 1 << 25;
 
 inline static constexpr int32_t BINDLESS_MODEL_MATRIX_COUNT = 16384;
 inline static constexpr int32_t BINDLESS_INSTANCE_COUNT = 131072;

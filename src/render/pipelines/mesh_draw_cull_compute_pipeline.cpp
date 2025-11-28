@@ -35,7 +35,7 @@ MeshDrawCullComputePipeline::MeshDrawCullComputePipeline(VulkanContext* context)
     pipelineLayout = VkResources::CreatePipelineLayout(context, computePipelineLayoutCreateInfo);
 
     VkShaderModule computeShader;
-    std::filesystem::path shaderPath = {"shaders/meshDrawCull_compute.spv"};
+    std::filesystem::path shaderPath = {"shaders/meshShaderIndirect_compute.spv"};
     if (!VkHelpers::LoadShaderModule(shaderPath.string().c_str(), context->device, &computeShader)) {
         LOG_ERROR("Failed to load {}", shaderPath.string());
         exit(1);

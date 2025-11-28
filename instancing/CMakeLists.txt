@@ -1,11 +1,11 @@
-add_executable(meshlet-rendering
+add_executable(instanced-rendering
         main.cpp
-        meshlet-rendering.cpp
-        meshlet-rendering.h
+        instanced-rendering.cpp
+        instanced-rendering.h
 )
 
 
-target_link_libraries(meshlet-rendering PRIVATE
+target_link_libraries(instanced-rendering PRIVATE
         engine-common
         crash-handling
         core-lib
@@ -15,14 +15,14 @@ target_link_libraries(meshlet-rendering PRIVATE
         meshoptimizer
 )
 
-add_custom_command(TARGET meshlet-rendering POST_BUILD
+add_custom_command(TARGET instanced-rendering POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
         $<TARGET_FILE:SDL3::SDL3>
-        $<TARGET_FILE_DIR:meshlet-rendering>
+        $<TARGET_FILE_DIR:instanced-rendering>
 )
 
 
-compile_shaders(meshlet-rendering
+compile_shaders(instanced-rendering
         ${CMAKE_SOURCE_DIR}/shaders/meshShaderIndirect.slang task taskMain
         ${CMAKE_SOURCE_DIR}/shaders/meshShaderIndirect.slang mesh meshMain
         ${CMAKE_SOURCE_DIR}/shaders/meshShaderIndirect.slang fragment fragmentMain

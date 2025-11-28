@@ -1,33 +1,9 @@
 import common;
 
-struct VertexOutput
-{
-    float4 position : SV_Position;
-    float3 worldPos : TEXCOORD1;
-    float3 normal : TEXCOORD2;
-    float4 tangent : TEXCOORD3;
-    float4 color : COLOR0;
-    float2 uv : TEXCOORD0;
-    nointerpolation uint32_t materialIndex : TEXCOORD4;
-    nointerpolation uint32_t dispatchId : TEXCOORD5;
-};
-
-
-struct PushConsts {
-    SceneData* sceneData;
-
-    // Statics
-    VertexData* vertexBuffer;
-    MeshletVerticesData* meshletVerticesBuffer;
-    MeshletTrianglesData* meshletTrianglesBuffer;
-    MeshletData* meshletBuffer;
-
-    MeshIndirectParameterBuffer* meshIndirectParameterBuffer;
-
-    // Dynamics
-    MaterialData* materialBuffer; // well, this ones not yet dynamic
-    ModelData* modelBuffer;
-};
+const static int32_t TASK_SHADER_DISPATCH_X = 64;
+const static int32_t MESH_SHADER_DISPATCH_X = 32;
+const static uint MAX_VERTICES = 64;
+const static uint MAX_PRIMITIVES = 64;
 
 bool frustumCullSphere(Frustum frustum, float4 sphere) {
     // sphere.xyz = center, sphere.w = radius
@@ -41,10 +17,78 @@ bool frustumCullSphere(Frustum frustum, float4 sphere) {
     return true;
 }
 
-const static int32_t TASK_SHADER_DISPATCH_X = 64;
-const static int32_t MESH_SHADER_DISPATCH_X = 32;
-const static uint MAX_VERTICES = 64;
-const static uint MAX_PRIMITIVES = 64;
+// =============== Compute Shader (Instance Cull) ===============
+struct ComputePushConst {
+    SceneData* sceneData;
+
+    MeshletPrimitiveData* primitiveBuffer;
+    InstanceData* instanceBuffer;
+    ModelData* modelBuffer;
+
+    MeshIndirectParameterBuffer* meshIndirectBuffer;
+};
+
+[numthreads(64, 1, 1)]
+void computeMain(uniform ComputePushConst pushConstants, uint3 dtid : SV_DispatchThreadID) {
+    uint instanceID = dtid.x;
+
+    Instance inst = pushConstants.instanceBuffer->instances[instanceID];
+    if (inst.bIsAllocated == 0) { return; }
+
+    MeshletPrimitive prim = pushConstants.primitiveBuffer->primitives[inst.primitiveIndex];
+    Model model = pushConstants.modelBuffer->models[inst.modelIndex];
+
+    float4 boundingSphere = prim.boundingSphere;
+    float3 worldCenter = mul(model.modelMatrix, float4(boundingSphere.xyz, 1.0)).xyz;
+    float4 worldBounds = float4(worldCenter, boundingSphere.w);
+    if (!frustumCullSphere(pushConstants.sceneData->frustum, worldBounds)) {
+        return;
+    }
+
+    // Use these to output dispatches to different indirects
+    // prim.bHasTransparent;
+    // prim.bHasSkinning
+
+    // Each group processes TASK_SHADER_DISPATCH_X number of meshlets, so if its greater than that we need to do multiple dispatches
+    uint totalMeshlets = prim.meshletCount;
+    uint numChunks = (totalMeshlets + (TASK_SHADER_DISPATCH_X - 1)) / TASK_SHADER_DISPATCH_X;
+
+    uint commandIndex = pushConstants.meshIndirectBuffer.meshIndirectCount.add(1);
+    pushConstants.meshIndirectBuffer.parameters[commandIndex].groupCountX = numChunks;
+    pushConstants.meshIndirectBuffer.parameters[commandIndex].groupCountY = 1;
+    pushConstants.meshIndirectBuffer.parameters[commandIndex].groupCountZ = 1;
+    pushConstants.meshIndirectBuffer.parameters[commandIndex].modelIndex = inst.modelIndex;
+    pushConstants.meshIndirectBuffer.parameters[commandIndex].materialIndex = prim.materialIndex;
+    pushConstants.meshIndirectBuffer.parameters[commandIndex].meshletOffset = prim.meshletOffset;
+    pushConstants.meshIndirectBuffer.parameters[commandIndex].meshletCount = prim.meshletCount;
+}
+
+// =============== Task Shader ===============
+struct VertexOutput
+{
+    float4 position : SV_Position;
+    float3 worldPos : TEXCOORD1;
+    float3 normal : TEXCOORD2;
+    float4 tangent : TEXCOORD3;
+    float4 color : COLOR0;
+    float2 uv : TEXCOORD0;
+    nointerpolation uint32_t materialIndex : TEXCOORD4;
+};
+
+struct RenderPushConstant {
+    SceneData* sceneData;
+
+    VertexData* vertexBuffer;
+    MeshletVerticesData* meshletVerticesBuffer;
+    MeshletTrianglesData* meshletTrianglesBuffer;
+    MeshletData* meshletBuffer;
+
+    MeshIndirectParameterBuffer* meshIndirectParameterBuffer;
+
+    // Dynamics
+    MaterialData* materialBuffer; // well, this ones not yet dynamic
+    ModelData* modelBuffer;
+};
 
 // Per https://developer.nvidia.com/blog/using-mesh-shaders-for-professional-graphics/
 // Task shader output should ideally be below 236/108. We can hit 108 if we turn uint32_t to uint8_t and store offsets in the payload.
@@ -60,9 +104,10 @@ struct MeshletPayload {
 groupshared MeshletPayload sharedPayload;
 groupshared Atomic<uint32_t> visibleMeshletCount;
 
+
 [shader("task")]
 [numthreads(TASK_SHADER_DISPATCH_X, 1, 1)]
-void taskMain(uniform PushConsts pushConstants,
+void taskMain(uniform RenderPushConstant pushConstants,
     uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID, uint drawIndex : SV_DrawIndex)
 {
     MeshIndirectDrawParameters indirectParameters = pushConstants.meshIndirectParameterBuffer->parameters[drawIndex];
@@ -106,7 +151,7 @@ void taskMain(uniform PushConsts pushConstants,
 
             // dot(center - camera, axis) >= cutoff * dist + radius
             if (dot(cameraToCenter, worldConeAxis) >= mlet.coneCutoff * centerDist + mlet.meshletBoundingSphere.w) {
-                visible = false;  // Backface culled
+                visible = false;
             }
         }
 
@@ -124,13 +169,15 @@ void taskMain(uniform PushConsts pushConstants,
     }
 }
 
+// =============== Mesh Shader ===============
+
 [shader("mesh")]
 [outputtopology("triangle")]
 [numthreads(MESH_SHADER_DISPATCH_X, 1, 1)]
 void meshMain(
     in payload MeshletPayload inPayload, out indices uint3 triangles[MAX_PRIMITIVES], out vertices VertexOutput vertices[MAX_VERTICES],
     uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID,
-    uniform PushConsts pushConstants)
+    uniform RenderPushConstant pushConstants)
 {
     uint32_t payloadMeshletIndex = gid.x;
     uint32_t meshletIndex = inPayload.groupMeshletOffset + inPayload.meshletIndices[payloadMeshletIndex];
@@ -173,6 +220,8 @@ void meshMain(
         triangles[i] = uint3(idx0, idx1, idx2);
     }
 }
+
+// =============== Fragment Shader ===============
 
 [shader("fragment")]
 float4 fragmentMain(VertexOutput vertexInput)
