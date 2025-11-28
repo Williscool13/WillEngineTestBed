@@ -34,12 +34,45 @@ struct RenderTargets;
 
 namespace InstancedRendering
 {
+struct PackedVisibility
+{
+    uint32_t visibilityChunk;
+};
+
+
+
+struct InstancePrimitiveOffset
+{
+    uint16_t primitiveOffset;
+};
+
+
+struct PrimitiveCount
+{
+    uint32_t count;
+};
+
+
+
+struct VisibilityPushConstant {
+    VkDeviceAddress sceneData;
+    VkDeviceAddress primitiveBuffer;
+    VkDeviceAddress modelBuffer;
+    VkDeviceAddress instanceBuffer;
+
+    VkDeviceAddress packedVisibilityBuffer; // sizeof(instance / 32), visibility is packed into 32 bit chunks
+    VkDeviceAddress instanceOffsetBuffer;   // sizeof(instance) * uint32_t (I would use 16_t but only 32_t can be atomic)
+    VkDeviceAddress primitiveCountBuffer;   // sizeof(primitive) * uint16_t
+};
+
 class InstancedRendering
 {
 public:
     InstancedRendering();
 
     ~InstancedRendering();
+
+    void TestShaders();
 
     void Initialize();
 
@@ -95,10 +128,17 @@ private:
     Renderer::AllocatedBuffer taskIndirectParameterBuffer;
 
     Renderer::MeshletModelData bunnyModel{};
-    Renderer::MeshletModelData dragonModel{};
+    // Renderer::MeshletModelData dragonModel{};
 
     Renderer::MeshDrawCullComputePipeline meshDrawCullComputePipeline{};
     Renderer::IndirectMeshShaderPipeline indirectMeshShaderPipeline{};
+
+    Renderer::PipelineLayout pipelineLayout;
+    Renderer::Pipeline pipeline;
+
+    Renderer::AllocatedBuffer packedVisibilityBuffer;
+    Renderer::AllocatedBuffer instanceOffsetBuffer;
+    Renderer::AllocatedBuffer primitiveCountBuffer;
 };
 }
 

@@ -28,3 +28,7 @@ compile_shaders(instanced-rendering
         ${CMAKE_SOURCE_DIR}/shaders/meshShaderIndirect.slang fragment fragmentMain
         ${CMAKE_SOURCE_DIR}/shaders/meshShaderIndirect.slang compute computeMain
 )
+
+compile_shader(instanced-rendering
+        ${CMAKE_SOURCE_DIR}/shaders/gpuInstancing.slang compute computeVisibility OUTPUT_NAME instancingVisibility
+)

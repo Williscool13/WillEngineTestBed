@@ -92,17 +92,29 @@ target_link_libraries(render-lib PUBLIC
 
 find_program(SLANGC slangc REQUIRED)
 
-
 function(compile_shader TARGET SHADER_SOURCE STAGE ENTRY)
-    get_filename_component(SHADER_NAME ${SHADER_SOURCE} NAME_WE)
+    # Parse optional OUTPUT_NAME argument
+    set(options "")
+    set(oneValueArgs OUTPUT_NAME)
+    set(multiValueArgs "")
+    cmake_parse_arguments(ARG "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+
+    # Use custom output name if provided, otherwise generate from source filename
+    if(ARG_OUTPUT_NAME)
+        set(SHADER_NAME ${ARG_OUTPUT_NAME})
+    else()
+        get_filename_component(SHADER_NAME ${SHADER_SOURCE} NAME_WE)
+    endif()
+
     set(SHADER_OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/shaders/${SHADER_NAME}_${STAGE}.spv)
     set(COMMON_SHADER_INCLUDES ${CMAKE_SOURCE_DIR}/shaders/common.slang)
+
     add_custom_command(
             OUTPUT ${SHADER_OUTPUT}
             COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/shaders
             COMMAND ${SLANGC} ${SHADER_SOURCE} -target spirv -entry ${ENTRY} -stage ${STAGE} -o ${SHADER_OUTPUT}
             DEPENDS ${SHADER_SOURCE} ${COMMON_SHADER_INCLUDES}
-            COMMENT "Compiling ${STAGE} shader from ${SHADER_SOURCE}"
+            COMMENT "Compiling ${STAGE} shader from ${SHADER_SOURCE} -> ${SHADER_NAME}_${STAGE}.spv"
     )
 
     target_sources(${TARGET} PRIVATE ${SHADER_OUTPUT})

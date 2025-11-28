@@ -36,6 +36,38 @@ InstancedRendering::InstancedRendering() = default;
 
 InstancedRendering::~InstancedRendering() = default;
 
+void InstancedRendering::TestShaders()
+{
+    VkPipelineLayoutCreateInfo computePipelineLayoutCreateInfo{};
+    computePipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    computePipelineLayoutCreateInfo.pNext = nullptr;
+    computePipelineLayoutCreateInfo.pSetLayouts = nullptr;
+    computePipelineLayoutCreateInfo.setLayoutCount = 0;
+
+    VkPushConstantRange pushConstant{};
+    pushConstant.offset = 0;
+    pushConstant.size = sizeof(VisibilityPushConstant);
+    pushConstant.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    computePipelineLayoutCreateInfo.pPushConstantRanges = &pushConstant;
+    computePipelineLayoutCreateInfo.pushConstantRangeCount = 1;
+
+    pipelineLayout = Renderer::VkResources::CreatePipelineLayout(vulkanContext.get(), computePipelineLayoutCreateInfo);
+
+    VkShaderModule computeShader;
+    std::filesystem::path shaderPath = {"shaders/instancingVisibility_compute.spv"};
+    if (!Renderer::VkHelpers::LoadShaderModule(shaderPath.string().c_str(), vulkanContext->device, &computeShader)) {
+        LOG_ERROR("Failed to load {}", shaderPath.string());
+        exit(1);
+    }
+
+    VkPipelineShaderStageCreateInfo pipelineShaderStageCreateInfo = Renderer::VkHelpers::PipelineShaderStageCreateInfo(computeShader, VK_SHADER_STAGE_COMPUTE_BIT);
+    VkComputePipelineCreateInfo computePipelineCreateInfo = Renderer::VkHelpers::ComputePipelineCreateInfo(pipelineLayout.handle, pipelineShaderStageCreateInfo);
+    pipeline = Renderer::VkResources::CreateComputePipeline(vulkanContext.get(), computePipelineCreateInfo);
+
+    // Cleanup
+    vkDestroyShaderModule(vulkanContext->device, computeShader, nullptr);
+}
+
 void InstancedRendering::Initialize()
 {
     Utils::ScopedTimer timer{"Asset Pipeline Initialization"};
@@ -98,7 +130,7 @@ void InstancedRendering::Initialize()
     auto bunnyPath = std::filesystem::path("../assets/stanford_bunny/stanford_bunny.gltf");
     auto dragonPath = std::filesystem::path("../assets/dragon/dragon.gltf");
     bunnyModel = CreateMeshletModel(bunnyPath);
-    dragonModel = CreateMeshletModel(dragonPath);
+    // dragonModel = CreateMeshletModel(dragonPath);
 
 
     std::array<Renderer::Model, 10> modelMatrices{};
@@ -123,19 +155,26 @@ void InstancedRendering::Initialize()
 
     for (int i = 0; i < 5; i++) {
         // Dragon instances
+        // instances[i].modelIndex = i;
+        // instances[i].primitiveIndex = 0;
+        // instances[i].bIsAllocated = 1;
+        // instances[i].jointMatrixOffset = 0;
+
+        // Bunny instances
+        // instances[i + 5].modelIndex = i + 5;
+        // instances[i + 5].primitiveIndex = 1;
+        // instances[i + 5].bIsAllocated = 1;
+        // instances[i + 5].jointMatrixOffset = 0;
+
         instances[i].modelIndex = i;
         instances[i].primitiveIndex = 0;
         instances[i].bIsAllocated = 1;
         instances[i].jointMatrixOffset = 0;
-
-        // Bunny instances
-        instances[i + 5].modelIndex = i + 5;
-        instances[i + 5].primitiveIndex = 1;
-        instances[i + 5].bIsAllocated = 1;
-        instances[i + 5].jointMatrixOffset = 0;
     }
 
-    memcpy(instanceBuffer.allocationInfo.pMappedData, instances.data(), sizeof(Renderer::Instance) * 10);
+    memcpy(instanceBuffer.allocationInfo.pMappedData, instances.data(), sizeof(Renderer::Instance) * 5);
+
+    TestShaders();
 }
 
 void InstancedRendering::Run()
@@ -268,6 +307,81 @@ void InstancedRendering::Render(uint32_t currentFrameInFlight, Renderer::FrameSy
     VkCommandBufferBeginInfo commandBufferBeginInfo = Renderer::VkHelpers::CommandBufferBeginInfo();
     VK_CHECK(vkBeginCommandBuffer(cmd, &commandBufferBeginInfo));
 
+    if (input.IsKeyDown(Key::O)) {
+        vkCmdFillBuffer(cmd, packedVisibilityBuffer.handle, 0, VK_WHOLE_SIZE, 0);
+        vkCmdFillBuffer(cmd, instanceOffsetBuffer.handle, 0, VK_WHOLE_SIZE, 0);
+        vkCmdFillBuffer(cmd, primitiveCountBuffer.handle, 0, VK_WHOLE_SIZE, 0);
+
+
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline.handle);
+        VisibilityPushConstant pushData{
+            .sceneData = currentSceneDataBuffer.address,
+            .primitiveBuffer = primitiveBuffer.address,
+            .modelBuffer = modelBuffer.address,
+            .instanceBuffer = instanceBuffer.address,
+            .packedVisibilityBuffer = packedVisibilityBuffer.address,
+            .instanceOffsetBuffer = instanceOffsetBuffer.address,
+            .primitiveCountBuffer = primitiveCountBuffer.address,
+        };
+
+        vkCmdPushConstants(cmd, pipelineLayout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(VisibilityPushConstant), &pushData);
+        vkCmdDispatch(cmd, 1, 1, 1);
+    }
+
+    if (input.IsKeyDown(Key::P)) {
+        // Read back the buffers
+        PackedVisibility* visData = static_cast<PackedVisibility*>(packedVisibilityBuffer.allocationInfo.pMappedData);
+        InstancePrimitiveOffset* offsetData = static_cast<InstancePrimitiveOffset*>(instanceOffsetBuffer.allocationInfo.pMappedData);
+        PrimitiveCount* countData = static_cast<PrimitiveCount*>(primitiveCountBuffer.allocationInfo.pMappedData);
+
+        LOG_INFO("=== Culling Debug Info ===");
+
+        // Check visibility bits (5 instances = first chunk only)
+        uint32_t visChunk = visData[0].visibilityChunk;
+        LOG_INFO("Visibility chunk [0]: 0x{:08X} (binary: {:032b})", visChunk, visChunk);
+
+        for (int i = 0; i < 5; i++) {
+            bool visible = (visChunk & (1u << i)) != 0;
+            LOG_INFO("  Instance {}: {}", i, visible ? "VISIBLE" : "CULLED");
+        }
+
+        // Check primitive offsets
+        LOG_INFO("\nPrimitive Offsets:");
+        for (int i = 0; i < 5; i++) {
+            LOG_INFO("  Instance {}: offset = {}", i, offsetData[i].primitiveOffset);
+        }
+
+        // Check primitive count (should be number of visible instances for primitive 0)
+        uint32_t primCount = countData[0].count;
+        LOG_INFO("\nPrimitive 0 total count: {}", primCount);
+
+        // Verify logic
+        LOG_INFO("\n=== Verification ===");
+
+        uint32_t visibleCount = std::popcount(visChunk & 0x1F); // Count bits 0-4
+        LOG_INFO("Visible instances (from bitfield): {}", visibleCount);
+        LOG_INFO("Primitive count (from atomic): {}", primCount);
+        if (visibleCount == primCount) {
+            LOG_INFO("✅ Counts match!");
+        }
+        else {
+            LOG_ERROR("❌ MISMATCH! Bitfield: {} vs Atomic: {}", visibleCount, primCount);
+        }
+
+        // Check offsets are sequential (should be 0,1,2,3,4 for visible instances)
+        LOG_INFO("\n=== Expected Offsets (for visible instances) ===");
+        uint16_t expectedOffset = 0;
+        for (int i = 0; i < 5; i++) {
+            bool visible = (visChunk & (1u << i)) != 0;
+            if (visible) {
+                uint16_t actualOffset = offsetData[i].primitiveOffset;
+                LOG_INFO("  Instance {}: expected={}, actual={} {}",
+                         i, expectedOffset, actualOffset,
+                         (expectedOffset == actualOffset) ? "✅" : "❌");
+                expectedOffset++;
+            }
+        }
+    }
 
     //
     {
@@ -549,6 +663,14 @@ void InstancedRendering::CreateBuffers()
     bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
     bufferInfo.size = sizeof(Renderer::Instance) * Renderer::BINDLESS_INSTANCE_COUNT;
     instanceBuffer = Renderer::VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
+
+    bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
+    bufferInfo.size = Renderer::BINDLESS_INSTANCE_COUNT / 32 * sizeof(uint32_t);
+    packedVisibilityBuffer = Renderer::VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
+    bufferInfo.size = Renderer::BINDLESS_INSTANCE_COUNT * sizeof(uint16_t);
+    instanceOffsetBuffer = Renderer::VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
+    bufferInfo.size = Renderer::MEGA_PRIMITIVE_BUFFER_COUNT * sizeof(uint32_t);
+    primitiveCountBuffer = Renderer::VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
 
     vmaAllocInfo.flags = 0;
     vmaAllocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
