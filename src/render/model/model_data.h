@@ -42,14 +42,18 @@ struct Primitive
 
 struct Meshlet
 {
+    glm::vec4 meshletBoundingSphere;
+
+    glm::vec3 coneApex;
+    float coneCutoff;
+
+    glm::vec3 coneAxis;
     uint32_t vertexOffset;
+
     uint32_t meshletVerticesOffset;
     uint32_t meshletTriangleOffset;
     uint32_t meshletVerticesCount;
     uint32_t meshletTriangleCount;
-    uint32_t padding1{0};
-    uint32_t padding2{0};
-    uint32_t padding3{0};
 };
 
 struct MeshletPrimitive
@@ -217,6 +221,8 @@ struct ModelData
 
 struct MeshletModelData
 {
+    bool bLoaded{false};
+
     std::string name{};
     std::filesystem::path path{};
 

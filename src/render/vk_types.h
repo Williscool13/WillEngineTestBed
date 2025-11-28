@@ -10,6 +10,14 @@
 
 namespace Renderer
 {
+struct Frustum
+{
+    glm::vec4 planes[6];
+
+    Frustum() = default;
+    explicit Frustum(const glm::mat4& viewProj);
+};
+
 enum class MaterialType
 {
     OPAQUE_ = 0,
@@ -136,6 +144,8 @@ struct SceneData
 
     glm::vec4 cameraWorldPos{0.0f};
     glm::vec4 prevCameraWorldPos{0.0f};
+
+    Frustum frustum{};
 
     glm::vec2 renderTargetSize{};
     glm::vec2 texelSize{};

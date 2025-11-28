@@ -29,13 +29,25 @@ struct PushConsts {
     ModelData* modelBuffer;
 };
 
+bool frustumCullSphere(Frustum frustum, float4 sphere) {
+    // sphere.xyz = center, sphere.w = radius
+    for (int i = 0; i < 6; i++) {
+        float4 plane = frustum.planes[i];
+        float dist = dot(plane.xyz, sphere.xyz) + plane.w;
+        if (dist < -sphere.w) {
+            return false;
+        }
+    }
+    return true;
+}
+
 const static int32_t TASK_SHADER_DISPATCH_X = 64;
 const static int32_t MESH_SHADER_DISPATCH_X = 32;
 const static uint MAX_VERTICES = 64;
 const static uint MAX_PRIMITIVES = 64;
 
 // Per https://developer.nvidia.com/blog/using-mesh-shaders-for-professional-graphics/
-// Task shader output should ideally be below 236/108. We can hit 236 if we turn uint32_t to uint8_t and store offsets in the payload.
+// Task shader output should ideally be below 236/108. We can hit 108 if we turn uint32_t to uint8_t and store offsets in the payload.
 // 4 + 4 + 4 + 64 = 86
 struct MeshletPayload {
     uint32_t modelIndex;
@@ -48,16 +60,12 @@ struct MeshletPayload {
 groupshared MeshletPayload sharedPayload;
 groupshared Atomic<uint32_t> visibleMeshletCount;
 
-bool isMeshletVisible(uint meshId) {
-    return true;
-}
-
 [shader("task")]
 [numthreads(TASK_SHADER_DISPATCH_X, 1, 1)]
 void taskMain(uniform PushConsts pushConstants,
     uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID, uint drawIndex : SV_DrawIndex)
 {
-    MeshIndirectDrawParameters indirectParameters = pushConstants.meshIndirectParameterBuffer.parameters[drawIndex];
+    MeshIndirectDrawParameters indirectParameters = pushConstants.meshIndirectParameterBuffer->parameters[drawIndex];
 
     if (gtid.x == 0) {
         visibleMeshletCount.store(0);
@@ -70,15 +78,42 @@ void taskMain(uniform PushConsts pushConstants,
     GroupMemoryBarrierWithGroupSync();
 
 
+    Model model = pushConstants.modelBuffer->models[indirectParameters.modelIndex];
+
     // group thread count is only 32, will never exceed uint8
     uint8_t meshletID = (uint8_t)gtid.x;
     uint localMeshletCount = min(TASK_SHADER_DISPATCH_X, indirectParameters.meshletCount - (gid.x * TASK_SHADER_DISPATCH_X));
 
-    // culling on meshlet level seems wasteful, can try but I doubt it'd be worth it
-    //if (meshletID < meshletPrimitive.meshletCount && isMeshletVisible(meshletPrimitive.meshletOffset + meshletID)) {
     if (meshletID < localMeshletCount) {
-        uint index = visibleMeshletCount.add(1);
-        sharedPayload.meshletIndices[index] = meshletID;
+        Meshlet mlet = pushConstants.meshletBuffer->meshlets[sharedPayload.groupMeshletOffset + meshletID];
+
+        // Transform to world space
+        float3 worldCenter = mul(model.modelMatrix, float4(mlet.meshletBoundingSphere.xyz, 1.0)).xyz;
+        float4 worldBounds = float4(worldCenter, mlet.meshletBoundingSphere.w);
+
+        bool visible = true;
+
+        // Frustum cull
+        if (!frustumCullSphere(pushConstants.sceneData->frustum, worldBounds)) {
+            visible = false;
+        }
+
+        // Backface cull
+        if (visible) {
+            float3 worldConeAxis = normalize(mul((float3x3)model.modelMatrix, mlet.coneAxis));
+            float3 cameraToCenter = worldCenter - pushConstants.sceneData->cameraWorldPos.xyz;
+            float centerDist = length(cameraToCenter);
+
+            // dot(center - camera, axis) >= cutoff * dist + radius
+            if (dot(cameraToCenter, worldConeAxis) >= mlet.coneCutoff * centerDist + mlet.meshletBoundingSphere.w) {
+                visible = false;  // Backface culled
+            }
+        }
+
+        if (visible) {
+            uint index = visibleMeshletCount.add(1);
+            sharedPayload.meshletIndices[index] = meshletID;
+        }
     }
 
     GroupMemoryBarrierWithGroupSync();

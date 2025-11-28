@@ -56,14 +56,15 @@ public struct Primitive
 
 public struct Meshlet
 {
+    public float4 meshletBoundingSphere;
+    public float3 coneApex;
+    public float coneCutoff;
+    public float3 coneAxis;
     public uint32_t vertexOffset;
     public uint32_t meshletVerticesOffset;
     public uint32_t meshletTriangleOffset;
     public uint32_t meshletVerticesCount;
     public uint32_t meshletTriangleCount;
-    uint32_t padding1;
-    uint32_t padding2;
-    uint32_t padding3;
 };
 
 public struct MeshletPrimitive
@@ -114,6 +115,11 @@ public struct MaterialProperties
     public float4 physicalProperties; // x: IOR, y: dispersion, z: normal scale, w: occlusion strength
 };
 
+public struct Frustum
+{
+    public float4 planes[6];
+};
+
 public struct SceneData
 {
     public float4x4 view;
@@ -138,6 +144,8 @@ public struct SceneData
 
     public float4 cameraWorldPos;
     public float4 prevCameraWorldPos;
+
+    public Frustum frustum;
 
     public float2 renderTargetSize;
     float2 texelSize;

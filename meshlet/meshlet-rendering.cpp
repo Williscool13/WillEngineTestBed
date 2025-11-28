@@ -92,9 +92,38 @@ void MeshletRendering::Initialize()
 
     CreateBuffers();
 
-    //CreateTrivialMeshletModel();
+    auto bunnyPath = std::filesystem::path("../assets/stanford_bunny/stanford_bunny.gltf");
+    bunnyModel = CreateMeshletModel(bunnyPath);
 
-    CreateMeshletModel();
+    auto dragonPath = std::filesystem::path("../assets/dragon/dragon.gltf");
+    // dragonModel = CreateMeshletModel(dragonPath);
+
+
+    glm::mat4 mat{1.0f};
+    mat = glm::translate(mat, glm::vec3(0.0f, 0.0f, 0.0f));
+    Renderer::Model modelMatrix{mat};
+    memcpy(static_cast<char*>(modelBuffer.allocationInfo.pMappedData), &modelMatrix, sizeof(Renderer::Model));
+
+    glm::mat4 mat2{1.0f};
+    mat2 = glm::translate(mat2, glm::vec3(2.0f, 2.0f, 0.0f));
+    Renderer::Model modelMatrix2{mat2};
+    memcpy(static_cast<char*>(modelBuffer.allocationInfo.pMappedData) + sizeof(Renderer::Model), &modelMatrix2, sizeof(Renderer::Model));
+
+    // Add 1x instance (point to 1x model)
+    Renderer::Instance i;
+    i.modelIndex = 0;
+    i.primitiveIndex = 0;
+    i.bIsAllocated = 1;
+    i.jointMatrixOffset = 0;
+    Renderer::Instance i2;
+    i2.modelIndex = 1;
+    i2.primitiveIndex = 0;
+    i2.bIsAllocated = 1;
+    i2.jointMatrixOffset = 0;
+
+    Renderer::Instance dummyInst{0, 0, 0, false};
+    memcpy(instanceBuffer.allocationInfo.pMappedData, &i, sizeof(Renderer::Instance));
+    memcpy(static_cast<char*>(instanceBuffer.allocationInfo.pMappedData) + sizeof(Renderer::Instance), &i2, sizeof(Renderer::Instance));
 
     meshShaderPipeline = Renderer::MainMeshShaderPipeline(vulkanContext.get(), bindlessResourcesDescriptorBuffer.descriptorSetLayout.handle);
     meshDrawCullComputePipeline = Renderer::MeshDrawCullComputePipeline(vulkanContext.get());
@@ -216,6 +245,8 @@ void MeshletRendering::Render(uint32_t currentFrameInFlight, Renderer::FrameSync
         sceneData.view = view;
         sceneData.proj = proj;
         sceneData.viewProj = proj * view;
+        sceneData.frustum = Renderer::Frustum(sceneData.viewProj);
+        sceneData.cameraWorldPos = {freeCamera.transform.translation, 0.0f};
         sceneData.renderTargetSize.x = static_cast<float>(scaledRenderExtent[0]);
         sceneData.renderTargetSize.y = static_cast<float>(scaledRenderExtent[1]);
         sceneData.deltaTime = deltaTime;
@@ -521,16 +552,16 @@ void MeshletRendering::CreateBuffers()
     bindlessResourcesDescriptorBuffer = Renderer::DescriptorBufferBindlessResources(vulkanContext.get());
 }
 
-void MeshletRendering::CreateMeshletModel()
+Renderer::MeshletModelData MeshletRendering::CreateMeshletModel(const std::filesystem::path& path)
 {
-    auto bunnyPath = std::filesystem::path("../assets/stanford_bunny/stanford_bunny.gltf");
-    Renderer::ExtractedMeshletModel meshletModel = modelLoader->LoadMeshletGltf(bunnyPath);
+    Renderer::MeshletModelData model;
+    Renderer::ExtractedMeshletModel meshletModel = modelLoader->LoadMeshletGltf(path);
     if (!meshletModel.bSuccessfullyLoaded) {
-        return;
+        return {};
     }
 
-    meshletModelData.name = bunnyPath.filename().string();
-    meshletModelData.path = bunnyPath;
+    model.name = path.filename().string();
+    model.path = path;
 
     // Descriptor assignment can happen here. Resource upload, will need to be staged and
     auto remapIndices = [](auto& indices, const std::vector<int32_t>& map) {
@@ -553,7 +584,7 @@ void MeshletRendering::CreateMeshletModel()
         remapIndices(material.textureSamplerIndices2, materialToBufferMap);
     }
 
-    meshletModelData.samplerIndexToDescriptorBufferIndexMap = std::move(materialToBufferMap);
+    model.samplerIndexToDescriptorBufferIndexMap = std::move(materialToBufferMap);
 
     // Textures
     materialToBufferMap.clear();
@@ -571,44 +602,44 @@ void MeshletRendering::CreateMeshletModel()
         remapIndices(material.textureImageIndices2, materialToBufferMap);
     }
 
-    meshletModelData.textureIndexToDescriptorBufferIndexMap = std::move(materialToBufferMap);
+    model.textureIndexToDescriptorBufferIndexMap = std::move(materialToBufferMap);
     // Materials
     size_t sizeMaterials = meshletModel.materials.size() * sizeof(Renderer::MaterialProperties);
-    meshletModelData.materialAllocation = materialBufferAllocator.allocate(sizeMaterials);
-    memcpy(static_cast<char*>(materialBuffer.allocationInfo.pMappedData) + meshletModelData.materialAllocation.offset, meshletModel.materials.data(), sizeMaterials);
+    model.materialAllocation = materialBufferAllocator.allocate(sizeMaterials);
+    memcpy(static_cast<char*>(materialBuffer.allocationInfo.pMappedData) + model.materialAllocation.offset, meshletModel.materials.data(), sizeMaterials);
 
 
     // Vertices
     size_t sizeVertices = meshletModel.vertices.size() * sizeof(Renderer::Vertex);
-    meshletModelData.vertexAllocation = vertexBufferAllocator.allocate(sizeVertices);
-    if (meshletModelData.vertexAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
+    model.vertexAllocation = vertexBufferAllocator.allocate(sizeVertices);
+    if (model.vertexAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
         LOG_WARN("[ModelLoading::LoadModelIntoBuffers] Not enough space in vertex buffer");
-        return;
+        return {};
     }
-    memcpy(static_cast<char*>(megaVertexBuffer.allocationInfo.pMappedData) + meshletModelData.vertexAllocation.offset, meshletModel.vertices.data(), sizeVertices);
+    memcpy(static_cast<char*>(megaVertexBuffer.allocationInfo.pMappedData) + model.vertexAllocation.offset, meshletModel.vertices.data(), sizeVertices);
 
     // Meshlet Vertices
     size_t sizeMeshletVertices = meshletModel.meshletVertices.size() * sizeof(uint32_t);
-    meshletModelData.meshletVerticesAllocation = meshletVerticesBufferAllocator.allocate(sizeMeshletVertices);
-    if (meshletModelData.meshletVerticesAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
+    model.meshletVerticesAllocation = meshletVerticesBufferAllocator.allocate(sizeMeshletVertices);
+    if (model.meshletVerticesAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
         LOG_WARN("[ModelLoading::LoadModelIntoBuffers] Not enough space in meshletVertices buffer");
-        return;
+        return {};
     }
-    memcpy(static_cast<char*>(megaMeshletVerticesBuffer.allocationInfo.pMappedData) + meshletModelData.meshletVerticesAllocation.offset, meshletModel.meshletVertices.data(), sizeMeshletVertices);
+    memcpy(static_cast<char*>(megaMeshletVerticesBuffer.allocationInfo.pMappedData) + model.meshletVerticesAllocation.offset, meshletModel.meshletVertices.data(), sizeMeshletVertices);
 
     // Meshlet Triangles
     size_t sizeMeshletTriangles = meshletModel.meshletTriangles.size() * sizeof(uint8_t);
-    meshletModelData.meshletTrianglesAllocation = meshletTrianglesBufferAllocator.allocate(sizeMeshletTriangles);
-    if (meshletModelData.meshletTrianglesAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
+    model.meshletTrianglesAllocation = meshletTrianglesBufferAllocator.allocate(sizeMeshletTriangles);
+    if (model.meshletTrianglesAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
         LOG_WARN("[ModelLoading::LoadModelIntoBuffers] Not enough space in meshletTriangles buffer");
-        return;
+        return {};
     }
-    memcpy(static_cast<char*>(megaMeshletTrianglesBuffer.allocationInfo.pMappedData) + meshletModelData.meshletTrianglesAllocation.offset, meshletModel.meshletTriangles.data(), sizeMeshletTriangles);
+    memcpy(static_cast<char*>(megaMeshletTrianglesBuffer.allocationInfo.pMappedData) + model.meshletTrianglesAllocation.offset, meshletModel.meshletTriangles.data(), sizeMeshletTriangles);
 
     // Meshlets
-    uint32_t vertexOffset = meshletModelData.vertexAllocation.offset / sizeof(Renderer::Vertex);
-    uint32_t meshletVerticesOffset = meshletModelData.meshletVerticesAllocation.offset / sizeof(uint32_t);
-    uint32_t meshletTriangleOffset = meshletModelData.meshletTrianglesAllocation.offset / sizeof(uint8_t);
+    uint32_t vertexOffset = model.vertexAllocation.offset / sizeof(Renderer::Vertex);
+    uint32_t meshletVerticesOffset = model.meshletVerticesAllocation.offset / sizeof(uint32_t);
+    uint32_t meshletTriangleOffset = model.meshletTrianglesAllocation.offset / sizeof(uint8_t);
     for (Renderer::Meshlet& meshlet : meshletModel.meshlets) {
         meshlet.vertexOffset += vertexOffset;
         meshlet.meshletVerticesOffset += meshletVerticesOffset;
@@ -616,64 +647,39 @@ void MeshletRendering::CreateMeshletModel()
     }
 
     size_t sizeMeshlets = meshletModel.meshlets.size() * sizeof(Renderer::Meshlet);
-    meshletModelData.meshletAllocation = meshletBufferAllocator.allocate(sizeMeshlets);
-    if (meshletModelData.meshletAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
+    model.meshletAllocation = meshletBufferAllocator.allocate(sizeMeshlets);
+    if (model.meshletAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
         LOG_WARN("[ModelLoading::LoadModelIntoBuffers] Not enough space in meshlets buffer");
-        return;
+        return {};
     }
-    memcpy(static_cast<char*>(megaMeshletBuffer.allocationInfo.pMappedData) + meshletModelData.meshletAllocation.offset, meshletModel.meshlets.data(), sizeMeshlets);
+    memcpy(static_cast<char*>(megaMeshletBuffer.allocationInfo.pMappedData) + model.meshletAllocation.offset, meshletModel.meshlets.data(), sizeMeshlets);
 
 
     // Primitives
-    uint32_t meshletOffset = meshletModelData.meshletAllocation.offset / sizeof(Renderer::Meshlet);
-    uint32_t materialOffsetCount = meshletModelData.materialAllocation.offset / sizeof(Renderer::MaterialProperties);
+    uint32_t meshletOffset = model.meshletAllocation.offset / sizeof(Renderer::Meshlet);
+    uint32_t materialOffsetCount = model.materialAllocation.offset / sizeof(Renderer::MaterialProperties);
     for (auto& primitive : meshletModel.primitives) {
         primitive.meshletOffset += meshletOffset;
         primitive.materialIndex += materialOffsetCount;
     }
 
     size_t sizePrimitives = meshletModel.primitives.size() * sizeof(Renderer::MeshletPrimitive);
-    meshletModelData.primitiveAllocation = primitiveBufferAllocator.allocate(sizePrimitives);
-    if (meshletModelData.primitiveAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
+    model.primitiveAllocation = primitiveBufferAllocator.allocate(sizePrimitives);
+    if (model.primitiveAllocation.metadata == OffsetAllocator::Allocation::NO_SPACE) {
         LOG_WARN("[ModelLoading::LoadModelIntoBuffers] Not enough space in primitives buffer");
-        return;
+        return {};
     }
-    memcpy(static_cast<char*>(primitiveBuffer.allocationInfo.pMappedData) + meshletModelData.primitiveAllocation.offset, meshletModel.primitives.data(), sizePrimitives);
+    memcpy(static_cast<char*>(primitiveBuffer.allocationInfo.pMappedData) + model.primitiveAllocation.offset, meshletModel.primitives.data(), sizePrimitives);
 
-    meshletModelData.samplers = std::move(meshletModel.samplers);
-    meshletModelData.images = std::move(meshletModel.images);
-    meshletModelData.imageViews = std::move(meshletModel.imageViews);
-    meshletModelData.nodes = std::move(meshletModel.nodes);
+    model.samplers = std::move(meshletModel.samplers);
+    model.images = std::move(meshletModel.images);
+    model.imageViews = std::move(meshletModel.imageViews);
+    model.nodes = std::move(meshletModel.nodes);
 
-    meshletModelData.inverseBindMatrices = std::move(meshletModel.inverseBindMatrices);
-    meshletModelData.animations = std::move(meshletModel.animations);
-    meshletModelData.nodeRemap = std::move(meshletModel.nodeRemap);
+    model.inverseBindMatrices = std::move(meshletModel.inverseBindMatrices);
+    model.animations = std::move(meshletModel.animations);
+    model.nodeRemap = std::move(meshletModel.nodeRemap);
 
-
-    glm::mat4 mat{1.0f};
-    mat = glm::translate(mat, glm::vec3(0.0f, 0.0f, 0.0f));
-    Renderer::Model modelMatrix{mat};
-    memcpy(static_cast<char*>(modelBuffer.allocationInfo.pMappedData), &modelMatrix, sizeof(Renderer::Model));
-
-    glm::mat4 mat2{1.0f};
-    mat2 = glm::translate(mat2, glm::vec3(2.0f, 2.0f, 0.0f));
-    Renderer::Model modelMatrix2{mat2};
-    memcpy(static_cast<char*>(modelBuffer.allocationInfo.pMappedData) + sizeof(Renderer::Model), &modelMatrix2, sizeof(Renderer::Model));
-
-    // Add 1x instance (point to 1x model)
-    Renderer::Instance i;
-    i.modelIndex = 0;
-    i.primitiveIndex = 0;
-    i.bIsAllocated = 1;
-    i.jointMatrixOffset = 0;
-    Renderer::Instance i2;
-    i2.modelIndex = 1;
-    i2.primitiveIndex = 0;
-    i2.bIsAllocated = 1;
-    i2.jointMatrixOffset = 0;
-
-    Renderer::Instance dummyInst{0, 0, 0, false};
-    memcpy(instanceBuffer.allocationInfo.pMappedData, &i, sizeof(Renderer::Instance));
-    memcpy(static_cast<char*>(instanceBuffer.allocationInfo.pMappedData) + sizeof(Renderer::Instance), &i2, sizeof(Renderer::Instance));
+    return model;
 }
 }

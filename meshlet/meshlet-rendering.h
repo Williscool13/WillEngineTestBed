@@ -51,7 +51,7 @@ public:
 
     void CreateBuffers();
 
-    void CreateMeshletModel();
+    Renderer::MeshletModelData CreateMeshletModel(const std::filesystem::path& path);
 
 private:
     SDL_Window* window{nullptr};
@@ -94,7 +94,9 @@ private:
 
     Renderer::AllocatedBuffer taskIndirectParameterBuffer;
 
-    Renderer::MeshletModelData meshletModelData{};
+    Renderer::MeshletModelData bunnyModel{};
+    Renderer::MeshletModelData dragonModel{};
+
 
     Renderer::MainMeshShaderPipeline meshShaderPipeline{};
     Renderer::MeshDrawCullComputePipeline meshDrawCullComputePipeline{};
