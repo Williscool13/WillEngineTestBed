@@ -80,7 +80,7 @@ void taskMain(uniform PushConsts pushConstants,
 
     Model model = pushConstants.modelBuffer->models[indirectParameters.modelIndex];
 
-    // group thread count is only 32, will never exceed uint8
+    // group thread count is only 64, will never exceed uint8
     uint8_t meshletID = (uint8_t)gtid.x;
     uint localMeshletCount = min(TASK_SHADER_DISPATCH_X, indirectParameters.meshletCount - (gid.x * TASK_SHADER_DISPATCH_X));
 
@@ -128,8 +128,7 @@ void taskMain(uniform PushConsts pushConstants,
 [outputtopology("triangle")]
 [numthreads(MESH_SHADER_DISPATCH_X, 1, 1)]
 void meshMain(
-    in payload MeshletPayload inPayload,
-    out indices uint3 triangles[MAX_PRIMITIVES], out vertices VertexOutput vertices[MAX_VERTICES],
+    in payload MeshletPayload inPayload, out indices uint3 triangles[MAX_PRIMITIVES], out vertices VertexOutput vertices[MAX_VERTICES],
     uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID,
     uniform PushConsts pushConstants)
 {

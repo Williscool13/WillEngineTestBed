@@ -27,6 +27,9 @@ inline static constexpr int32_t MEGA_INDEX_BUFFER_COUNT = 2097152; // 1 << 21
 inline static constexpr int32_t MEGA_PRIMITIVE_BUFFER_COUNT = 65536;
 inline static constexpr int32_t MEGA_MATERIAL_BUFFER_COUNT = 16384;
 
+inline static constexpr int32_t MEGA_MESHLET_VERTEX_BUFFER_SIZE = INT32_MAX;
+inline static constexpr int32_t MEGA_MESHLET_TRIANGLE_BUFFER_SIZE = INT32_MAX;
+
 inline static constexpr int32_t BINDLESS_MODEL_MATRIX_COUNT = 16384;
 inline static constexpr int32_t BINDLESS_INSTANCE_COUNT = 131072;
 inline static constexpr int32_t BINDLESS_UNIFORM_BUFFER_COUNT = 1000;

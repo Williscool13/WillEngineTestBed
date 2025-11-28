@@ -92,42 +92,50 @@ void MeshletRendering::Initialize()
 
     CreateBuffers();
 
-    auto bunnyPath = std::filesystem::path("../assets/stanford_bunny/stanford_bunny.gltf");
-    bunnyModel = CreateMeshletModel(bunnyPath);
-
-    auto dragonPath = std::filesystem::path("../assets/dragon/dragon.gltf");
-    // dragonModel = CreateMeshletModel(dragonPath);
-
-
-    glm::mat4 mat{1.0f};
-    mat = glm::translate(mat, glm::vec3(0.0f, 0.0f, 0.0f));
-    Renderer::Model modelMatrix{mat};
-    memcpy(static_cast<char*>(modelBuffer.allocationInfo.pMappedData), &modelMatrix, sizeof(Renderer::Model));
-
-    glm::mat4 mat2{1.0f};
-    mat2 = glm::translate(mat2, glm::vec3(2.0f, 2.0f, 0.0f));
-    Renderer::Model modelMatrix2{mat2};
-    memcpy(static_cast<char*>(modelBuffer.allocationInfo.pMappedData) + sizeof(Renderer::Model), &modelMatrix2, sizeof(Renderer::Model));
-
-    // Add 1x instance (point to 1x model)
-    Renderer::Instance i;
-    i.modelIndex = 0;
-    i.primitiveIndex = 0;
-    i.bIsAllocated = 1;
-    i.jointMatrixOffset = 0;
-    Renderer::Instance i2;
-    i2.modelIndex = 1;
-    i2.primitiveIndex = 0;
-    i2.bIsAllocated = 1;
-    i2.jointMatrixOffset = 0;
-
-    Renderer::Instance dummyInst{0, 0, 0, false};
-    memcpy(instanceBuffer.allocationInfo.pMappedData, &i, sizeof(Renderer::Instance));
-    memcpy(static_cast<char*>(instanceBuffer.allocationInfo.pMappedData) + sizeof(Renderer::Instance), &i2, sizeof(Renderer::Instance));
-
-    meshShaderPipeline = Renderer::MainMeshShaderPipeline(vulkanContext.get(), bindlessResourcesDescriptorBuffer.descriptorSetLayout.handle);
     meshDrawCullComputePipeline = Renderer::MeshDrawCullComputePipeline(vulkanContext.get());
     indirectMeshShaderPipeline = Renderer::IndirectMeshShaderPipeline(vulkanContext.get(), bindlessResourcesDescriptorBuffer.descriptorSetLayout.handle);
+
+    auto bunnyPath = std::filesystem::path("../assets/stanford_bunny/stanford_bunny.gltf");
+    auto dragonPath = std::filesystem::path("../assets/dragon/dragon.gltf");
+    bunnyModel = CreateMeshletModel(bunnyPath);
+    dragonModel = CreateMeshletModel(dragonPath);
+
+
+    std::array<Renderer::Model, 10> modelMatrices{};
+    float spacing = 3.0f;
+    float rowSpacing = 3.0f;
+
+    for (int i = 0; i < 5; i++) {
+        // Dragon in row 0
+        glm::mat4 dragonMat{1.0f};
+        dragonMat = glm::translate(dragonMat, glm::vec3(i * spacing, 0.0f, 0.0f));
+        modelMatrices[i] = Renderer::Model{dragonMat};
+
+        // Bunny in row 1
+        glm::mat4 bunnyMat{1.0f};
+        bunnyMat = glm::translate(bunnyMat, glm::vec3(i * spacing, rowSpacing, 0.0f));
+        modelMatrices[i + 5] = Renderer::Model{bunnyMat};
+    }
+
+    memcpy(modelBuffer.allocationInfo.pMappedData, modelMatrices.data(), sizeof(Renderer::Model) * 10);
+
+    std::array<Renderer::Instance, 10> instances{};
+
+    for (int i = 0; i < 5; i++) {
+        // Dragon instances
+        instances[i].modelIndex = i;
+        instances[i].primitiveIndex = 0;
+        instances[i].bIsAllocated = 1;
+        instances[i].jointMatrixOffset = 0;
+
+        // Bunny instances
+        instances[i + 5].modelIndex = i + 5;
+        instances[i + 5].primitiveIndex = 1;
+        instances[i + 5].bIsAllocated = 1;
+        instances[i + 5].jointMatrixOffset = 0;
+    }
+
+    memcpy(instanceBuffer.allocationInfo.pMappedData, instances.data(), sizeof(Renderer::Instance) * 10);
 }
 
 void MeshletRendering::Run()
@@ -261,7 +269,7 @@ void MeshletRendering::Render(uint32_t currentFrameInFlight, Renderer::FrameSync
     VK_CHECK(vkBeginCommandBuffer(cmd, &commandBufferBeginInfo));
 
 
-    //
+    // Compute
     {
         VkBufferMemoryBarrier2 bufferBarriers[2];
         bufferBarriers[0] = Renderer::VkHelpers::BufferMemoryBarrier(
@@ -372,52 +380,6 @@ void MeshletRendering::Render(uint32_t currentFrameInFlight, Renderer::FrameSync
         vkCmdEndRendering(cmd);
     }
 
-    // Draw
-    {
-        // constexpr VkClearValue colorClear = {.color = {0.3f, 0.0f, 0.0f, 1.0f}};
-        // const VkRenderingAttachmentInfo colorAttachment = Renderer::VkHelpers::RenderingAttachmentInfo(renderTargets->drawImageView.handle, &colorClear, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
-        // constexpr VkClearValue depthClear = {.depthStencil = {0.0f, 0u}};
-        // const VkRenderingAttachmentInfo depthAttachment = Renderer::VkHelpers::RenderingAttachmentInfo(renderTargets->depthImageView.handle, &depthClear, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
-        // const VkRenderingInfo renderInfo = Renderer::VkHelpers::RenderingInfo({scaledRenderExtent[0], scaledRenderExtent[1]}, &colorAttachment, &depthAttachment);
-        //
-        // vkCmdBeginRendering(cmd, &renderInfo);
-        //
-        // vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, meshShaderPipeline.pipeline.handle);
-        // //vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, basicMeshShaderPipeline.pipeline.handle);
-        //
-        // VkViewport viewport = Renderer::VkHelpers::GenerateViewport(scaledRenderExtent[0], scaledRenderExtent[1]);
-        // vkCmdSetViewport(cmd, 0, 1, &viewport);
-        // VkRect2D scissor = Renderer::VkHelpers::GenerateScissor(scaledRenderExtent[0], scaledRenderExtent[1]);
-        // vkCmdSetScissor(cmd, 0, 1, &scissor);
-        //
-        // Renderer::AllocatedBuffer& currentSceneDataBuffer = sceneDataBuffers[currentFrameInFlight];
-        // Renderer::MainMeshShaderPushConstants pushConstants{
-        //     .sceneData = currentSceneDataBuffer.address,
-        //     .vertexBuffer = megaVertexBuffer.address,
-        //     .primitiveBuffer = primitiveBuffer.address,
-        //     .meshletVerticesBuffer = megaMeshletVerticesBuffer.address,
-        //     .meshletTrianglesBuffer = megaMeshletTrianglesBuffer.address,
-        //     .meshletBuffer = megaMeshletBuffer.address,
-        //     .materialBuffer = materialBuffer.address,
-        //     .modelBuffer = modelBuffer.address,
-        //     .instanceBuffer = instanceBuffer.address,
-        //     .instanceIndex = 0
-        // };
-        // // Renderer::BasicMeshShaderPushConstants pushData{glm::mat4(1.0f),currentSceneDataBuffer.address,};
-        //
-        // vkCmdPushConstants(cmd, meshShaderPipeline.pipelineLayout.handle, VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-        //                    sizeof(Renderer::MainMeshShaderPushConstants), &pushConstants);
-        // vkCmdDrawMeshTasksEXT(cmd, 1, 1, 1);
-        //
-        // pushConstants.instanceIndex = 1;
-        // vkCmdPushConstants(cmd, meshShaderPipeline.pipelineLayout.handle, VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-        //                    sizeof(Renderer::MainMeshShaderPushConstants), &pushConstants);
-        // //vkCmdPushConstants(cmd, basicMeshShaderPipeline.pipelineLayout.handle, VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(Renderer::BasicMeshShaderPushConstants), &pushData);
-        //
-        // vkCmdDrawMeshTasksEXT(cmd, 1, 1, 1);
-        // vkCmdEndRendering(cmd);
-    }
-
     // Prepare for copy
     {
         VkImageMemoryBarrier2 barriers[2];
@@ -520,10 +482,10 @@ void MeshletRendering::CreateBuffers()
     bufferInfo.size = sizeof(Renderer::Vertex) * Renderer::MEGA_VERTEX_BUFFER_COUNT;
     megaVertexBuffer = Renderer::VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
     bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
-    bufferInfo.size = sizeof(uint32_t) * Renderer::MEGA_INDEX_BUFFER_COUNT;
+    bufferInfo.size = Renderer::MEGA_MESHLET_VERTEX_BUFFER_SIZE;
     megaMeshletVerticesBuffer = Renderer::VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
     bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
-    bufferInfo.size = sizeof(uint8_t) * Renderer::MEGA_INDEX_BUFFER_COUNT;
+    bufferInfo.size = Renderer::MEGA_MESHLET_TRIANGLE_BUFFER_SIZE;
     megaMeshletTrianglesBuffer = Renderer::VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
     bufferInfo.usage = VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
     bufferInfo.size = sizeof(uint32_t) * Renderer::MEGA_INDEX_BUFFER_COUNT;
@@ -563,51 +525,53 @@ Renderer::MeshletModelData MeshletRendering::CreateMeshletModel(const std::files
     model.name = path.filename().string();
     model.path = path;
 
-    // Descriptor assignment can happen here. Resource upload, will need to be staged and
-    auto remapIndices = [](auto& indices, const std::vector<int32_t>& map) {
-        indices.x = indices.x >= 0 ? map[indices.x] : -1;
-        indices.y = indices.y >= 0 ? map[indices.y] : -1;
-        indices.z = indices.z >= 0 ? map[indices.z] : -1;
-        indices.w = indices.w >= 0 ? map[indices.w] : -1;
-    };
-
-    std::vector<int32_t> materialToBufferMap;
-
-    // Samplers
-    materialToBufferMap.resize(meshletModel.samplers.size());
-    for (int32_t i = 0; i < meshletModel.samplers.size(); ++i) {
-        materialToBufferMap[i] = bindlessResourcesDescriptorBuffer.AllocateSampler(meshletModel.samplers[i].handle);
-    }
-
-    for (Renderer::MaterialProperties& material : meshletModel.materials) {
-        remapIndices(material.textureSamplerIndices, materialToBufferMap);
-        remapIndices(material.textureSamplerIndices2, materialToBufferMap);
-    }
-
-    model.samplerIndexToDescriptorBufferIndexMap = std::move(materialToBufferMap);
-
-    // Textures
-    materialToBufferMap.clear();
-    materialToBufferMap.resize(meshletModel.imageViews.size());
-
-    for (int32_t i = 0; i < meshletModel.imageViews.size(); ++i) {
-        materialToBufferMap[i] = bindlessResourcesDescriptorBuffer.AllocateTexture({
-            .imageView = meshletModel.imageViews[i].handle,
-            .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-        });
-    }
-
-    for (Renderer::MaterialProperties& material : meshletModel.materials) {
-        remapIndices(material.textureImageIndices, materialToBufferMap);
-        remapIndices(material.textureImageIndices2, materialToBufferMap);
-    }
-
-    model.textureIndexToDescriptorBufferIndexMap = std::move(materialToBufferMap);
     // Materials
-    size_t sizeMaterials = meshletModel.materials.size() * sizeof(Renderer::MaterialProperties);
-    model.materialAllocation = materialBufferAllocator.allocate(sizeMaterials);
-    memcpy(static_cast<char*>(materialBuffer.allocationInfo.pMappedData) + model.materialAllocation.offset, meshletModel.materials.data(), sizeMaterials);
+    {
+        // Descriptor assignment can happen here. Resource upload, will need to be staged and
+        auto remapIndices = [](auto& indices, const std::vector<int32_t>& map) {
+            indices.x = indices.x >= 0 ? map[indices.x] : -1;
+            indices.y = indices.y >= 0 ? map[indices.y] : -1;
+            indices.z = indices.z >= 0 ? map[indices.z] : -1;
+            indices.w = indices.w >= 0 ? map[indices.w] : -1;
+        };
 
+        std::vector<int32_t> materialToBufferMap;
+
+        // Samplers
+        materialToBufferMap.resize(meshletModel.samplers.size());
+        for (int32_t i = 0; i < meshletModel.samplers.size(); ++i) {
+            materialToBufferMap[i] = bindlessResourcesDescriptorBuffer.AllocateSampler(meshletModel.samplers[i].handle);
+        }
+
+        for (Renderer::MaterialProperties& material : meshletModel.materials) {
+            remapIndices(material.textureSamplerIndices, materialToBufferMap);
+            remapIndices(material.textureSamplerIndices2, materialToBufferMap);
+        }
+
+        model.samplerIndexToDescriptorBufferIndexMap = std::move(materialToBufferMap);
+
+        // Textures
+        materialToBufferMap.clear();
+        materialToBufferMap.resize(meshletModel.imageViews.size());
+
+        for (int32_t i = 0; i < meshletModel.imageViews.size(); ++i) {
+            materialToBufferMap[i] = bindlessResourcesDescriptorBuffer.AllocateTexture({
+                .imageView = meshletModel.imageViews[i].handle,
+                .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+            });
+        }
+
+        for (Renderer::MaterialProperties& material : meshletModel.materials) {
+            remapIndices(material.textureImageIndices, materialToBufferMap);
+            remapIndices(material.textureImageIndices2, materialToBufferMap);
+        }
+
+        model.textureIndexToDescriptorBufferIndexMap = std::move(materialToBufferMap);
+        // Materials
+        size_t sizeMaterials = meshletModel.materials.size() * sizeof(Renderer::MaterialProperties);
+        model.materialAllocation = materialBufferAllocator.allocate(sizeMaterials);
+        memcpy(static_cast<char*>(materialBuffer.allocationInfo.pMappedData) + model.materialAllocation.offset, meshletModel.materials.data(), sizeMaterials);
+    }
 
     // Vertices
     size_t sizeVertices = meshletModel.vertices.size() * sizeof(Renderer::Vertex);

@@ -77,9 +77,9 @@ private:
     Renderer::AllocatedBuffer megaVertexBuffer;
     OffsetAllocator::Allocator vertexBufferAllocator{sizeof(Renderer::Vertex) * Renderer::MEGA_VERTEX_BUFFER_COUNT};
     Renderer::AllocatedBuffer megaMeshletVerticesBuffer;
-    OffsetAllocator::Allocator meshletVerticesBufferAllocator{sizeof(uint32_t) * Renderer::MEGA_INDEX_BUFFER_COUNT};
+    OffsetAllocator::Allocator meshletVerticesBufferAllocator{Renderer::MEGA_MESHLET_VERTEX_BUFFER_SIZE};
     Renderer::AllocatedBuffer megaMeshletTrianglesBuffer;
-    OffsetAllocator::Allocator meshletTrianglesBufferAllocator{sizeof(uint32_t) * Renderer::MEGA_INDEX_BUFFER_COUNT};
+    OffsetAllocator::Allocator meshletTrianglesBufferAllocator{Renderer::MEGA_MESHLET_TRIANGLE_BUFFER_SIZE};
     Renderer::AllocatedBuffer megaMeshletBuffer;
     OffsetAllocator::Allocator meshletBufferAllocator{sizeof(uint32_t) * Renderer::MEGA_INDEX_BUFFER_COUNT};
     Renderer::AllocatedBuffer materialBuffer;
@@ -97,8 +97,6 @@ private:
     Renderer::MeshletModelData bunnyModel{};
     Renderer::MeshletModelData dragonModel{};
 
-
-    Renderer::MainMeshShaderPipeline meshShaderPipeline{};
     Renderer::MeshDrawCullComputePipeline meshDrawCullComputePipeline{};
     Renderer::IndirectMeshShaderPipeline indirectMeshShaderPipeline{};
 };
