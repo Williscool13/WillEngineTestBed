@@ -75,6 +75,14 @@ add_library(render-lib STATIC
         pipelines/mesh_draw_cull_compute_pipeline.h
         pipelines/indirect_mesh_shader_pipeline.cpp
         pipelines/indirect_mesh_shader_pipeline.h
+        pipelines/instancing/instancing_visibility_pipeline.cpp
+        pipelines/instancing/instancing_visibility_pipeline.h
+        pipelines/instancing/instancing_prefix_sum_pipeline.cpp
+        pipelines/instancing/instancing_prefix_sum_pipeline.h
+        pipelines/instancing/instancing_compact_and_generate_indirect_pipeline.cpp
+        pipelines/instancing/instancing_compact_and_generate_indirect_pipeline.h
+        pipelines/instancing/instancing_indirect_mesh_pipeline.cpp
+        pipelines/instancing/instancing_indirect_mesh_pipeline.h
 )
 
 target_link_libraries(render-lib PUBLIC

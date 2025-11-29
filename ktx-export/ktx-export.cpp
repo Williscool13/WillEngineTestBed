@@ -2,7 +2,7 @@
 // Created by William on 2025-10-09.
 //
 
-#include "instanced-rendering.h"
+#include "ktx-export.h"
 
 #include <filesystem>
 
@@ -31,13 +31,13 @@
 #include "render/model/model_load_utils.h"
 #include "utils/utils.h"
 
-namespace InstancedRendering
+namespace KtxExport
 {
-InstancedRendering::InstancedRendering() = default;
+KtxExport::KtxExport() = default;
 
-InstancedRendering::~InstancedRendering() = default;
+KtxExport::~KtxExport() = default;
 
-void InstancedRendering::Initialize()
+void KtxExport::Initialize()
 {
     Utils::ScopedTimer timer{"Asset Pipeline Initialization"};
     bool sdlInitSuccess = SDL_Init(SDL_INIT_VIDEO);
@@ -98,7 +98,8 @@ void InstancedRendering::Initialize()
     instancingCompactAndGenerateIndirectPipeline = Renderer::InstancingCompactAndGenerateIndirectPipeline(vulkanContext.get());
     instancingIndirectMeshPipeline = Renderer::InstancingIndirectMeshPipeline(vulkanContext.get(), bindlessResourcesDescriptorBuffer.descriptorSetLayout.handle);
 
-    auto bunnyPath = std::filesystem::path("../assets/stanford_bunny/stanford_bunny.gltf");
+    //auto bunnyPath = std::filesystem::path("../assets/stanford_bunny/stanford_bunny.gltf");
+    auto bunnyPath = std::filesystem::path("../assets/BoxTextured.glb");
     auto dragonPath = std::filesystem::path("../assets/dragon/dragon.gltf");
     bunnyModel = CreateMeshletModel(bunnyPath);
     dragonModel = CreateMeshletModel(dragonPath);
@@ -108,22 +109,22 @@ void InstancedRendering::Initialize()
 
     std::array<Renderer::Model, TOTAL_INSTANCES> modelMatrices{};
 
-    // Create a 10x10 grid for dragons and a 10x10 grid for bunnies
+    // Create a 10x10 grid for dragons and a 10x10 grid for bunnies stacked vertically
     float spacing = 5.0f;
-    float gridSeparation = 60.0f; // Space between dragon and bunny grids
+    float gridSeparation = 60.0f; // Space between dragon and bunny grids (vertical)
 
     for (int i = 0; i < INSTANCES_PER_PRIMITIVE; i++) {
         int row = i / 10;
         int col = i % 10;
 
-        // Dragon grid (left side)
+        // Dragon grid (bottom)
         glm::mat4 dragonMat{1.0f};
         dragonMat = glm::translate(dragonMat, glm::vec3(col * spacing, 0.0f, row * spacing));
         modelMatrices[i] = Renderer::Model{dragonMat};
 
-        // Bunny grid (right side, offset by gridSeparation)
+        // Bunny grid (top, offset by gridSeparation in Y)
         glm::mat4 bunnyMat{1.0f};
-        bunnyMat = glm::translate(bunnyMat, glm::vec3(col * spacing + gridSeparation, 0.0f, row * spacing));
+        bunnyMat = glm::translate(bunnyMat, glm::vec3(col * spacing, gridSeparation, row * spacing));
         modelMatrices[i + INSTANCES_PER_PRIMITIVE] = Renderer::Model{bunnyMat};
     }
 
@@ -148,7 +149,7 @@ void InstancedRendering::Initialize()
     memcpy(instanceBuffer.allocationInfo.pMappedData, instances.data(), sizeof(Renderer::Instance) * TOTAL_INSTANCES);
 }
 
-void InstancedRendering::Run()
+void KtxExport::Run()
 {
     Input& input = Input::Input::Get();
     Time& time = Time::Get();
@@ -223,7 +224,7 @@ void InstancedRendering::Run()
     }
 }
 
-void InstancedRendering::Render(uint32_t currentFrameInFlight, Renderer::FrameSynchronization& frameSync)
+void KtxExport::Render(uint32_t currentFrameInFlight, Renderer::FrameSynchronization& frameSync)
 {
     // Wait for the GPU to finish the last frame that used this frame-in-flight's resources (N - imageCount).
     VK_CHECK(vkWaitForFences(vulkanContext->device, 1, &frameSync.renderFence, true, 1000000000));
@@ -579,14 +580,14 @@ void InstancedRendering::Render(uint32_t currentFrameInFlight, Renderer::FrameSy
     }
 }
 
-void InstancedRendering::Cleanup()
+void KtxExport::Cleanup()
 {
     vkDeviceWaitIdle(vulkanContext->device);
 
     SDL_DestroyWindow(window);
 }
 
-void InstancedRendering::CreateBuffers()
+void KtxExport::CreateBuffers()
 {
     VkBufferCreateInfo bufferInfo = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
     bufferInfo.pNext = nullptr;
@@ -638,7 +639,7 @@ void InstancedRendering::CreateBuffers()
     bindlessResourcesDescriptorBuffer = Renderer::DescriptorBufferBindlessResources(vulkanContext.get());
 }
 
-Renderer::MeshletModelData InstancedRendering::CreateMeshletModel(const std::filesystem::path& path)
+Renderer::MeshletModelData KtxExport::CreateMeshletModel(const std::filesystem::path& path)
 {
     Renderer::MeshletModelData model;
     Renderer::ExtractedMeshletModel meshletModel = modelLoader->LoadMeshletGltf(path);

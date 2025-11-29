@@ -61,6 +61,37 @@ struct MaterialProperties
     glm::vec4 physicalProperties{1.5f, 0.0f, 1.0f, 0.0f}; // x: IOR, y: dispersion, z: normal scale, w: occlusion strength
 };
 
+// ========== Instancing ==========
+
+    struct PackedVisibility
+    {
+        uint32_t visibilityChunk;
+    };
+
+    struct InstancePrimitiveOffset
+    {
+        uint16_t primitiveOffset;
+    };
+
+    struct PrimitiveCount
+    {
+        uint32_t count;
+        uint32_t offset;
+    };
+
+    struct InstancedMeshIndirectDrawParameters
+    {
+        uint32_t groupCountX;
+        uint32_t groupCountY;
+        uint32_t groupCountZ;
+        uint32_t compactedInstanceStart;
+
+        uint32_t meshletOffset;
+        uint32_t meshletCount;
+        uint32_t materialIndex;
+        uint32_t padding;
+    };
+
 struct BindlessIndirectPushConstant
 {
     VkDeviceAddress sceneData;

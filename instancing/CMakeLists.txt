@@ -21,14 +21,6 @@ add_custom_command(TARGET instanced-rendering POST_BUILD
         $<TARGET_FILE_DIR:instanced-rendering>
 )
 
-
-compile_shaders(instanced-rendering
-        ${CMAKE_SOURCE_DIR}/shaders/meshShaderIndirect.slang task taskMain
-        ${CMAKE_SOURCE_DIR}/shaders/meshShaderIndirect.slang mesh meshMain
-        ${CMAKE_SOURCE_DIR}/shaders/meshShaderIndirect.slang fragment fragmentMain
-        ${CMAKE_SOURCE_DIR}/shaders/meshShaderIndirect.slang compute computeMain
-)
-
 compile_shader(instanced-rendering ${CMAKE_SOURCE_DIR}/shaders/gpuInstancing.slang compute computeVisibility OUTPUT_NAME instancingVisibility)
 compile_shader(instanced-rendering ${CMAKE_SOURCE_DIR}/shaders/gpuInstancing.slang compute computePrefixSum OUTPUT_NAME instancingPrefixSum)
 compile_shader(instanced-rendering ${CMAKE_SOURCE_DIR}/shaders/gpuInstancing.slang compute computeCompactAndGenerateIndirect OUTPUT_NAME instancingCompactAndGenerateIndirect)

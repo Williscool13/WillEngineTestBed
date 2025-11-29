@@ -182,9 +182,34 @@ void meshMain(
 }
 
 // =============== Fragment Shader ===============
+struct FragmentOutput {
+    float4 color : SV_Target0;
+};
+
+[[vk::binding(0, 0)]]
+SamplerState samplers[];
+[[vk::binding(1, 0)]]
+Texture2D textures[];
 
 [shader("fragment")]
-float4 fragmentMain(VertexOutput vertexInput)
+FragmentOutput fragmentMain(
+    VertexOutput input,
+    uniform RenderPushConstant pushConstants)
 {
-    return float4(vertexInput.color.xyz, 1.0f);
+    MaterialProperties material = pushConstants.materialBuffer->materials[input.materialIndex];
+
+    float4 color = float4(1.0f, 1.0f, 1.0f, 1.0f);
+    color = color * textures[material.textureImageIndices[0]].Sample(samplers[material.textureSamplerIndices[0]], input.uv);
+
+    float3 N = normalize(input.normal);
+    float3 V = normalize(pushConstants.sceneData->cameraWorldPos.xyz - input.worldPos);
+    float3 L = normalize(float3(1.0, 1.0, 1.0));
+
+    float3 ambient = float3(0.1, 0.1, 0.1);
+    float3 diffuse = max(dot(N, L), 0.0) * material.colorFactor.rgb;
+
+    FragmentOutput output;
+    output.color = color * float4(ambient + diffuse, material.colorFactor.a);
+
+    return output;
 }

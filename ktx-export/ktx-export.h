@@ -31,15 +31,15 @@ struct Swapchain;
 struct RenderTargets;
 }
 
-namespace InstancedRendering
+namespace KtxExport
 {
 
-class InstancedRendering
+class KtxExport
 {
 public:
-    InstancedRendering();
+    KtxExport();
 
-    ~InstancedRendering();
+    ~KtxExport();
 
     void Initialize();
 
@@ -63,7 +63,7 @@ private:
     std::vector<Renderer::FrameSynchronization> frameSynchronization;
     std::unique_ptr<Renderer::RenderTargets> renderTargets{};
 
-    Game::FreeCamera freeCamera{{0.0f, 0.0f, 5.0f}, {0.0f, 0.0f, 0.0f}};
+    Game::FreeCamera freeCamera{{22.5f, 30.0f, 80.0f}, {22.5f, 30.0f, 22.5f}};
     Renderer::SceneData sceneData{};
     std::vector<Renderer::AllocatedBuffer> sceneDataBuffers;
 
