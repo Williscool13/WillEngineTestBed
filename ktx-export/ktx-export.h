@@ -8,6 +8,11 @@
 #include <memory>
 #include <SDL3/SDL.h>
 
+
+#include <volk/volk.h>
+#include <ktx.h>
+#include <ktxvulkan.h>
+
 #include "core/data-structures/handle_allocator.h"
 #include "game/camera/free_camera.h"
 #include "render/render_constants.h"
@@ -34,12 +39,29 @@ struct RenderTargets;
 namespace KtxExport
 {
 
+struct RuntimeMesh
+{
+    // sorted when generated
+    std::vector<Renderer::RuntimeNode> nodes;
+
+    std::vector<uint32_t> nodeRemap{};
+
+    bool bNeedToSendToRender{false};
+    Transform transform;
+    OffsetAllocator::Allocation jointMatrixAllocation{};
+    uint32_t jointMatrixOffset{0};
+};
+
 class KtxExport
 {
 public:
     KtxExport();
 
     ~KtxExport();
+
+    void CreateModelObject();
+
+    void LoadKtx();
 
     void Initialize();
 
@@ -52,6 +74,8 @@ public:
     void CreateBuffers();
 
     Renderer::MeshletModelData CreateMeshletModel(const std::filesystem::path& path);
+
+    void UpdateTransforms(RuntimeMesh& runtimeMesh);
 
 private:
     SDL_Window* window{nullptr};
@@ -92,8 +116,9 @@ private:
     HandleAllocator<Renderer::InstanceEntry, Renderer::BINDLESS_INSTANCE_COUNT> instanceEntryAllocator;
     Renderer::AllocatedBuffer instanceBuffer;
 
-    Renderer::MeshletModelData bunnyModel{};
-    Renderer::MeshletModelData dragonModel{};
+    Renderer::MeshletModelData sponzaModel{};
+    RuntimeMesh sponzaRuntimeMesh;
+
 
     Renderer::InstancingVisibilityPipeline instancingVisibilityPipeline;
     Renderer::InstancingPrefixSumPipeline instancingPrefixSumPipeline;
@@ -105,6 +130,21 @@ private:
     Renderer::AllocatedBuffer primitiveCountBuffer;
     Renderer::AllocatedBuffer compactedInstanceBuffer;
     Renderer::AllocatedBuffer indirectBuffer;
+
+private:
+    VkFence immFence{VK_NULL_HANDLE};
+    VkCommandPool immCommandPool{VK_NULL_HANDLE};
+    VkCommandBuffer immCommandBuffer{VK_NULL_HANDLE};
+
+    VkCommandPool ktxTextureCommandPool{VK_NULL_HANDLE};
+    ktxVulkanDeviceInfo* vulkanDeviceInfo{nullptr};
+    ktxVulkanTexture wallTexture{.image = VK_NULL_HANDLE};
+
+    Renderer::ImageView wallImageView;
+
+
+    Renderer::AllocatedBuffer imageStagingBuffer{};
+    Renderer::AllocatedBuffer imageReceivingBuffer{};
 };
 }
 

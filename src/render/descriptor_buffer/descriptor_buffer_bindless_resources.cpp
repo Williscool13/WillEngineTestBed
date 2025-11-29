@@ -136,6 +136,30 @@ int32_t DescriptorBufferBindlessResources::AllocateTexture(const VkDescriptorIma
     return textureIndex;
 }
 
+bool DescriptorBufferBindlessResources::ForceAllocateTexture(int32_t bindingArrayIndex, const VkDescriptorImageInfo& imageInfo)
+{
+    size_t setOffset = 0;
+    size_t bindingOffset;
+    vkGetDescriptorSetLayoutBindingOffsetEXT(context->device, descriptorSetLayout.handle, 1, &bindingOffset);
+    char* basePtr = static_cast<char*>(buffer.allocationInfo.pMappedData) + setOffset + bindingOffset;
+
+    VkDescriptorGetInfoEXT descriptorGetInfo{};
+    descriptorGetInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT;
+    descriptorGetInfo.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    descriptorGetInfo.data.pSampledImage = &imageInfo;
+
+    const size_t sampledImageDescriptorSize = VulkanContext::deviceInfo.descriptorBufferProps.sampledImageDescriptorSize;
+    char* bufferPtr = basePtr + bindingArrayIndex * sampledImageDescriptorSize;
+    vkGetDescriptorEXT(context->device, &descriptorGetInfo, sampledImageDescriptorSize, bufferPtr);
+
+    if (std::ranges::find(freeSamplerIndices, bindingArrayIndex) != freeSamplerIndices.end()) {
+        LOG_ERROR("[DescriptorBufferUniform] Binding index {} is not allocated", bindingArrayIndex);
+        return false;
+    }
+
+    return true;
+}
+
 void DescriptorBufferBindlessResources::ReleaseSamplerBinding(int32_t bindingArrayIndex)
 {
     if (std::ranges::find(freeSamplerIndices, bindingArrayIndex) != freeSamplerIndices.end()) {

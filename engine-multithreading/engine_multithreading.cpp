@@ -8,7 +8,6 @@
 
 #include "backends/imgui_impl_sdl3.h"
 #include "backends/imgui_impl_vulkan.h"
-#include "core/constants.h"
 #include "core/time.h"
 #include "crash-handling/crash_handler.h"
 #include "crash-handling/logger_helpers.h"
@@ -46,8 +45,8 @@ void EngineMultithreading::Initialize()
         constexpr auto window_flags = SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE;
         window = SDL_CreateWindow(
             "Engine Multithreading Tests",
-            Core::DEFAULT_WINDOW_WIDTH,
-            Core::DEFAULT_WINDOW_HEIGHT,
+            Renderer::DEFAULT_SWAPCHAIN_WIDTH,
+            Renderer::DEFAULT_SWAPCHAIN_HEIGHT,
             window_flags);
         SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
     }
@@ -136,7 +135,7 @@ void EngineMultithreading::Run()
         ThreadMain();
         const bool canTransmit = gameFrames.try_acquire();
         if (canTransmit) {
-            uint64_t currentRenderFrame = renderFrame % Core::FRAMES_IN_FLIGHT;
+            uint64_t currentRenderFrame = renderFrame % FRAMES_IN_FLIGHT;
             PrepareImguiForRender(imguiFrameBuffers[currentRenderFrame]);
             PrepareFrameDataForRender(frameBuffers[currentRenderFrame]);
 

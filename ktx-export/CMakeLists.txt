@@ -2,6 +2,8 @@ add_executable(ktx-export
         main.cpp
         ktx-export.cpp
         ktx-export.h
+        model_serialization.cpp
+        model_serialization.h
 )
 
 

@@ -364,6 +364,30 @@ AllocatedBuffer VkResources::CreateAllocatedStagingBuffer(VulkanContext* context
     return buffer;
 }
 
+AllocatedBuffer VkResources::CreateAllocatedReceivingBuffer(VulkanContext* context, size_t bufferSize, VkBufferUsageFlags additionalUsages)
+{
+    const VkBufferCreateInfo bufferInfo{
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .size = bufferSize,
+        .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | additionalUsages,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE
+    };
+
+    const VmaAllocationCreateInfo allocInfo{
+        .flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT,
+        .usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST,
+        .requiredFlags = 0
+    };
+
+    AllocatedBuffer buffer;
+    buffer.context = context;
+    VK_CHECK(vmaCreateBuffer(context->allocator, &bufferInfo, &allocInfo, &buffer.handle, &buffer.allocation, &buffer.allocationInfo));
+    buffer.size = bufferInfo.size;
+    // Staging buffer doesn't typically need device address. If needed, make a new function
+    // buffer.address = VkHelpers::GetDeviceAddress(context->device, buffer.handle);
+    return buffer;
+}
+
 Sampler VkResources::CreateSampler(VulkanContext* context, const VkSamplerCreateInfo& samplerCreateInfo)
 {
     Sampler sampler;

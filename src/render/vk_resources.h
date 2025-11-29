@@ -171,6 +171,8 @@ namespace VkResources
 
     AllocatedBuffer CreateAllocatedStagingBuffer(VulkanContext* context, size_t bufferSize, VkBufferUsageFlags additionalUsages = 0);
 
+    AllocatedBuffer CreateAllocatedReceivingBuffer(VulkanContext* context, size_t bufferSize, VkBufferUsageFlags additionalUsages = 0);
+
     Sampler CreateSampler(VulkanContext* context, const VkSamplerCreateInfo& samplerCreateInfo);
 
     DescriptorSetLayout CreateDescriptorSetLayout(VulkanContext* context, const VkDescriptorSetLayoutCreateInfo& layoutCreateInfo);

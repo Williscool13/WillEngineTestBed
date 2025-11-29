@@ -96,6 +96,7 @@ target_link_libraries(render-lib PUBLIC
         fastgltf
         offsetAllocator
         meshoptimizer
+        ktx
 )
 
 find_program(SLANGC slangc REQUIRED)

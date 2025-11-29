@@ -186,7 +186,7 @@ void RenderThread::ThreadMain()
         engineMultithreading->renderFrames.acquire();
         if (bShouldExit.load()) { break; }
 
-        const uint32_t currentGameFrameInFlight = frameNumber % Core::FRAMES_IN_FLIGHT;
+        const uint32_t currentGameFrameInFlight = frameNumber % FRAMES_IN_FLIGHT;
         const uint32_t currentRenderFrameInFlight = frameNumber % renderBufferCount;
 
         FrameBuffer& currentFrameBuffer = engineMultithreading->frameBuffers[currentGameFrameInFlight];

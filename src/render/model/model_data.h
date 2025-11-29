@@ -118,6 +118,7 @@ struct ExtractedMeshletModel
     std::string name{};
     bool bSuccessfullyLoaded{false};
 
+    std::vector<VkSamplerCreateInfo> samplerInfos{};
     std::vector<Sampler> samplers{};
     std::vector<AllocatedImage> images{};
     std::vector<ImageView> imageViews{};
@@ -133,7 +134,6 @@ struct ExtractedMeshletModel
     std::vector<MeshInformation> allMeshes{};
     std::vector<Node> nodes{};
     std::vector<uint32_t> nodeRemap{};
-
 
     std::vector<Animation> animations;
     std::vector<glm::mat4> inverseBindMatrices{};

@@ -11,11 +11,12 @@
 
 #include "asset_loading_thread.h"
 #include "render_thread.h"
-#include "core/constants.h"
 
 #include "game/camera/free_camera.h"
 #include "render/animation/animation_player.h"
 #include "imgui_threaded_rendering.h"
+
+static inline constexpr int32_t FRAMES_IN_FLIGHT = 3;
 
 namespace Renderer
 {
@@ -87,11 +88,11 @@ private:
     Renderer::AnimationPlayer animationPlayer{};
 
 public:
-    std::counting_semaphore<Core::FRAMES_IN_FLIGHT> gameFrames{Core::FRAMES_IN_FLIGHT};
-    std::counting_semaphore<Core::FRAMES_IN_FLIGHT> renderFrames{0};
+    std::counting_semaphore<FRAMES_IN_FLIGHT> gameFrames{FRAMES_IN_FLIGHT};
+    std::counting_semaphore<FRAMES_IN_FLIGHT> renderFrames{0};
 
-    std::array<ImDrawDataSnapshot, Core::FRAMES_IN_FLIGHT> imguiFrameBuffers{};
-    std::array<Renderer::FrameBuffer, Core::FRAMES_IN_FLIGHT> frameBuffers{};
+    std::array<ImDrawDataSnapshot, FRAMES_IN_FLIGHT> imguiFrameBuffers{};
+    std::array<Renderer::FrameBuffer, FRAMES_IN_FLIGHT> frameBuffers{};
     std::vector<Renderer::ModelEntryHandle> loadedModelsToAcquire;
 
 private:

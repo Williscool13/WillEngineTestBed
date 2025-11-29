@@ -20,6 +20,7 @@ add_subdirectory(extern/vk-bootstrap)
 add_subdirectory(extern/fastgltf)
 add_subdirectory(extern/OffsetAllocator)
 add_subdirectory(extern/meshoptimizer)
+add_subdirectory(extern/KTX-Software)
 
 # My Libs
 add_subdirectory(src/crash-handling)

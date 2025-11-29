@@ -23,10 +23,10 @@ public:
 
     ExtractedModel LoadGltf(const std::filesystem::path& path);
 
-    ExtractedMeshletModel LoadMeshletGltf(const std::filesystem::path& path);
+    ExtractedMeshletModel LoadMeshletGltf(const std::filesystem::path& path, bool mipmapped = false);
 
 private:
-    void LoadGltfImages(const fastgltf::Asset& asset, const std::filesystem::path& parentFolder, std::vector<AllocatedImage>& outAllocatedImages);
+    void LoadGltfImages(const fastgltf::Asset& asset, const std::filesystem::path& parentFolder, std::vector<AllocatedImage>& outAllocatedImages, bool mipMapped = false);
 
     AllocatedImage RecordCreateImageFromData(VkCommandBuffer cmd, size_t offset, unsigned char* data, size_t size, VkExtent3D imageExtent, VkFormat format, VkImageUsageFlagBits usage, bool mipmapped);
 

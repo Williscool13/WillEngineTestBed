@@ -43,6 +43,14 @@ public:
 
     int32_t AllocateTexture(const VkDescriptorImageInfo& imageInfo);
 
+    /**
+     * Returns true if index was already allocated and the call forced the existing texture to be updated.
+     * @param bindingArrayIndex
+     * @param imageInfo
+     * @return
+     */
+    bool ForceAllocateTexture(int32_t bindingArrayIndex, const VkDescriptorImageInfo& imageInfo);
+
     void ReleaseSamplerBinding(int32_t bindingArrayIndex);
 
     void ReleaseTextureBinding(int32_t bindingArrayIndex);

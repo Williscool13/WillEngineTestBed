@@ -12,7 +12,11 @@
 #include <VkBootstrap.h>
 #include <backends/imgui_impl_vulkan.h>
 
+#include <ktx.h>
+#include <ktxvulkan.h>
+
 #include "meshoptimizer.h"
+#include "model_serialization.h"
 #include "core/time.h"
 #include "crash-handling/crash_handler.h"
 #include "crash-handling/logger.h"
@@ -25,10 +29,10 @@
 #include "input/input.h"
 #include "render/render_context.h"
 #include "render/render_targets.h"
-#include "render/vk_pipelines.h"
 #include "render/descriptor_buffer/descriptor_buffer_bindless_resources.h"
 #include "render/model/model_loader.h"
 #include "render/model/model_load_utils.h"
+#include "stb/stb_image.h"
 #include "utils/utils.h"
 
 namespace KtxExport
@@ -36,6 +40,214 @@ namespace KtxExport
 KtxExport::KtxExport() = default;
 
 KtxExport::~KtxExport() = default;
+
+void KtxExport::CreateModelObject()
+{
+    auto sponzaPath = std::filesystem::path("../assets/sponza2/Sponza.gltf");
+    Renderer::ExtractedMeshletModel meshletModel = modelLoader->LoadMeshletGltf(sponzaPath, true);
+
+    std::filesystem::create_directories("temp");
+    std::ofstream binFile("temp/model.bin", std::ios::binary);
+    WriteModelBinary(binFile, meshletModel);
+    binFile.close();
+
+    for (size_t i = 0; i < meshletModel.images.size(); i++) {
+        auto& image = meshletModel.images[i];
+        uint32_t mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(image.extent.width, image.extent.height)))) + 1;
+
+        // Mip Generation
+        {
+            VK_CHECK(vkResetFences(vulkanContext->device, 1, &immFence));
+            VK_CHECK(vkResetCommandBuffer(immCommandBuffer, 0));
+
+            const auto cmd = immCommandBuffer;
+            const VkCommandBufferBeginInfo cmdBeginInfo = Renderer::VkHelpers::CommandBufferBeginInfo();
+            VK_CHECK(vkBeginCommandBuffer(cmd, &cmdBeginInfo));
+
+
+            for (uint32_t mip = 1; mip < mipLevels; mip++) {
+                VkImageMemoryBarrier2 barrier = Renderer::VkHelpers::ImageMemoryBarrier(
+                    image.handle,
+                    Renderer::VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT, mip - 1, 1),
+                    VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                    VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
+                );
+                VkDependencyInfo depInfo{.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+                depInfo.imageMemoryBarrierCount = 1;
+                depInfo.pImageMemoryBarriers = &barrier;
+                vkCmdPipelineBarrier2(cmd, &depInfo);
+
+                barrier = Renderer::VkHelpers::ImageMemoryBarrier(
+                    image.handle,
+                    Renderer::VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT, mip, 1),
+                    VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_UNDEFINED,
+                    VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
+                );
+                vkCmdPipelineBarrier2(cmd, &depInfo);
+
+                VkImageBlit blit{};
+                blit.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, mip - 1, 0, 1};
+                blit.srcOffsets[0] = {0, 0, 0};
+                blit.srcOffsets[1] = {
+                    static_cast<int32_t>(image.extent.width >> (mip - 1)),
+                    static_cast<int32_t>(image.extent.height >> (mip - 1)),
+                    1
+                };
+                blit.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, mip, 0, 1};
+                blit.dstOffsets[0] = {0, 0, 0};
+                blit.dstOffsets[1] = {
+                    static_cast<int32_t>(image.extent.width >> mip),
+                    static_cast<int32_t>(image.extent.height >> mip),
+                    1
+                };
+
+                vkCmdBlitImage(cmd, image.handle, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, image.handle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
+            }
+
+            VkImageMemoryBarrier2 finalBarrier = Renderer::VkHelpers::ImageMemoryBarrier(
+                image.handle,
+                Renderer::VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT, 0, mipLevels),
+                VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
+            );
+            VkDependencyInfo depInfo{.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+            depInfo.imageMemoryBarrierCount = 1;
+            depInfo.pImageMemoryBarriers = &finalBarrier;
+            vkCmdPipelineBarrier2(cmd, &depInfo);
+
+            VK_CHECK(vkEndCommandBuffer(cmd));
+
+            VkCommandBufferSubmitInfo cmdSubmitInfo = Renderer::VkHelpers::CommandBufferSubmitInfo(cmd);
+            const VkSubmitInfo2 submitInfo = Renderer::VkHelpers::SubmitInfo(&cmdSubmitInfo, nullptr, nullptr);
+            VK_CHECK(vkQueueSubmit2(vulkanContext->graphicsQueue, 1, &submitInfo, immFence));
+            VK_CHECK(vkWaitForFences(vulkanContext->device, 1, &immFence, true, 1000000000));
+        }
+
+        ktxTexture2* texture;
+        ktxTextureCreateInfo createInfo{};
+        createInfo.vkFormat = image.format;
+        createInfo.baseWidth = image.extent.width;
+        createInfo.baseHeight = image.extent.height;
+        createInfo.baseDepth = 1;
+        createInfo.numDimensions = 2;
+        createInfo.numLevels = mipLevels;
+        createInfo.numLayers = 1;
+        createInfo.numFaces = 1;
+        createInfo.isArray = KTX_FALSE;
+        createInfo.generateMipmaps = KTX_FALSE;
+
+        KTX_error_code result = ktxTexture2_Create(&createInfo, KTX_TEXTURE_CREATE_ALLOC_STORAGE, &texture);
+
+        for (uint32_t mip = 0; mip < mipLevels; mip++) {
+            uint32_t mipWidth = std::max(1u, image.extent.width >> mip);
+            uint32_t mipHeight = std::max(1u, image.extent.height >> mip);
+
+            uint32_t bytesPerPixel = 4; // TODO: Calculate from image.format
+            size_t mipSize = mipWidth * mipHeight * bytesPerPixel;
+
+            VK_CHECK(vkResetFences(vulkanContext->device, 1, &immFence));
+            VK_CHECK(vkResetCommandBuffer(immCommandBuffer, 0));
+
+            VkCommandBufferBeginInfo cmdBeginInfo = Renderer::VkHelpers::CommandBufferBeginInfo();
+            VK_CHECK(vkBeginCommandBuffer(immCommandBuffer, &cmdBeginInfo));
+
+            VkBufferImageCopy copyRegion{};
+            copyRegion.bufferOffset = 0;
+            copyRegion.bufferRowLength = 0;
+            copyRegion.bufferImageHeight = 0;
+            copyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            copyRegion.imageSubresource.mipLevel = mip;
+            copyRegion.imageSubresource.baseArrayLayer = 0;
+            copyRegion.imageSubresource.layerCount = 1;
+            copyRegion.imageOffset = {0, 0, 0};
+            copyRegion.imageExtent = {mipWidth, mipHeight, 1};
+
+            vkCmdCopyImageToBuffer(immCommandBuffer, image.handle, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                   imageReceivingBuffer.handle, 1, &copyRegion);
+
+            VK_CHECK(vkEndCommandBuffer(immCommandBuffer));
+
+            VkCommandBufferSubmitInfo cmdSubmitInfo = Renderer::VkHelpers::CommandBufferSubmitInfo(immCommandBuffer);
+            VkSubmitInfo2 submitInfo = Renderer::VkHelpers::SubmitInfo(&cmdSubmitInfo, nullptr, nullptr);
+            VK_CHECK(vkQueueSubmit2(vulkanContext->graphicsQueue, 1, &submitInfo, immFence));
+            VK_CHECK(vkWaitForFences(vulkanContext->device, 1, &immFence, true, 1000000000));
+
+            void* readbackData = imageReceivingBuffer.allocationInfo.pMappedData;
+            ktxTexture_SetImageFromMemory(ktxTexture(texture), mip, 0, 0, static_cast<const ktx_uint8_t*>(readbackData), mipSize);
+        }
+        // Write KTX2 file
+        std::string ktxPath = "temp/texture_" + std::to_string(i) + ".ktx2";
+        ktxTexture_WriteToNamedFile(ktxTexture(texture), ktxPath.c_str());
+        ktxTexture_Destroy(ktxTexture(texture));
+    }
+
+    // ModelWriter writer("sponza2.willmodel");
+    // writer.AddFileFromDisk("model.bin", "temp_model.bin");
+    // writer.Finalize();
+
+    std::filesystem::path wallImagePath = std::filesystem::path("../assets/wall.jpg");
+
+    int32_t width{};
+    int32_t height{};
+    int32_t nrChannels{};
+    auto stbiData = stbi_load(wallImagePath.string().c_str(), &width, &height, &nrChannels, 4);
+
+    ktxTexture2* texture;
+    ktxTextureCreateInfo createInfo;
+    createInfo.vkFormat = VK_FORMAT_R8G8B8A8_UNORM;
+    createInfo.baseWidth = width;
+    createInfo.baseHeight = height;
+    createInfo.baseDepth = 1;
+    createInfo.numDimensions = 2;
+    // Note: it is not necessary to provide a full mipmap pyramid.
+    // createInfo.numLevels = log2(createInfo.baseWidth) + 1;
+    createInfo.numLevels = 1;
+    createInfo.numLayers = 1;
+    createInfo.numFaces = 1;
+    createInfo.isArray = KTX_FALSE;
+    createInfo.generateMipmaps = KTX_FALSE;
+    KTX_error_code result = ktxTexture2_Create(&createInfo, KTX_TEXTURE_CREATE_ALLOC_STORAGE, &texture);
+
+
+    ktx_uint32_t layer = 0;
+    ktx_uint32_t faceSlice = 0;
+    ktx_uint32_t level = 0;
+    ktx_size_t srcSize = width * height * 4;
+    result = ktxTexture_SetImageFromMemory(ktxTexture(texture), level, layer, faceSlice, stbiData, srcSize);
+
+    ktxTexture_WriteToNamedFile(ktxTexture(texture), "../assets/wall.ktx2");
+    ktxTexture_Destroy(ktxTexture(texture));
+    stbi_image_free(stbiData);
+}
+
+void KtxExport::LoadKtx()
+{
+    if (!vulkanDeviceInfo) {
+        const VkCommandPoolCreateInfo poolInfo = Renderer::VkHelpers::CommandPoolCreateInfo(vulkanContext->graphicsQueueFamily);
+        VK_CHECK(vkCreateCommandPool(vulkanContext->device, &poolInfo, nullptr, &ktxTextureCommandPool));
+
+        ktxVulkanFunctions vkFuncs{};
+        vkFuncs.vkGetInstanceProcAddr = vkGetInstanceProcAddr;
+        vkFuncs.vkGetDeviceProcAddr = vkGetDeviceProcAddr;
+        vulkanDeviceInfo = ktxVulkanDeviceInfo_CreateEx(vulkanContext->instance, vulkanContext->physicalDevice, vulkanContext->device, vulkanContext->graphicsQueue, ktxTextureCommandPool, nullptr,
+                                                        &vkFuncs);
+    }
+
+    ktxTexture* loadedTexture = nullptr;
+    std::filesystem::path ktxImagePath = std::filesystem::path("../assets/wall.ktx2");
+    KTX_error_code result = ktxTexture_CreateFromNamedFile(ktxImagePath.string().c_str(), KTX_TEXTURE_CREATE_NO_FLAGS, &loadedTexture);
+    result = ktxTexture_VkUploadEx(loadedTexture, vulkanDeviceInfo, &wallTexture, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+    ktxTexture_Destroy(loadedTexture);
+
+    VkImageViewCreateInfo viewInfo = Renderer::VkHelpers::ImageViewCreateInfo(wallTexture.image, wallTexture.imageFormat, VK_IMAGE_ASPECT_COLOR_BIT);
+    viewInfo.viewType = wallTexture.viewType;
+    viewInfo.subresourceRange.layerCount = wallTexture.layerCount;
+    viewInfo.subresourceRange.levelCount = wallTexture.levelCount;
+    wallImageView = Renderer::VkResources::CreateImageView(vulkanContext.get(), viewInfo);
+
+    bindlessResourcesDescriptorBuffer.ForceAllocateTexture(0, {.imageView = wallImageView.handle, .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL});
+}
 
 void KtxExport::Initialize()
 {
@@ -98,55 +310,51 @@ void KtxExport::Initialize()
     instancingCompactAndGenerateIndirectPipeline = Renderer::InstancingCompactAndGenerateIndirectPipeline(vulkanContext.get());
     instancingIndirectMeshPipeline = Renderer::InstancingIndirectMeshPipeline(vulkanContext.get(), bindlessResourcesDescriptorBuffer.descriptorSetLayout.handle);
 
-    //auto bunnyPath = std::filesystem::path("../assets/stanford_bunny/stanford_bunny.gltf");
-    auto bunnyPath = std::filesystem::path("../assets/BoxTextured.glb");
-    auto dragonPath = std::filesystem::path("../assets/dragon/dragon.gltf");
-    bunnyModel = CreateMeshletModel(bunnyPath);
-    dragonModel = CreateMeshletModel(dragonPath);
+    auto sponzaPath = std::filesystem::path("../assets/sponza2/Sponza.gltf");
+    sponzaModel = CreateMeshletModel(sponzaPath);
 
-    constexpr int INSTANCES_PER_PRIMITIVE = 100;
-    constexpr int TOTAL_INSTANCES = INSTANCES_PER_PRIMITIVE * 2; // 200 total
+    sponzaRuntimeMesh.transform = Transform::Identity;
+    sponzaRuntimeMesh.nodes.reserve(sponzaModel.nodes.size());
+    sponzaRuntimeMesh.nodeRemap = sponzaModel.nodeRemap;
 
-    std::array<Renderer::Model, TOTAL_INSTANCES> modelMatrices{};
-
-    // Create a 10x10 grid for dragons and a 10x10 grid for bunnies stacked vertically
-    float spacing = 5.0f;
-    float gridSeparation = 60.0f; // Space between dragon and bunny grids (vertical)
-
-    for (int i = 0; i < INSTANCES_PER_PRIMITIVE; i++) {
-        int row = i / 10;
-        int col = i % 10;
-
-        // Dragon grid (bottom)
-        glm::mat4 dragonMat{1.0f};
-        dragonMat = glm::translate(dragonMat, glm::vec3(col * spacing, 0.0f, row * spacing));
-        modelMatrices[i] = Renderer::Model{dragonMat};
-
-        // Bunny grid (top, offset by gridSeparation in Y)
-        glm::mat4 bunnyMat{1.0f};
-        bunnyMat = glm::translate(bunnyMat, glm::vec3(col * spacing, gridSeparation, row * spacing));
-        modelMatrices[i + INSTANCES_PER_PRIMITIVE] = Renderer::Model{bunnyMat};
+    for (const Renderer::Node& n : sponzaModel.nodes) {
+        sponzaRuntimeMesh.nodes.emplace_back(n);
     }
 
-    memcpy(modelBuffer.allocationInfo.pMappedData, modelMatrices.data(), sizeof(Renderer::Model) * TOTAL_INSTANCES);
+    UpdateTransforms(sponzaRuntimeMesh);
 
-    std::array<Renderer::Instance, TOTAL_INSTANCES> instances{};
+    for (Renderer::RuntimeNode& node : sponzaRuntimeMesh.nodes) {
+        if (node.meshIndex != ~0u) {
+            node.modelMatrixHandle = modelMatrixAllocator.Add();
+            memcpy(static_cast<char*>(modelBuffer.allocationInfo.pMappedData) + node.modelMatrixHandle.index * sizeof(Renderer::Model) + offsetof(Renderer::Model, modelMatrix),
+                   &node.cachedWorldTransform, sizeof(node.cachedWorldTransform));
 
-    for (int i = 0; i < INSTANCES_PER_PRIMITIVE; i++) {
-        // Dragon instances
-        instances[i].modelIndex = i;
-        instances[i].primitiveIndex = 0; // Dragon primitive
-        instances[i].bIsAllocated = 1;
-        instances[i].jointMatrixOffset = 0;
+            for (uint32_t primitiveIndex : sponzaModel.meshes[node.meshIndex].primitiveIndices) {
+                Renderer::InstanceEntryHandle instanceEntry = instanceEntryAllocator.Add();
+                node.instanceEntryHandles.push_back(instanceEntry);
 
-        // Bunny instances
-        instances[i + INSTANCES_PER_PRIMITIVE].modelIndex = i + INSTANCES_PER_PRIMITIVE;
-        instances[i + INSTANCES_PER_PRIMITIVE].primitiveIndex = 1; // Bunny primitive
-        instances[i + INSTANCES_PER_PRIMITIVE].bIsAllocated = 1;
-        instances[i + INSTANCES_PER_PRIMITIVE].jointMatrixOffset = 0;
+                Renderer::Instance inst;
+                inst.modelIndex = node.modelMatrixHandle.index;
+                inst.primitiveIndex = primitiveIndex;
+                inst.jointMatrixOffset = sponzaRuntimeMesh.jointMatrixOffset;
+                inst.bIsAllocated = 1;
+
+                memcpy(static_cast<char*>(instanceBuffer.allocationInfo.pMappedData) + sizeof(Renderer::Instance) * instanceEntry.index, &inst, sizeof(Renderer::Instance));
+            }
+        }
     }
 
-    memcpy(instanceBuffer.allocationInfo.pMappedData, instances.data(), sizeof(Renderer::Instance) * TOTAL_INSTANCES);
+    const VkFenceCreateInfo fenceInfo = Renderer::VkHelpers::FenceCreateInfo();
+    VK_CHECK(vkCreateFence(vulkanContext->device, &fenceInfo, nullptr, &immFence));
+
+    const VkCommandPoolCreateInfo poolInfo = Renderer::VkHelpers::CommandPoolCreateInfo(VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
+    VK_CHECK(vkCreateCommandPool(vulkanContext->device, &poolInfo, nullptr, &immCommandPool));
+
+    const VkCommandBufferAllocateInfo allocInfo = Renderer::VkHelpers::CommandBufferAllocateInfo(1, immCommandPool);
+    VK_CHECK(vkAllocateCommandBuffers(vulkanContext->device, &allocInfo, &immCommandBuffer));
+
+    imageStagingBuffer = Renderer::VkResources::CreateAllocatedStagingBuffer(vulkanContext.get(), Renderer::STAGING_BUFFER_SIZE);
+    imageReceivingBuffer = Renderer::VkResources::CreateAllocatedReceivingBuffer(vulkanContext.get(), Renderer::STAGING_BUFFER_SIZE);
 }
 
 void KtxExport::Run()
@@ -188,6 +396,13 @@ void KtxExport::Run()
         if (exit) {
             bShouldExit = true;
             break;
+        }
+
+        if (input.IsKeyPressed(Key::K)) {
+            CreateModelObject();
+        }
+        if (input.IsKeyPressed(Key::L)) {
+            LoadKtx();
         }
 
         input.UpdateFocus(SDL_GetWindowFlags(window));
@@ -348,7 +563,7 @@ void KtxExport::Render(uint32_t currentFrameInFlight, Renderer::FrameSynchroniza
         .primitiveCountBuffer = primitiveCountBuffer.address,
     };
     vkCmdPushConstants(cmd, instancingVisibilityPipeline.pipelineLayout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(Renderer::VisibilityPushConstant), &visibilityPushData);
-    vkCmdDispatch(cmd, (200 + 63) / 64, 1, 1);
+    vkCmdDispatch(cmd, (1000 + 63) / 64, 1, 1);
 
     // ==================== PREFIX SUM PASS ====================
     // Barrier: Pass 1 writes primitiveCountBuffer → Pass 2 reads/writes it
@@ -366,7 +581,7 @@ void KtxExport::Render(uint32_t currentFrameInFlight, Renderer::FrameSynchroniza
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, instancingPrefixSumPipeline.pipeline.handle);
     Renderer::PrefixSumPushConstant prefixSumPushData{
         .primitiveCountBuffer = primitiveCountBuffer.address,
-        .highestPrimitiveIndex = 2, // 2 primitives (0 and 1)
+        .highestPrimitiveIndex = 1000,
     };
     vkCmdPushConstants(cmd, instancingPrefixSumPipeline.pipelineLayout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(Renderer::PrefixSumPushConstant), &prefixSumPushData);
     vkCmdDispatch(cmd, 1, 1, 1);
@@ -414,7 +629,7 @@ void KtxExport::Render(uint32_t currentFrameInFlight, Renderer::FrameSynchroniza
         .indirectBuffer = indirectBuffer.address
     };
     vkCmdPushConstants(cmd, instancingCompactAndGenerateIndirectPipeline.pipelineLayout.handle, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(Renderer::IndirectWritePushConstant), &indirectWritePushData);
-    vkCmdDispatch(cmd, (200 + 63) / 64, 1, 1); // Dispatch enough groups for 10 instances
+    vkCmdDispatch(cmd, (1000 + 63) / 64, 1, 1); // Dispatch enough groups for 10 instances
 
 
     // ==================== RENDER PASS ====================
@@ -491,7 +706,7 @@ void KtxExport::Render(uint32_t currentFrameInFlight, Renderer::FrameSynchroniza
         sizeof(glm::vec4),
         indirectBuffer.handle,
         0,
-        2,
+        1000,
         sizeof(Renderer::InstancedMeshIndirectDrawParameters)
     );
 
@@ -583,6 +798,18 @@ void KtxExport::Render(uint32_t currentFrameInFlight, Renderer::FrameSynchroniza
 void KtxExport::Cleanup()
 {
     vkDeviceWaitIdle(vulkanContext->device);
+
+    if (wallTexture.image != VK_NULL_HANDLE) {
+        ktxVulkanTexture_Destruct(&wallTexture, vulkanContext->device, nullptr);
+    }
+
+    if (vulkanDeviceInfo) {
+        ktxVulkanDeviceInfo_Destruct(vulkanDeviceInfo);
+    }
+
+    if (ktxTextureCommandPool) {
+        vkDestroyCommandPool(vulkanContext->device, ktxTextureCommandPool, nullptr);
+    }
 
     SDL_DestroyWindow(window);
 }
@@ -760,6 +987,15 @@ Renderer::MeshletModelData KtxExport::CreateMeshletModel(const std::filesystem::
     }
     memcpy(static_cast<char*>(primitiveBuffer.allocationInfo.pMappedData) + model.primitiveAllocation.offset, meshletModel.primitives.data(), sizePrimitives);
 
+    uint32_t primitiveOffsetCount = model.primitiveAllocation.offset / sizeof(Renderer::MeshletPrimitive);
+    model.meshes = std::move(meshletModel.allMeshes);
+    for (auto& mesh : model.meshes) {
+        for (auto& primitiveIndex : mesh.primitiveIndices) {
+            primitiveIndex += primitiveOffsetCount;
+        }
+    }
+
+
     model.samplers = std::move(meshletModel.samplers);
     model.images = std::move(meshletModel.images);
     model.imageViews = std::move(meshletModel.imageViews);
@@ -770,5 +1006,24 @@ Renderer::MeshletModelData KtxExport::CreateMeshletModel(const std::filesystem::
     model.nodeRemap = std::move(meshletModel.nodeRemap);
 
     return model;
+}
+
+void KtxExport::UpdateTransforms(RuntimeMesh& runtimeMesh)
+{
+    glm::mat4 baseTopLevel = runtimeMesh.transform.GetMatrix();
+
+    // Nodes are sorted
+    for (Renderer::RuntimeNode& rn : runtimeMesh.nodes) {
+        glm::mat4 localTransform = rn.transform.GetMatrix();
+
+        if (rn.parent == ~0u) {
+            rn.cachedWorldTransform = baseTopLevel * localTransform;
+        }
+        else {
+            rn.cachedWorldTransform = runtimeMesh.nodes[rn.parent].cachedWorldTransform * localTransform;
+        }
+    }
+
+    runtimeMesh.bNeedToSendToRender = true;
 }
 }

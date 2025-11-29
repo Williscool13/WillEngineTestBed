@@ -437,7 +437,7 @@ ExtractedModel ModelLoader::LoadGltf(const std::filesystem::path& path)
     return model;
 }
 
-ExtractedMeshletModel ModelLoader::LoadMeshletGltf(const std::filesystem::path& path)
+ExtractedMeshletModel ModelLoader::LoadMeshletGltf(const std::filesystem::path& path, bool mipmapped)
 {
     Utils::ScopedTimer timer{fmt::format("{} Meshlet Load Time", path.filename().string())};
     ExtractedMeshletModel meshletModel{};
@@ -464,6 +464,7 @@ ExtractedMeshletModel ModelLoader::LoadMeshletGltf(const std::filesystem::path& 
     fastgltf::Asset gltf = std::move(load.get());
 
 
+    meshletModel.samplerInfos.reserve(gltf.samplers.size());
     meshletModel.samplers.reserve(gltf.samplers.size());
     for (const fastgltf::Sampler& gltfSampler : gltf.samplers) {
         VkSamplerCreateInfo samplerInfo = {.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO, .pNext = nullptr};
@@ -476,12 +477,13 @@ ExtractedMeshletModel ModelLoader::LoadMeshletGltf(const std::filesystem::path& 
 
         samplerInfo.mipmapMode = ModelLoadUtils::ExtractMipmapMode(gltfSampler.minFilter.value_or(fastgltf::Filter::Linear));
 
+        meshletModel.samplerInfos.push_back(samplerInfo);
         meshletModel.samplers.push_back(VkResources::CreateSampler(context, samplerInfo));
     }
 
     meshletModel.images.reserve(gltf.images.size());
     // todo: job system to parallelize stb decoding.
-    LoadGltfImages(gltf, path.parent_path(), meshletModel.images);
+    LoadGltfImages(gltf, path.parent_path(), meshletModel.images, mipmapped);
 
     meshletModel.imageViews.reserve(gltf.images.size());
     for (const AllocatedImage& image : meshletModel.images) {
@@ -513,6 +515,8 @@ ExtractedMeshletModel ModelLoader::LoadMeshletGltf(const std::filesystem::path& 
                 materialIndex = p.materialIndex.value();
                 primitiveData.bHasTransparent = (static_cast<MaterialType>(meshletModel.materials[materialIndex].alphaProperties.y) == MaterialType::TRANSPARENT_);
             }
+
+            primitiveData.materialIndex = materialIndex;
 
             // INDICES
             const fastgltf::Accessor& indexAccessor = gltf.accessors[p.indicesAccessor.value()];
@@ -890,7 +894,7 @@ ExtractedMeshletModel ModelLoader::LoadMeshletGltf(const std::filesystem::path& 
     return meshletModel;
 }
 
-void ModelLoader::LoadGltfImages(const fastgltf::Asset& asset, const std::filesystem::path& parentFolder, std::vector<AllocatedImage>& outAllocatedImages)
+void ModelLoader::LoadGltfImages(const fastgltf::Asset& asset, const std::filesystem::path& parentFolder, std::vector<AllocatedImage>& outAllocatedImages, bool mipmapped)
 {
     unsigned char* stbiData{nullptr};
     int32_t width{};
@@ -1117,7 +1121,7 @@ void ModelLoader::LoadGltfImages(const fastgltf::Asset& asset, const std::filesy
                 bIsRecording = true;
             }
 
-            newImage = RecordCreateImageFromData(commandBuffer, allocation.offset, stbiData, size, imagesize, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT, false);
+            newImage = RecordCreateImageFromData(commandBuffer, allocation.offset, stbiData, size, imagesize, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT, mipmapped);
 
             stbi_image_free(stbiData);
             stbiData = nullptr;
@@ -1147,6 +1151,9 @@ AllocatedImage ModelLoader::RecordCreateImageFromData(VkCommandBuffer cmd, size_
     memcpy(bufferOffset, data, size);
 
     VkImageCreateInfo imageCreateInfo = VkHelpers::ImageCreateInfo(format, imageExtent, usage | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT); // transfer src for mipmap only
+    if (mipmapped) {
+        imageCreateInfo.mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(imageExtent.width, imageExtent.height)))) + 1;
+    }
     AllocatedImage newImage = VkResources::CreateAllocatedImage(context, imageCreateInfo);
 
     VkImageMemoryBarrier2 barrier = VkHelpers::ImageMemoryBarrier(
