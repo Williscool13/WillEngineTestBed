@@ -30,16 +30,27 @@ void WriteModelBinary(std::ofstream& file, const Renderer::ExtractedMeshletModel
     header.samplerCount = static_cast<uint32_t>(model.samplerInfos.size());
 
     file.write(reinterpret_cast<const char*>(&header), sizeof(ModelBinaryHeader));
+
     WriteVector(file, model.vertices);
     WriteVector(file, model.meshletVertices);
     WriteVector(file, model.meshletTriangles);
     WriteVector(file, model.meshlets);
     WriteVector(file, model.primitives);
     WriteVector(file, model.materials);
-    WriteVector(file, model.allMeshes);
-    WriteVector(file, model.nodes);
+
+    for (const auto& mesh : model.allMeshes) {
+        WriteMeshInformation(file, mesh);
+    }
+    for (const auto& node : model.nodes) {
+        WriteNode(file, node);
+    }
+
     WriteVector(file, model.nodeRemap);
-    WriteVector(file, model.animations);
+
+    for (const auto& anim : model.animations) {
+        WriteAnimation(file, anim);
+    }
+
     WriteVector(file, model.inverseBindMatrices);
     WriteVector(file, model.samplerInfos);
 }
@@ -79,7 +90,8 @@ bool ModelWriter::AddFile(const std::string& filename, const void* data, size_t 
         buffer = CompressZlib(data, size);
         entry.compressedSize = buffer.size();
         entry.compressionType = 1; // zlib
-    } else {
+    }
+    else {
         buffer.resize(size);
         std::memcpy(buffer.data(), data, size);
         entry.compressedSize = size;
@@ -171,5 +183,118 @@ std::vector<uint8_t> DecompressZlib(const void* data, size_t compressedSize, siz
     }
 
     return decompressed;
+}
+
+ModelReader::ModelReader(const std::string& path)
+    : archivePath(path)
+{
+    file.open(archivePath, std::ios::binary);
+    if (!file) {
+        throw std::runtime_error("Failed to open archive: " + archivePath);
+    }
+
+    ReadHeader();
+    ReadFileTable();
+}
+
+ModelReader::~ModelReader()
+{
+    if (file.is_open()) {
+        file.close();
+    }
+}
+
+void ModelReader::ReadHeader()
+{
+    file.seekg(0, std::ios::beg);
+    file.read(reinterpret_cast<char*>(&header), sizeof(Header));
+
+    if (std::strncmp(header.magic, MAGIC, 8) != 0) {
+        throw std::runtime_error("Invalid file format - magic number mismatch");
+    }
+
+    if (header.version != VERSION) {
+        throw std::runtime_error("Unsupported version: " + std::to_string(header.version));
+    }
+}
+
+void ModelReader::ReadFileTable()
+{
+    file.seekg(header.fileTableOffset, std::ios::beg);
+
+    fileEntries.resize(header.numFiles);
+    file.read(reinterpret_cast<char*>(fileEntries.data()), sizeof(FileEntry) * header.numFiles);
+}
+
+std::vector<std::string> ModelReader::ListFiles() const
+{
+    std::vector<std::string> files;
+    files.reserve(fileEntries.size());
+
+    for (const auto& entry : fileEntries) {
+        files.emplace_back(entry.filename);
+    }
+
+    return files;
+}
+
+bool ModelReader::HasFile(const std::string& filename) const
+{
+    return GetFileEntry(filename) != nullptr;
+}
+
+const FileEntry* ModelReader::GetFileEntry(const std::string& filename) const
+{
+    for (const auto& entry : fileEntries) {
+        if (filename == entry.filename) {
+            return &entry;
+        }
+    }
+    return nullptr;
+}
+
+std::vector<uint8_t> ModelReader::ReadFile(const std::string& filename) const
+{
+    const FileEntry* entry = GetFileEntry(filename);
+    if (!entry) {
+        throw std::runtime_error("File not found: " + filename);
+    }
+
+    std::vector<uint8_t> compressedData(entry->compressedSize);
+    file.seekg(entry->offset, std::ios::beg);
+    file.read(reinterpret_cast<char*>(compressedData.data()), entry->compressedSize);
+
+    if (entry->compressionType == 1) {
+        return DecompressZlib(compressedData.data(), entry->compressedSize, entry->uncompressedSize);
+    }
+
+    return compressedData;
+}
+
+bool ModelReader::ReadFile(const std::string& filename, void* buffer, size_t bufferSize) const
+{
+    const FileEntry* entry = GetFileEntry(filename);
+    if (!entry) {
+        return false;
+    }
+
+    if (bufferSize < entry->uncompressedSize) {
+        return false;
+    }
+
+    std::vector<uint8_t> compressedData(entry->compressedSize);
+    file.seekg(entry->offset, std::ios::beg);
+    file.read(reinterpret_cast<char*>(compressedData.data()), entry->compressedSize);
+
+    if (entry->compressionType == 1) {
+        // zlib
+        std::vector<uint8_t> decompressed = DecompressZlib(compressedData.data(), entry->compressedSize, entry->uncompressedSize);
+        std::memcpy(buffer, decompressed.data(), entry->uncompressedSize);
+    }
+    else {
+        std::memcpy(buffer, compressedData.data(), entry->compressedSize);
+    }
+
+    return true;
 }
 }

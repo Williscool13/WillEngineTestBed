@@ -63,7 +63,9 @@ public:
 
     void PackageModel();
 
-    void LoadKtx();
+    void TestLoadTempKtx2Texture();
+
+    Renderer::ExtractedMeshletModel LoadModel();
 
     void Initialize();
 
