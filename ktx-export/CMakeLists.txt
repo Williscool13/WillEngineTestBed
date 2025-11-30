@@ -14,7 +14,7 @@ target_link_libraries(ktx-export PRIVATE
         game-lib
         render-lib
         input-lib
-        meshoptimizer
+        miniz
 )
 
 add_custom_command(TARGET ktx-export POST_BUILD

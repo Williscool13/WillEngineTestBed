@@ -4,6 +4,9 @@
 
 #include "model_serialization.h"
 
+#include "crash-handling/logger_helpers.h"
+#include "miniz/miniz.h"
+
 #include "render/model/model_data.h"
 
 namespace KtxExport
@@ -52,32 +55,43 @@ ModelWriter::~ModelWriter()
     }
 }
 
-bool ModelWriter::AddFile(const std::string& filename, const void* data, size_t size)
+bool ModelWriter::AddFile(const std::string& filename, const void* data, size_t size, bool compress)
 {
     if (finalized) {
+        LOG_INFO("Cannot add files after finalization");
         return false;
     }
 
     if (filename.length() >= MAX_FILENAME_LENGTH) {
+        LOG_INFO("Filename too long: " + filename);
         return false;
     }
 
     FileEntry entry{};
-
     std::copy_n(filename.begin(), filename.size(), entry.filename);
     entry.filename[filename.size()] = '\0';
-
-    entry.size = size;
+    entry.uncompressedSize = size;
     entry.offset = 0;
-    fileEntries.push_back(entry);
 
-    std::vector<uint8_t> buffer(size);
-    std::memcpy(buffer.data(), data, size);
+    std::vector<uint8_t> buffer;
+
+    if (compress) {
+        buffer = CompressZlib(data, size);
+        entry.compressedSize = buffer.size();
+        entry.compressionType = 1; // zlib
+    } else {
+        buffer.resize(size);
+        std::memcpy(buffer.data(), data, size);
+        entry.compressedSize = size;
+        entry.compressionType = 0; // none
+    }
+
+    fileEntries.push_back(entry);
     fileData.push_back(std::move(buffer));
     return true;
 }
 
-void ModelWriter::AddFileFromDisk(const std::string& filename, const std::string& sourcePath)
+void ModelWriter::AddFileFromDisk(const std::string& filename, const std::string& sourcePath, bool compress)
 {
     std::ifstream file(sourcePath, std::ios::binary | std::ios::ate);
     if (!file) {
@@ -90,7 +104,7 @@ void ModelWriter::AddFileFromDisk(const std::string& filename, const std::string
     std::vector<uint8_t> buffer(fileSize);
     file.read(reinterpret_cast<char*>(buffer.data()), fileSize);
 
-    AddFile(filename, buffer.data(), buffer.size());
+    AddFile(filename, buffer.data(), buffer.size(), compress);
 }
 
 void ModelWriter::Finalize()
@@ -104,9 +118,9 @@ void ModelWriter::Finalize()
 
     uint64_t currentOffset = sizeof(Header);
 
-    for (size_t i = 0; i < fileEntries.size(); i++) {
-        fileEntries[i].offset = currentOffset;
-        currentOffset += fileEntries[i].size;
+    for (FileEntry& fileEntry : fileEntries) {
+        fileEntry.offset = currentOffset;
+        currentOffset += fileEntry.compressedSize;
     }
 
     uint64_t fileTableOffset = currentOffset;
@@ -127,5 +141,35 @@ void ModelWriter::Finalize()
     }
 
     finalized = true;
+}
+
+
+std::vector<uint8_t> CompressZlib(const void* data, size_t size)
+{
+    mz_ulong compressedSize = mz_compressBound(size);
+    std::vector<uint8_t> compressed(compressedSize);
+
+    int result = mz_compress(compressed.data(), &compressedSize, static_cast<const unsigned char*>(data), size);
+
+    if (result != MZ_OK) {
+        throw std::runtime_error("Compression failed");
+    }
+
+    compressed.resize(compressedSize);
+    return compressed;
+}
+
+std::vector<uint8_t> DecompressZlib(const void* data, size_t compressedSize, size_t uncompressedSize)
+{
+    std::vector<uint8_t> decompressed(uncompressedSize);
+    mz_ulong destLen = uncompressedSize;
+
+    int result = mz_uncompress(decompressed.data(), &destLen, static_cast<const unsigned char*>(data), compressedSize);
+
+    if (result != MZ_OK) {
+        throw std::runtime_error("Decompression failed");
+    }
+
+    return decompressed;
 }
 }

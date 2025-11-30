@@ -43,15 +43,23 @@ KtxExport::~KtxExport() = default;
 
 void KtxExport::CreateModelTemp()
 {
+    if (!meshletModel.bSuccessfullyLoaded) {
+        LOG_INFO("Not yet loaded");
+        return;
+    }
+
     static bool onlyOnce = false;
     if (onlyOnce) {
-        fmt::println("Already pressed once");
+        LOG_INFO("Already pressed once");
         return;
     }
 
     onlyOnce = true;
-    fmt::println("Creating model object");
+    LOG_INFO("Creating model object");
 
+    if (std::filesystem::exists("temp")) {
+        std::filesystem::remove_all("temp");
+    }
     std::filesystem::create_directories("temp");
     std::ofstream binFile("temp/model.bin", std::ios::binary);
     WriteModelBinary(binFile, meshletModel);
@@ -140,7 +148,7 @@ void KtxExport::CreateModelTemp()
             const VkSubmitInfo2 submitInfo = Renderer::VkHelpers::SubmitInfo(&cmdSubmitInfo, nullptr, nullptr);
             VK_CHECK(vkQueueSubmit2(vulkanContext->graphicsQueue, 1, &submitInfo, immFence));
             VK_CHECK(vkWaitForFences(vulkanContext->device, 1, &immFence, true, 1000000000));
-            fmt::println("Created mipmap chain for image {}", i);
+            LOG_INFO("Created mipmap chain for image {}", i);
         }
 
         ktxTexture2* texture;
@@ -201,13 +209,13 @@ void KtxExport::CreateModelTemp()
         ktxBasisParams params{};
         params.structSize = sizeof(params);
         params.uastc = KTX_TRUE;
-        // params.qualityLevel =  128;
+        // params.qualityLevel = 128;
         params.verbose = KTX_FALSE;
 
         result = ktxTexture2_CompressBasisEx(texture, &params);
 
         ktxTexture_WriteToNamedFile(ktxTexture(texture), ktxPath.c_str());
-        fmt::println("Wrote {}", ktxPath);
+        LOG_INFO("Wrote {}", ktxPath);
         ktxTexture_Destroy(ktxTexture(texture));
     }
 }
@@ -215,7 +223,20 @@ void KtxExport::CreateModelTemp()
 void KtxExport::PackageModel()
 {
     ModelWriter writer("sponza2.willmodel");
-    writer.AddFileFromDisk("model.bin", "temp_model.bin");
+    writer.AddFileFromDisk("model.bin", "temp/model.bin", true);
+
+    uint32_t i = 0;
+    while (true) {
+        std::string sourcePath = fmt::format("temp/texture_{}.ktx2", i);
+        if (!std::filesystem::exists(sourcePath)) {
+            break;
+        }
+
+        std::string archiveName = fmt::format("textures/texture_{}.ktx2", i);
+        writer.AddFileFromDisk(archiveName, sourcePath, true);
+        i++;
+    }
+
     writer.Finalize();
 }
 
@@ -433,6 +454,9 @@ void KtxExport::Run()
         }
         if (input.IsKeyPressed(Key::L)) {
             LoadKtx();
+        }
+        if (input.IsKeyPressed(Key::SEMICOLON)) {
+            PackageModel();
         }
 
         input.UpdateFocus(SDL_GetWindowFlags(window));
@@ -821,7 +845,7 @@ void KtxExport::Render(uint32_t currentFrameInFlight, Renderer::FrameSynchroniza
 
     if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR) {
         bSwapchainOutdated = true;
-        fmt::print("Swapchain out of date or suboptimal (Present)\n");
+        LOG_INFO("Swapchain out of date or suboptimal (Present)\n");
     }
 }
 

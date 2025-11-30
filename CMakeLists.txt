@@ -66,6 +66,13 @@ target_include_directories(Jolt PUBLIC
         ${PHYSICS_REPO_ROOT}
 )
 set(CMAKE_CXX_STANDARD 20) # Jolt sets cxx standard to 17
+
+add_library(miniz STATIC
+        extern/miniz/miniz.c
+        extern/miniz/miniz.h
+)
+target_include_directories(miniz PUBLIC extern/miniz)
+
 # Common
 add_library(engine-common STATIC
         src/utils/utils.cpp

@@ -60,7 +60,9 @@ struct FileEntry
 {
     char filename[MAX_FILENAME_LENGTH];
     uint64_t offset;
-    uint64_t size;
+    uint64_t compressedSize;
+    uint64_t uncompressedSize;
+    uint32_t compressionType; // 0 = none, 1 = zlib
 };
 
 struct Header
@@ -78,9 +80,9 @@ public:
 
     ~ModelWriter();
 
-    bool AddFile(const std::string& filename, const void* data, size_t size);
+    bool AddFile(const std::string& filename, const void* data, size_t size, bool compress);
 
-    void AddFileFromDisk(const std::string& filename, const std::string& sourcePath);
+    void AddFileFromDisk(const std::string& filename, const std::string& sourcePath, bool compress);
 
     void Finalize();
 
@@ -90,6 +92,10 @@ private:
     std::vector<std::vector<uint8_t> > fileData;
     bool finalized = false;
 };
+
+std::vector<uint8_t> CompressZlib(const void* data, size_t size);
+std::vector<uint8_t> DecompressZlib(const void* data, size_t compressedSize, size_t uncompressedSize);
+
 }
 
 #endif //WILLENGINETESTBED_MODEL_FORMAT_H
