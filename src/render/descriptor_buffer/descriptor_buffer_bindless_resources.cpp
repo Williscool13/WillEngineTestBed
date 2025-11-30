@@ -152,8 +152,8 @@ bool DescriptorBufferBindlessResources::ForceAllocateTexture(int32_t bindingArra
     char* bufferPtr = basePtr + bindingArrayIndex * sampledImageDescriptorSize;
     vkGetDescriptorEXT(context->device, &descriptorGetInfo, sampledImageDescriptorSize, bufferPtr);
 
-    if (std::ranges::find(freeSamplerIndices, bindingArrayIndex) != freeSamplerIndices.end()) {
-        LOG_ERROR("[DescriptorBufferUniform] Binding index {} is not allocated", bindingArrayIndex);
+    if (std::ranges::find(freeTextureIndices, bindingArrayIndex) != freeTextureIndices.end()) {
+        LOG_ERROR("[DescriptorBufferUniform::ForceAllocateTexture] Texture binding index {} is not allocated", bindingArrayIndex);
         return false;
     }
 

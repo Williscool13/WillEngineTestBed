@@ -1158,7 +1158,7 @@ AllocatedImage ModelLoader::RecordCreateImageFromData(VkCommandBuffer cmd, size_
 
     VkImageMemoryBarrier2 barrier = VkHelpers::ImageMemoryBarrier(
         newImage.handle,
-        VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT),
+        VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT, 1, 1),
         VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_UNDEFINED,
         VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
     );
@@ -1186,14 +1186,24 @@ AllocatedImage ModelLoader::RecordCreateImageFromData(VkCommandBuffer cmd, size_
     // }
     // else {
     // }
-    barrier = VkHelpers::ImageMemoryBarrier(
+    VkImageMemoryBarrier2 barriers[2];
+    barriers[0] = VkHelpers::ImageMemoryBarrier(
         newImage.handle,
-        VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT),
+        VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT, 1, 1),
         VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
         VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
     );
-    barrier.srcQueueFamilyIndex = context->transferQueueFamily;
-    barrier.dstQueueFamilyIndex = context->graphicsQueueFamily;
+    barriers[1] = VkHelpers::ImageMemoryBarrier(
+        newImage.handle,
+        VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT, 1, 1),
+        VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+    );
+    barriers[1].srcQueueFamilyIndex = context->transferQueueFamily;
+    barriers[1].dstQueueFamilyIndex = context->graphicsQueueFamily;
+    depInfo.imageMemoryBarrierCount = 2;
+    depInfo.pImageMemoryBarriers = barriers;
+
     vkCmdPipelineBarrier2(cmd, &depInfo);
     newImage.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 

@@ -41,10 +41,16 @@ KtxExport::KtxExport() = default;
 
 KtxExport::~KtxExport() = default;
 
-void KtxExport::CreateModelObject()
+void KtxExport::CreateModelTemp()
 {
-    auto sponzaPath = std::filesystem::path("../assets/sponza2/Sponza.gltf");
-    Renderer::ExtractedMeshletModel meshletModel = modelLoader->LoadMeshletGltf(sponzaPath, true);
+    static bool onlyOnce = false;
+    if (onlyOnce) {
+        fmt::println("Already pressed once");
+        return;
+    }
+
+    onlyOnce = true;
+    fmt::println("Creating model object");
 
     std::filesystem::create_directories("temp");
     std::ofstream binFile("temp/model.bin", std::ios::binary);
@@ -65,24 +71,37 @@ void KtxExport::CreateModelObject()
             VK_CHECK(vkBeginCommandBuffer(cmd, &cmdBeginInfo));
 
 
+            VkImageMemoryBarrier2 firstBarrier = Renderer::VkHelpers::ImageMemoryBarrier(
+                image.handle,
+                Renderer::VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1),
+                VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
+            );
+            firstBarrier.srcQueueFamilyIndex = vulkanContext->transferQueueFamily;
+            firstBarrier.dstQueueFamilyIndex = vulkanContext->graphicsQueueFamily;
+            VkDependencyInfo firstDepInfo{.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+            firstDepInfo.imageMemoryBarrierCount = 1;
+            firstDepInfo.pImageMemoryBarriers = &firstBarrier;
+            vkCmdPipelineBarrier2(cmd, &firstDepInfo);
+
             for (uint32_t mip = 1; mip < mipLevels; mip++) {
-                VkImageMemoryBarrier2 barrier = Renderer::VkHelpers::ImageMemoryBarrier(
+                VkImageMemoryBarrier2 barriers[2];
+                barriers[0] = Renderer::VkHelpers::ImageMemoryBarrier(
                     image.handle,
-                    Renderer::VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT, mip - 1, 1),
+                    Renderer::VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT, mip - 1, 1, 0, 1),
                     VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                     VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
                 );
-                VkDependencyInfo depInfo{.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
-                depInfo.imageMemoryBarrierCount = 1;
-                depInfo.pImageMemoryBarriers = &barrier;
-                vkCmdPipelineBarrier2(cmd, &depInfo);
-
-                barrier = Renderer::VkHelpers::ImageMemoryBarrier(
+                barriers[1] = Renderer::VkHelpers::ImageMemoryBarrier(
                     image.handle,
-                    Renderer::VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT, mip, 1),
+                    Renderer::VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT, mip, 1, 0, 1),
                     VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_UNDEFINED,
                     VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
                 );
+
+                VkDependencyInfo depInfo{.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+                depInfo.imageMemoryBarrierCount = 2;
+                depInfo.pImageMemoryBarriers = barriers;
                 vkCmdPipelineBarrier2(cmd, &depInfo);
 
                 VkImageBlit blit{};
@@ -106,7 +125,7 @@ void KtxExport::CreateModelObject()
 
             VkImageMemoryBarrier2 finalBarrier = Renderer::VkHelpers::ImageMemoryBarrier(
                 image.handle,
-                Renderer::VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT, 0, mipLevels),
+                Renderer::VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT, mipLevels - 1, 1, 0, 1),
                 VK_PIPELINE_STAGE_2_BLIT_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                 VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
             );
@@ -121,6 +140,7 @@ void KtxExport::CreateModelObject()
             const VkSubmitInfo2 submitInfo = Renderer::VkHelpers::SubmitInfo(&cmdSubmitInfo, nullptr, nullptr);
             VK_CHECK(vkQueueSubmit2(vulkanContext->graphicsQueue, 1, &submitInfo, immFence));
             VK_CHECK(vkWaitForFences(vulkanContext->device, 1, &immFence, true, 1000000000));
+            fmt::println("Created mipmap chain for image {}", i);
         }
 
         ktxTexture2* texture;
@@ -136,7 +156,7 @@ void KtxExport::CreateModelObject()
         createInfo.isArray = KTX_FALSE;
         createInfo.generateMipmaps = KTX_FALSE;
 
-        KTX_error_code result = ktxTexture2_Create(&createInfo, KTX_TEXTURE_CREATE_ALLOC_STORAGE, &texture);
+        ktx_error_code_e result = ktxTexture2_Create(&createInfo, KTX_TEXTURE_CREATE_ALLOC_STORAGE, &texture);
 
         for (uint32_t mip = 0; mip < mipLevels; mip++) {
             uint32_t mipWidth = std::max(1u, image.extent.width >> mip);
@@ -177,47 +197,26 @@ void KtxExport::CreateModelObject()
         }
         // Write KTX2 file
         std::string ktxPath = "temp/texture_" + std::to_string(i) + ".ktx2";
+
+        ktxBasisParams params{};
+        params.structSize = sizeof(params);
+        params.uastc = KTX_TRUE;
+        // params.qualityLevel =  128;
+        params.verbose = KTX_FALSE;
+
+        result = ktxTexture2_CompressBasisEx(texture, &params);
+
         ktxTexture_WriteToNamedFile(ktxTexture(texture), ktxPath.c_str());
+        fmt::println("Wrote {}", ktxPath);
         ktxTexture_Destroy(ktxTexture(texture));
     }
+}
 
-    // ModelWriter writer("sponza2.willmodel");
-    // writer.AddFileFromDisk("model.bin", "temp_model.bin");
-    // writer.Finalize();
-
-    std::filesystem::path wallImagePath = std::filesystem::path("../assets/wall.jpg");
-
-    int32_t width{};
-    int32_t height{};
-    int32_t nrChannels{};
-    auto stbiData = stbi_load(wallImagePath.string().c_str(), &width, &height, &nrChannels, 4);
-
-    ktxTexture2* texture;
-    ktxTextureCreateInfo createInfo;
-    createInfo.vkFormat = VK_FORMAT_R8G8B8A8_UNORM;
-    createInfo.baseWidth = width;
-    createInfo.baseHeight = height;
-    createInfo.baseDepth = 1;
-    createInfo.numDimensions = 2;
-    // Note: it is not necessary to provide a full mipmap pyramid.
-    // createInfo.numLevels = log2(createInfo.baseWidth) + 1;
-    createInfo.numLevels = 1;
-    createInfo.numLayers = 1;
-    createInfo.numFaces = 1;
-    createInfo.isArray = KTX_FALSE;
-    createInfo.generateMipmaps = KTX_FALSE;
-    KTX_error_code result = ktxTexture2_Create(&createInfo, KTX_TEXTURE_CREATE_ALLOC_STORAGE, &texture);
-
-
-    ktx_uint32_t layer = 0;
-    ktx_uint32_t faceSlice = 0;
-    ktx_uint32_t level = 0;
-    ktx_size_t srcSize = width * height * 4;
-    result = ktxTexture_SetImageFromMemory(ktxTexture(texture), level, layer, faceSlice, stbiData, srcSize);
-
-    ktxTexture_WriteToNamedFile(ktxTexture(texture), "../assets/wall.ktx2");
-    ktxTexture_Destroy(ktxTexture(texture));
-    stbi_image_free(stbiData);
+void KtxExport::PackageModel()
+{
+    ModelWriter writer("sponza2.willmodel");
+    writer.AddFileFromDisk("model.bin", "temp_model.bin");
+    writer.Finalize();
 }
 
 void KtxExport::LoadKtx()
@@ -233,20 +232,46 @@ void KtxExport::LoadKtx()
                                                         &vkFuncs);
     }
 
-    ktxTexture* loadedTexture = nullptr;
-    std::filesystem::path ktxImagePath = std::filesystem::path("../assets/wall.ktx2");
-    KTX_error_code result = ktxTexture_CreateFromNamedFile(ktxImagePath.string().c_str(), KTX_TEXTURE_CREATE_NO_FLAGS, &loadedTexture);
-    result = ktxTexture_VkUploadEx(loadedTexture, vulkanDeviceInfo, &wallTexture, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    ktxTexture2* loadedTexture = nullptr;
+    static uint32_t i = 0;
+    std::string s = fmt::format("temp/texture_{}.ktx2", i);
+    std::filesystem::path ktxImagePath = std::filesystem::path(s);
+    i += 1;
+    ktx_error_code_e result = ktxTexture2_CreateFromNamedFile(ktxImagePath.string().c_str(), KTX_TEXTURE_CREATE_NO_FLAGS, &loadedTexture);
+    if (result != KTX_SUCCESS) {
+        i = 0;
+        return;
+    }
 
-    ktxTexture_Destroy(loadedTexture);
+    // Transcode if needed (UASTC)
+    if (ktxTexture2_NeedsTranscoding(loadedTexture)) {
+        ktx_transcode_fmt_e targetFormat = KTX_TTF_BC7_RGBA;
+
+        result = ktxTexture2_TranscodeBasis(loadedTexture, targetFormat, 0);
+        if (result != KTX_SUCCESS) {
+            LOG_ERROR("Failed to transcode texture");
+        }
+    }
+
+    if (wallTexture.image != VK_NULL_HANDLE) {
+        ktxVulkanTexture_Destruct(&wallTexture, vulkanContext->device, nullptr);
+    }
+    result = ktxTexture2_VkUploadEx(loadedTexture, vulkanDeviceInfo, &wallTexture, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+    ktxTexture2_Destroy(loadedTexture);
 
     VkImageViewCreateInfo viewInfo = Renderer::VkHelpers::ImageViewCreateInfo(wallTexture.image, wallTexture.imageFormat, VK_IMAGE_ASPECT_COLOR_BIT);
     viewInfo.viewType = wallTexture.viewType;
     viewInfo.subresourceRange.layerCount = wallTexture.layerCount;
     viewInfo.subresourceRange.levelCount = wallTexture.levelCount;
-    wallImageView = Renderer::VkResources::CreateImageView(vulkanContext.get(), viewInfo);
+    testImageView = Renderer::VkResources::CreateImageView(vulkanContext.get(), viewInfo);
 
-    bindlessResourcesDescriptorBuffer.ForceAllocateTexture(0, {.imageView = wallImageView.handle, .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL});
+    for (int i2 = 0; i2 < 100; ++i2) {
+        bool res = bindlessResourcesDescriptorBuffer.ForceAllocateTexture(i2, {.imageView = testImageView.handle, .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL});
+        if (!res) {
+            break;
+        }
+    }
 }
 
 void KtxExport::Initialize()
@@ -347,7 +372,7 @@ void KtxExport::Initialize()
     const VkFenceCreateInfo fenceInfo = Renderer::VkHelpers::FenceCreateInfo();
     VK_CHECK(vkCreateFence(vulkanContext->device, &fenceInfo, nullptr, &immFence));
 
-    const VkCommandPoolCreateInfo poolInfo = Renderer::VkHelpers::CommandPoolCreateInfo(VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
+    const VkCommandPoolCreateInfo poolInfo = Renderer::VkHelpers::CommandPoolCreateInfo(vulkanContext->graphicsQueueFamily);
     VK_CHECK(vkCreateCommandPool(vulkanContext->device, &poolInfo, nullptr, &immCommandPool));
 
     const VkCommandBufferAllocateInfo allocInfo = Renderer::VkHelpers::CommandBufferAllocateInfo(1, immCommandPool);
@@ -398,8 +423,13 @@ void KtxExport::Run()
             break;
         }
 
+
+        if (input.IsKeyPressed(Key::J)) {
+            auto sponzaPath = std::filesystem::path("../assets/sponza2/Sponza.gltf");
+            meshletModel = modelLoader->LoadMeshletGltf(sponzaPath, true);
+        }
         if (input.IsKeyPressed(Key::K)) {
-            CreateModelObject();
+            CreateModelTemp();
         }
         if (input.IsKeyPressed(Key::L)) {
             LoadKtx();
@@ -810,6 +840,9 @@ void KtxExport::Cleanup()
     if (ktxTextureCommandPool) {
         vkDestroyCommandPool(vulkanContext->device, ktxTextureCommandPool, nullptr);
     }
+
+    vkDestroyCommandPool(vulkanContext->device, immCommandPool, nullptr);
+    vkDestroyFence(vulkanContext->device, immFence, nullptr);
 
     SDL_DestroyWindow(window);
 }

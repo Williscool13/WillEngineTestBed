@@ -70,6 +70,17 @@ VkImageSubresourceRange VkHelpers::SubresourceRange(const VkImageAspectFlags asp
     };
 }
 
+VkImageSubresourceRange VkHelpers::SubresourceRange(const VkImageAspectFlags aspectMask, const uint32_t baseMipLevel, const uint32_t levelCount, const uint32_t baseArrayLayer, const uint32_t layerCount)
+{
+    return {
+        .aspectMask = aspectMask,
+        .baseMipLevel = baseMipLevel,
+        .levelCount = levelCount,
+        .baseArrayLayer = baseArrayLayer,
+        .layerCount = layerCount,
+    };
+}
+
 VkDependencyInfo VkHelpers::DependencyInfo(VkImageMemoryBarrier2* imageBarrier)
 {
     return {

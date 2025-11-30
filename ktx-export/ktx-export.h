@@ -59,7 +59,9 @@ public:
 
     ~KtxExport();
 
-    void CreateModelObject();
+    void CreateModelTemp();
+
+    void PackageModel();
 
     void LoadKtx();
 
@@ -140,8 +142,8 @@ private:
     ktxVulkanDeviceInfo* vulkanDeviceInfo{nullptr};
     ktxVulkanTexture wallTexture{.image = VK_NULL_HANDLE};
 
-    Renderer::ImageView wallImageView;
-
+    Renderer::ImageView testImageView;
+    Renderer::ExtractedMeshletModel meshletModel;
 
     Renderer::AllocatedBuffer imageStagingBuffer{};
     Renderer::AllocatedBuffer imageReceivingBuffer{};

@@ -20,6 +20,7 @@ VkBufferMemoryBarrier2 BufferMemoryBarrier(VkBuffer buffer, VkDeviceSize offset,
                                                       VkPipelineStageFlagBits2 dstStageMask, VkAccessFlagBits2 dstAccessMask);
 
 VkImageSubresourceRange SubresourceRange(VkImageAspectFlags aspectMask, uint32_t levelCount = VK_REMAINING_MIP_LEVELS, uint32_t layerCount = VK_REMAINING_ARRAY_LAYERS);
+VkImageSubresourceRange SubresourceRange(VkImageAspectFlags aspectMask, uint32_t baseMipLevel, uint32_t levelCount, uint32_t baseArrayLayer, uint32_t layerCount);
 
 VkDependencyInfo DependencyInfo(VkImageMemoryBarrier2* imageBarrier);
 
