@@ -209,6 +209,7 @@ void KtxExport::CreateModelTemp()
         ktxBasisParams params{};
         params.structSize = sizeof(params);
         params.uastc = KTX_TRUE;
+        params.uastcRDO = KTX_TRUE;
         // params.qualityLevel = 128;
         params.verbose = KTX_FALSE;
 

@@ -160,15 +160,15 @@ void meshMain(
         vertices[i].tangent = v.tangent;
 
         // Fancy color per-meshlet
-        // uint meshletID = gid.x;
-        // uint hash = meshletID * 747796405u + 2891336453u;
-        // float3 color = float3(
-        //     (hash & 0xFF) / 255.0,
-        //     ((hash >> 8) & 0xFF) / 255.0,
-        //     ((hash >> 16) & 0xFF) / 255.0
-        // );
-        // vertices[i].color = float4(color, 1.0);
-        vertices[i].color = v.color;
+        uint meshletID = gid.x;
+        uint hash = meshletID * 747796405u + 2891336453u;
+        float3 color = float3(
+            (hash & 0xFF) / 255.0,
+            ((hash >> 8) & 0xFF) / 255.0,
+            ((hash >> 16) & 0xFF) / 255.0
+        );
+        vertices[i].color = float4(color * v.color.xyz, 1.0);
+        // vertices[i].color = v.color;
 
         vertices[i].materialIndex = inPayload.materialIndex;
     }

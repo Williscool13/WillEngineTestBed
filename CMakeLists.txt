@@ -20,7 +20,12 @@ add_subdirectory(extern/vk-bootstrap)
 add_subdirectory(extern/fastgltf)
 add_subdirectory(extern/OffsetAllocator)
 add_subdirectory(extern/meshoptimizer)
-add_subdirectory(extern/KTX-Software)
+set(LIBKTX_FEATURE_GL_UPLOAD OFF CACHE BOOL "" FORCE)
+set(LIBKTX_FEATURE_ETC_UNPACK OFF CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(KTX_FEATURE_TESTS OFF)
+set(KTX_FEATURE_JS OFF)
+add_subdirectory(extern/KTX-Software/lib)
 
 # My Libs
 add_subdirectory(src/crash-handling)
