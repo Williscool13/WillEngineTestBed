@@ -26,6 +26,7 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(KTX_FEATURE_TESTS OFF)
 set(KTX_FEATURE_JS OFF)
 add_subdirectory(extern/KTX-Software/lib)
+add_subdirectory(extern/freetype)
 
 # My Libs
 add_subdirectory(src/crash-handling)
@@ -118,3 +119,4 @@ add_subdirectory(template)
 add_subdirectory(meshlet)
 add_subdirectory(instancing)
 add_subdirectory(ktx-export)
+add_subdirectory(ui-rendering)
