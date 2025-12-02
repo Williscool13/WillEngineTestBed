@@ -36,6 +36,13 @@ struct Vertex
     glm::vec4 weights;
 };
 
+struct UIVertex
+{
+    glm::vec2 position;
+    glm::vec2 uv;
+    uint32_t color;
+};
+
 struct MaterialProperties
 {
     // Base PBR properties

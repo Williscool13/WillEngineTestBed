@@ -24,6 +24,7 @@
 
 #include "input/input.h"
 #include "render/render_context.h"
+#include "render/vk_descriptors.h"
 #include "render/vk_imgui_wrapper.h"
 
 namespace UIRendering
@@ -54,6 +55,7 @@ void UIRendering::SetupFont()
     VkImageCreateInfo imageCreateInfo = Renderer::VkHelpers::ImageCreateInfo(
         VK_FORMAT_R8_UNORM, fontExtents,
         VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
+    imageCreateInfo.arrayLayers = 4;
     fontAtlas = Renderer::VkResources::CreateAllocatedImage(vulkanContext.get(), imageCreateInfo);
 
 
@@ -177,6 +179,60 @@ void UIRendering::SetupFont()
     };
     defaultSamplerLinear = Renderer::VkResources::CreateSampler(vulkanContext.get(), samplerInfo);
     int32_t samplerIndex = bindlessResourcesDescriptorBuffer.AllocateSampler(defaultSamplerLinear.handle);
+
+    imageViewCreateInfo = Renderer::VkHelpers::ImageViewCreateInfo(
+        fontAtlas.handle,
+        fontAtlas.format,
+        VK_IMAGE_ASPECT_COLOR_BIT
+    );
+    imageViewCreateInfo.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+    imageViewCreateInfo.subresourceRange.layerCount = 4;
+    fontAtlasArrayView = Renderer::VkResources::CreateImageView(vulkanContext.get(), imageViewCreateInfo);
+    VkDescriptorImageInfo imageInfo2{
+        .sampler = defaultSamplerLinear.handle,
+        .imageView = fontAtlasArrayView.handle,
+        .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+
+    };
+    int32_t index2 = fontAtlasDescriptorBuffer.AllocateDescriptorSet();
+    fontAtlasDescriptorBuffer.UpdateDescriptor(imageInfo2, index2, 0, 0);
+}
+
+void UIRendering::RenderText(const char* text, float x, float y, float scale, uint32_t color)
+{
+    Renderer::UIVertex* vertices = static_cast<Renderer::UIVertex*>(textVertexBuffer.allocationInfo.pMappedData);
+    int vertexIndex = 0;
+
+    float cursorX = x;
+    float cursorY = y;
+
+    for (const char* c = text; *c != '\0'; c++) {
+        if (!glyphMap.contains(*c)) continue;
+
+        GlyphInfo& glyph = glyphMap[*c];
+
+        float x0 = cursorX + glyph.bearingX * scale;
+        float y0 = cursorY - glyph.bearingY * scale;
+        float x1 = x0 + glyph.width * scale;
+        float y1 = y0 + glyph.height * scale;
+
+        float u0 = static_cast<float>(glyph.atlasX) / Renderer::FONT_ATLAS_DIM;
+        float v0 = static_cast<float>(glyph.atlasY + glyph.height) / Renderer::FONT_ATLAS_DIM;
+        float u1 = static_cast<float>(glyph.atlasX + glyph.width) / Renderer::FONT_ATLAS_DIM;
+        float v1 = static_cast<float>(glyph.atlasY) / Renderer::FONT_ATLAS_DIM;
+
+        vertices[vertexIndex++] = {{x0, y0}, {u0, v0}, color};
+        vertices[vertexIndex++] = {{x1, y0}, {u1, v0}, color};
+        vertices[vertexIndex++] = {{x0, y1}, {u0, v1}, color};
+
+        vertices[vertexIndex++] = {{x1, y0}, {u1, v0}, color};
+        vertices[vertexIndex++] = {{x1, y1}, {u1, v1}, color};
+        vertices[vertexIndex++] = {{x0, y1}, {u0, v1}, color};
+
+        cursorX += glyph.advance * scale;
+    }
+
+    vertexCount = vertexIndex;
 }
 
 void UIRendering::Initialize()
@@ -234,14 +290,28 @@ void UIRendering::Initialize()
     bufferInfo.usage = VK_BUFFER_USAGE_2_VERTEX_BUFFER_BIT;
     bufferInfo.size = sizeof(Renderer::Vertex) * Renderer::MEGA_VERTEX_BUFFER_COUNT;
     megaVertexBuffer = Renderer::VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
+    bufferInfo.size = sizeof(Renderer::UIVertex) * Renderer::MEGA_VERTEX_BUFFER_COUNT;
+    textVertexBuffer = Renderer::VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
     bufferInfo.usage = VK_BUFFER_USAGE_2_INDEX_BUFFER_BIT;
     bufferInfo.size = sizeof(uint32_t) * Renderer::MEGA_INDEX_BUFFER_COUNT;
     megaIndexBuffer = Renderer::VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
 
+
+    DescriptorLayoutBuilder layoutBuilder{2};
+    layoutBuilder.AddBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1);
+
+    VkDescriptorSetLayoutCreateInfo layoutCreateInfo = layoutBuilder.Build(
+        static_cast<VkShaderStageFlagBits>(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT),
+        VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT
+    );
+    fontAtlasSetLayout = Renderer::VkResources::CreateDescriptorSetLayout(vulkanContext.get(), layoutCreateInfo);
+
     bindlessResourcesDescriptorBuffer = Renderer::DescriptorBufferBindlessResources(vulkanContext.get());
+    fontAtlasDescriptorBuffer = Renderer::DescriptorBufferCombinedImageSampler(vulkanContext.get(), fontAtlasSetLayout.handle);
 
     renderPipeline = Renderer::RenderPipeline(vulkanContext.get());
     basicTextureRenderPipeline = Renderer::BasicTextureRenderPipeline(vulkanContext.get(), bindlessResourcesDescriptorBuffer.descriptorSetLayout.handle);
+    textRenderingPipeline = Renderer::TextRenderingPipeline(vulkanContext.get(), fontAtlasSetLayout.handle);
 
     // setup basic cube
     std::vector<Renderer::Vertex> cubeVertices = {
@@ -307,6 +377,11 @@ void UIRendering::Initialize()
     imageStagingBuffer = Renderer::VkResources::CreateAllocatedStagingBuffer(vulkanContext.get(), Renderer::STAGING_BUFFER_SIZE);
 
     SetupFont();
+
+    std::array<uint32_t, 2> scaledRenderExtent = renderContext->GetScaledRenderExtent();
+    float centerX = scaledRenderExtent[0] / 2.0f;
+    float centerY = scaledRenderExtent[1] / 2.0f;
+    RenderText("HELLO WORLD", centerX, centerY, 1.0f, 0xFFFFFFFF);
 }
 
 void UIRendering::DrawImgui()
@@ -469,16 +544,14 @@ void UIRendering::Render(float deltaTime, uint32_t currentFrameInFlight, Rendere
         vkCmdPipelineBarrier2(cmd, &dependencyInfo);
     }
 
+    constexpr VkClearValue colorClear = {.color = {0.3f, 0.0f, 0.0f, 1.0f}};
+    const VkRenderingAttachmentInfo colorAttachment = Renderer::VkHelpers::RenderingAttachmentInfo(renderTargets->drawImageView.handle, &colorClear, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+    constexpr VkClearValue depthClear = {.depthStencil = {0.0f, 0u}};
+    const VkRenderingAttachmentInfo depthAttachment = Renderer::VkHelpers::RenderingAttachmentInfo(renderTargets->depthImageView.handle, &depthClear, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+    const VkRenderingInfo renderInfo = Renderer::VkHelpers::RenderingInfo({scaledRenderExtent[0], scaledRenderExtent[1]}, &colorAttachment, &depthAttachment);
+    vkCmdBeginRendering(cmd, &renderInfo);
     //
     {
-        constexpr VkClearValue colorClear = {.color = {0.3f, 0.0f, 0.0f, 1.0f}};
-        const VkRenderingAttachmentInfo colorAttachment = Renderer::VkHelpers::RenderingAttachmentInfo(renderTargets->drawImageView.handle, &colorClear, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
-        constexpr VkClearValue depthClear = {.depthStencil = {0.0f, 0u}};
-        const VkRenderingAttachmentInfo depthAttachment = Renderer::VkHelpers::RenderingAttachmentInfo(renderTargets->depthImageView.handle, &depthClear, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
-        const VkRenderingInfo renderInfo = Renderer::VkHelpers::RenderingInfo({scaledRenderExtent[0], scaledRenderExtent[1]}, &colorAttachment, &depthAttachment);
-
-
-        vkCmdBeginRendering(cmd, &renderInfo);
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, basicTextureRenderPipeline.pipeline.handle);
 
         VkViewport viewport = Renderer::VkHelpers::GenerateViewport(scaledRenderExtent[0], scaledRenderExtent[1]);
@@ -504,9 +577,35 @@ void UIRendering::Render(float deltaTime, uint32_t currentFrameInFlight, Rendere
         vkCmdBindVertexBuffers(cmd, 0, 1, &megaVertexBuffer.handle, &vertexOffset);
         vkCmdBindIndexBuffer(cmd, megaIndexBuffer.handle, 0, VK_INDEX_TYPE_UINT32);
         vkCmdDrawIndexed(cmd, cubeIndexCount, 1, 0, 0, 0);
-
-        vkCmdEndRendering(cmd);
     }
+
+    //
+    if (vertexCount > 0) {
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, textRenderingPipeline.pipeline.handle);
+
+        VkViewport viewport = Renderer::VkHelpers::GenerateViewport(scaledRenderExtent[0], scaledRenderExtent[1]);
+        vkCmdSetViewport(cmd, 0, 1, &viewport);
+        VkRect2D scissor = Renderer::VkHelpers::GenerateScissor(scaledRenderExtent[0], scaledRenderExtent[1]);
+        vkCmdSetScissor(cmd, 0, 1, &scissor);
+
+        Renderer::AllocatedBuffer& currentSceneDataBuffer = sceneDataBuffers[currentFrameInFlight];
+        Renderer::TextRenderingPushConstant pushData{
+            currentSceneDataBuffer.address,
+        };
+
+        vkCmdPushConstants(cmd, textRenderingPipeline.pipelineLayout.handle, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(Renderer::TextRenderingPushConstant), &pushData);
+        VkDescriptorBufferBindingInfoEXT bindingInfo = fontAtlasDescriptorBuffer.GetBindingInfo();
+        vkCmdBindDescriptorBuffersEXT(cmd, 1, &bindingInfo);
+        uint32_t bufferIndex = 0;
+        VkDeviceSize bufferOffset = 0;
+        vkCmdSetDescriptorBufferOffsetsEXT(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, textRenderingPipeline.pipelineLayout.handle, 0, 1, &bufferIndex, &bufferOffset);
+
+        constexpr VkDeviceSize vertexOffset{0};
+        vkCmdBindVertexBuffers(cmd, 0, 1, &textVertexBuffer.handle, &vertexOffset);
+        vkCmdDraw(cmd, vertexCount, 1, 0, 0);
+    }
+
+    vkCmdEndRendering(cmd);
 
     uint32_t swapchainImageIndex;
     VkResult e = vkAcquireNextImageKHR(vulkanContext->device, swapchain->handle, UINT64_MAX, frameSync.swapchainSemaphore, nullptr, &swapchainImageIndex);
@@ -521,26 +620,26 @@ void UIRendering::Render(float deltaTime, uint32_t currentFrameInFlight, Rendere
     // todo: barriers
     // Imgui Draw
     {
-        VkRenderingAttachmentInfo imguiAttachment{};
-        imguiAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        imguiAttachment.pNext = nullptr;
-        imguiAttachment.imageView = renderTargets->drawImageView.handle;
-        imguiAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        imguiAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-        imguiAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        VkRenderingInfo renderInfo{};
-        renderInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-        renderInfo.pNext = nullptr;
-        renderInfo.renderArea = VkRect2D{VkOffset2D{0, 0}, swapchain->extent};
-        renderInfo.layerCount = 1;
-        renderInfo.colorAttachmentCount = 1;
-        renderInfo.pColorAttachments = &imguiAttachment;
-        renderInfo.pDepthAttachment = nullptr;
-        renderInfo.pStencilAttachment = nullptr;
-
-        vkCmdBeginRendering(cmd, &renderInfo);
-        ImGui_ImplVulkan_RenderDrawData(&imguiSnapshot.DrawData, cmd);
-        vkCmdEndRendering(cmd);
+        // VkRenderingAttachmentInfo imguiAttachment{};
+        // imguiAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+        // imguiAttachment.pNext = nullptr;
+        // imguiAttachment.imageView = renderTargets->drawImageView.handle;
+        // imguiAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        // imguiAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+        // imguiAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        // VkRenderingInfo renderInfo{};
+        // renderInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+        // renderInfo.pNext = nullptr;
+        // renderInfo.renderArea = VkRect2D{VkOffset2D{0, 0}, swapchain->extent};
+        // renderInfo.layerCount = 1;
+        // renderInfo.colorAttachmentCount = 1;
+        // renderInfo.pColorAttachments = &imguiAttachment;
+        // renderInfo.pDepthAttachment = nullptr;
+        // renderInfo.pStencilAttachment = nullptr;
+        //
+        // vkCmdBeginRendering(cmd, &renderInfo);
+        // ImGui_ImplVulkan_RenderDrawData(&imguiSnapshot.DrawData, cmd);
+        // vkCmdEndRendering(cmd);
     }
 
 

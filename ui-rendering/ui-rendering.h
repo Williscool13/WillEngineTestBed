@@ -17,8 +17,10 @@
 #include "render/vk_resources.h"
 #include "render/vk_types.h"
 #include "render/descriptor_buffer/descriptor_buffer_bindless_resources.h"
+#include "render/descriptor_buffer/descriptor_buffer_combined_image_sampler.h"
 #include "render/pipelines/basic_texture_render_pipeline.h"
 #include "render/pipelines/render_pipeline.h"
+#include "render/pipelines/text_rendering_pipeline.h"
 #include "utils/utils.h"
 
 
@@ -52,6 +54,8 @@ public:
     ~UIRendering();
 
     void SetupFont();
+
+    void RenderText(const char* text, float x, float y, float scale, uint32_t color);
 
     void Initialize();
 
@@ -92,7 +96,14 @@ private:
     uint32_t cubeIndexCount{};
     Renderer::RenderPipeline renderPipeline;
     Renderer::BasicTextureRenderPipeline basicTextureRenderPipeline;
+
+    Renderer::TextRenderingPipeline textRenderingPipeline;
     Renderer::DescriptorBufferBindlessResources bindlessResourcesDescriptorBuffer{};
+    Renderer::DescriptorSetLayout fontAtlasSetLayout{};
+    Renderer::DescriptorBufferCombinedImageSampler fontAtlasDescriptorBuffer{};
+    Renderer::AllocatedBuffer textVertexBuffer;
+    uint32_t vertexCount{0};
+    OffsetAllocator::Allocator textVertexAllocator{sizeof(uint32_t) * Renderer::MEGA_INDEX_BUFFER_COUNT};
 
     VkFence immFence{VK_NULL_HANDLE};
     VkCommandPool immCommandPool{VK_NULL_HANDLE};
@@ -100,10 +111,13 @@ private:
     Renderer::AllocatedBuffer imageStagingBuffer{};
     OffsetAllocator::Allocator stagingAllocator{Renderer::STAGING_BUFFER_SIZE};
 
+
+
 private:
     FT_Library ft;
     Renderer::AllocatedImage fontAtlas;
     Renderer::ImageView fontAtlasView;
+    Renderer::ImageView fontAtlasArrayView;
     Renderer::Sampler defaultSamplerLinear{};
     std::unordered_map<char, GlyphInfo> glyphMap;
 };
