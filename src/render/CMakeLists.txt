@@ -83,6 +83,8 @@ add_library(render-lib STATIC
         pipelines/instancing/instancing_compact_and_generate_indirect_pipeline.h
         pipelines/instancing/instancing_indirect_mesh_pipeline.cpp
         pipelines/instancing/instancing_indirect_mesh_pipeline.h
+        pipelines/basic_texture_render_pipeline.cpp
+        pipelines/basic_texture_render_pipeline.h
 )
 
 target_link_libraries(render-lib PUBLIC

@@ -46,11 +46,39 @@ void UIRendering::SetupFont()
     }
 
     FT_Set_Pixel_Sizes(face, 0, 48);
-    LOG_INFO("OK");
 
     constexpr std::array upperAlphabet{'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'};
     constexpr std::array lowerAlphabet{'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z'};
 
+    constexpr VkExtent3D fontExtents{Renderer::FONT_ATLAS_DIM, Renderer::FONT_ATLAS_DIM, 1};
+    VkImageCreateInfo imageCreateInfo = Renderer::VkHelpers::ImageCreateInfo(
+        VK_FORMAT_R8_UNORM, fontExtents,
+        VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
+    fontAtlas = Renderer::VkResources::CreateAllocatedImage(vulkanContext.get(), imageCreateInfo);
+
+
+    VK_CHECK(vkResetFences(vulkanContext->device, 1, &immFence));
+    VK_CHECK(vkResetCommandBuffer(immCommandBuffer, 0));
+    const VkCommandBufferBeginInfo cmdBeginInfo = Renderer::VkHelpers::CommandBufferBeginInfo();
+    VK_CHECK(vkBeginCommandBuffer(immCommandBuffer, &cmdBeginInfo));
+
+    VkImageMemoryBarrier2 barrier = Renderer::VkHelpers::ImageMemoryBarrier(
+        fontAtlas.handle,
+        Renderer::VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT),
+        VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_UNDEFINED,
+        VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
+    );
+
+    VkDependencyInfo depInfo{.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+    depInfo.imageMemoryBarrierCount = 1;
+    depInfo.pImageMemoryBarriers = &barrier;
+    vkCmdPipelineBarrier2(immCommandBuffer, &depInfo);
+
+    std::vector<VkBufferImageCopy> copies{};
+    stagingAllocator.reset();
+    int currentX = 0;
+    int currentY = 0;
+    int rowHeight = 0;
     for (char upperLetter : upperAlphabet) {
         if (FT_Load_Char(face, upperLetter, FT_LOAD_RENDER)) {
             LOG_ERROR("Failed to load {}", upperLetter);
@@ -59,34 +87,96 @@ void UIRendering::SetupFont()
 
         FT_GlyphSlot slot = face->glyph;
         FT_Bitmap& bitmap = slot->bitmap;
-        // upload this to atlas bitmap.buffer;
+        size_t size = bitmap.width * bitmap.rows;
+
+        if (currentX + bitmap.width > Renderer::FONT_ATLAS_DIM) {
+            currentX = 0;
+            currentY += rowHeight;
+            rowHeight = 0;
+        }
+
+        OffsetAllocator::Allocation bitmapAlloc = stagingAllocator.allocate(size);
+        char* bufferOffset = static_cast<char*>(imageStagingBuffer.allocationInfo.pMappedData) + bitmapAlloc.offset;
+        memcpy(bufferOffset, bitmap.buffer, size);
+
+        VkBufferImageCopy copyRegion = {};
+        copyRegion.bufferOffset = bitmapAlloc.offset;
+        copyRegion.bufferRowLength = 0;
+        copyRegion.bufferImageHeight = 0;
+        copyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        copyRegion.imageSubresource.mipLevel = 0;
+        copyRegion.imageSubresource.baseArrayLayer = 0;
+        copyRegion.imageSubresource.layerCount = 1;
+        copyRegion.imageOffset = {currentX, currentY, 0};
+        copyRegion.imageExtent = {bitmap.width, bitmap.rows, 1};
+
+        copies.push_back(copyRegion);
+
         glyphMap[upperLetter] = {
-            .atlasX = 0,
-            .atlasY = 0,
+            .atlasX = currentX,
+            .atlasY = currentY,
             .width = bitmap.width,
             .height = bitmap.rows,
             .bearingX = slot->bitmap_left,
             .bearingY = slot->bitmap_top,
             .advance = slot->advance.x >> 6,
         };
+
+        currentX += bitmap.width;
+        rowHeight = std::max(rowHeight, static_cast<int>(bitmap.rows));
     }
 
+    vkCmdCopyBufferToImage(immCommandBuffer, imageStagingBuffer.handle, fontAtlas.handle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, copies.size(), copies.data());
 
-    // Access the glyph slot
-    FT_GlyphSlot slot = face->glyph;
+    barrier = Renderer::VkHelpers::ImageMemoryBarrier(
+        fontAtlas.handle,
+        Renderer::VkHelpers::SubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT),
+        VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+    );
 
-    // Bitmap data
-    FT_Bitmap& bitmap = slot->bitmap;
-    unsigned char* buffer = bitmap.buffer; // Pixel data (grayscale)
-    unsigned int width = bitmap.width; // Bitmap width in pixels
-    unsigned int height = bitmap.rows; // Bitmap height in pixels
+    depInfo.imageMemoryBarrierCount = 1;
+    depInfo.pImageMemoryBarriers = &barrier;
+    vkCmdPipelineBarrier2(immCommandBuffer, &depInfo);
 
-    // Metrics (in pixels since we used FT_LOAD_RENDER)
-    int bearing_x = slot->bitmap_left; // Horizontal bearing
-    int bearing_y = slot->bitmap_top; // Vertical bearing
-    int advance = slot->advance.x >> 6;
-
+    VK_CHECK(vkEndCommandBuffer(immCommandBuffer));
+    VkCommandBufferSubmitInfo cmdSubmitInfo = Renderer::VkHelpers::CommandBufferSubmitInfo(immCommandBuffer);
+    const VkSubmitInfo2 submitInfo = Renderer::VkHelpers::SubmitInfo(&cmdSubmitInfo, nullptr, nullptr);
+    VK_CHECK(vkQueueSubmit2(vulkanContext->graphicsQueue, 1, &submitInfo, immFence));
+    vkWaitForFences(vulkanContext->device, 1, &immFence, true, UINT64_MAX);
     // FT_Get_Kerning()
+
+    VkImageViewCreateInfo imageViewCreateInfo = Renderer::VkHelpers::ImageViewCreateInfo(fontAtlas.handle, fontAtlas.format, VK_IMAGE_ASPECT_COLOR_BIT);
+    fontAtlasView = Renderer::VkResources::CreateImageView(vulkanContext.get(), imageViewCreateInfo);
+
+    VkDescriptorImageInfo imageInfo{
+        .imageView = fontAtlasView.handle,
+        .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+
+    };
+    int32_t index = bindlessResourcesDescriptorBuffer.AllocateTexture(imageInfo);
+
+    VkSamplerCreateInfo samplerInfo = {
+        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .pNext = nullptr,
+        .magFilter = VK_FILTER_LINEAR,
+        .minFilter = VK_FILTER_LINEAR,
+        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+        .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .mipLodBias = 0.0f,
+        .anisotropyEnable = VK_TRUE,
+        .maxAnisotropy = 16.0f,
+        .compareEnable = VK_FALSE,
+        .compareOp = VK_COMPARE_OP_ALWAYS,
+        .minLod = 0.0f,
+        .maxLod = VK_LOD_CLAMP_NONE,
+        .borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
+        .unnormalizedCoordinates = VK_FALSE
+    };
+    defaultSamplerLinear = Renderer::VkResources::CreateSampler(vulkanContext.get(), samplerInfo);
+    int32_t samplerIndex = bindlessResourcesDescriptorBuffer.AllocateSampler(defaultSamplerLinear.handle);
 }
 
 void UIRendering::Initialize()
@@ -148,40 +238,43 @@ void UIRendering::Initialize()
     bufferInfo.size = sizeof(uint32_t) * Renderer::MEGA_INDEX_BUFFER_COUNT;
     megaIndexBuffer = Renderer::VkResources::CreateAllocatedBuffer(vulkanContext.get(), bufferInfo, vmaAllocInfo);
 
+    bindlessResourcesDescriptorBuffer = Renderer::DescriptorBufferBindlessResources(vulkanContext.get());
+
     renderPipeline = Renderer::RenderPipeline(vulkanContext.get());
+    basicTextureRenderPipeline = Renderer::BasicTextureRenderPipeline(vulkanContext.get(), bindlessResourcesDescriptorBuffer.descriptorSetLayout.handle);
 
     // setup basic cube
     std::vector<Renderer::Vertex> cubeVertices = {
         // Front face (z+)
-        {{-0.5f, -0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
-        {{0.5f, -0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
-        {{0.5f, 0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
-        {{-0.5f, 0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
+        {{-0.5f, -0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+        {{0.5f, -0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+        {{0.5f, 0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f}},
+        {{-0.5f, 0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f}},
         // Back face (z-)
-        {{0.5f, -0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 0.0f, 1.0f}},
-        {{-0.5f, -0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 0.0f, 1.0f}},
-        {{-0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 0.0f, 1.0f}},
-        {{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 0.0f, 1.0f}},
+        {{0.5f, -0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+        {{-0.5f, -0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+        {{-0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 0.0f, 1.0f}, {1.0f, 0.0f}},
+        {{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 0.0f, 1.0f}, {0.0f, 0.0f}},
         // Top face (y+)
-        {{-0.5f, 0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f, 1.0f}},
-        {{0.5f, 0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f, 1.0f}},
-        {{0.5f, 0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f, 1.0f}},
-        {{-0.5f, 0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f, 1.0f}},
+        {{-0.5f, 0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
+        {{0.5f, 0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
+        {{0.5f, 0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f, 1.0f}, {1.0f, 0.0f}},
+        {{-0.5f, 0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f, 1.0f}, {0.0f, 0.0f}},
         // Bottom face (y-)
-        {{-0.5f, -0.5f, -0.5f}, {0.0f, -1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 0.0f, 1.0f}},
-        {{0.5f, -0.5f, -0.5f}, {0.0f, -1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 0.0f, 1.0f}},
-        {{0.5f, -0.5f, 0.5f}, {0.0f, -1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 0.0f, 1.0f}},
-        {{-0.5f, -0.5f, 0.5f}, {0.0f, -1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 0.0f, 1.0f}},
+        {{-0.5f, -0.5f, -0.5f}, {0.0f, -1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+        {{0.5f, -0.5f, -0.5f}, {0.0f, -1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+        {{0.5f, -0.5f, 0.5f}, {0.0f, -1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 0.0f, 1.0f}, {1.0f, 0.0f}},
+        {{-0.5f, -0.5f, 0.5f}, {0.0f, -1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 0.0f, 1.0f}, {0.0f, 0.0f}},
         // Right face (x+)
-        {{0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f, 1.0f}},
-        {{0.5f, -0.5f, 0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f, 1.0f}},
-        {{0.5f, 0.5f, 0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f, 1.0f}},
-        {{0.5f, 0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f, 1.0f}},
+        {{0.5f, -0.5f, 0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
+        {{0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
+        {{0.5f, 0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f, 1.0f}, {1.0f, 0.0f}},
+        {{0.5f, 0.5f, 0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f, 1.0f}, {0.0f, 0.0f}},
         // Left face (x-)
-        {{-0.5f, -0.5f, 0.5f}, {-1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f, 1.0f}},
-        {{-0.5f, -0.5f, -0.5f}, {-1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f, 1.0f}},
-        {{-0.5f, 0.5f, -0.5f}, {-1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f, 1.0f}},
-        {{-0.5f, 0.5f, 0.5f}, {-1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f, 1.0f}},
+        {{-0.5f, -0.5f, -0.5f}, {-1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
+        {{-0.5f, -0.5f, 0.5f}, {-1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
+        {{-0.5f, 0.5f, 0.5f}, {-1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f, 1.0f}, {1.0f, 0.0f}},
+        {{-0.5f, 0.5f, -0.5f}, {-1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f, 1.0f}, {0.0f, 0.0f}},
     };
 
     std::vector<uint32_t> cubeIndices = {
@@ -200,6 +293,18 @@ void UIRendering::Initialize()
     memcpy(indexDataPtr, cubeIndices.data(), cubeIndices.size() * sizeof(uint32_t));
 
     cubeIndexCount = static_cast<uint32_t>(cubeIndices.size());
+
+
+    const VkFenceCreateInfo fenceInfo = Renderer::VkHelpers::FenceCreateInfo();
+    VK_CHECK(vkCreateFence(vulkanContext->device, &fenceInfo, nullptr, &immFence));
+
+    const VkCommandPoolCreateInfo poolInfo = Renderer::VkHelpers::CommandPoolCreateInfo(vulkanContext->graphicsQueueFamily);
+    VK_CHECK(vkCreateCommandPool(vulkanContext->device, &poolInfo, nullptr, &immCommandPool));
+
+    const VkCommandBufferAllocateInfo allocInfo = Renderer::VkHelpers::CommandBufferAllocateInfo(1, immCommandPool);
+    VK_CHECK(vkAllocateCommandBuffers(vulkanContext->device, &allocInfo, &immCommandBuffer));
+
+    imageStagingBuffer = Renderer::VkResources::CreateAllocatedStagingBuffer(vulkanContext.get(), Renderer::STAGING_BUFFER_SIZE);
 
     SetupFont();
 }
@@ -374,7 +479,7 @@ void UIRendering::Render(float deltaTime, uint32_t currentFrameInFlight, Rendere
 
 
         vkCmdBeginRendering(cmd, &renderInfo);
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, renderPipeline.pipeline.handle);
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, basicTextureRenderPipeline.pipeline.handle);
 
         VkViewport viewport = Renderer::VkHelpers::GenerateViewport(scaledRenderExtent[0], scaledRenderExtent[1]);
         vkCmdSetViewport(cmd, 0, 1, &viewport);
@@ -382,17 +487,21 @@ void UIRendering::Render(float deltaTime, uint32_t currentFrameInFlight, Rendere
         vkCmdSetScissor(cmd, 0, 1, &scissor);
 
         Renderer::AllocatedBuffer& currentSceneDataBuffer = sceneDataBuffers[currentFrameInFlight];
-        Renderer::RenderPushConstants pushData{
+        Renderer::Render3PushConstants pushData{
             glm::mat4(1.0f),
             currentSceneDataBuffer.address,
         };
 
-        vkCmdPushConstants(cmd, renderPipeline.pipelineLayout.handle, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(Renderer::RenderPushConstants), &pushData);
+        vkCmdPushConstants(cmd, basicTextureRenderPipeline.pipelineLayout.handle, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(Renderer::Render3PushConstants), &pushData);
 
+        VkDescriptorBufferBindingInfoEXT bindingInfo = bindlessResourcesDescriptorBuffer.GetBindingInfo();
+        vkCmdBindDescriptorBuffersEXT(cmd, 1, &bindingInfo);
+        uint32_t bufferIndexImage = 0;
+        VkDeviceSize bufferOffset = 0;
+        vkCmdSetDescriptorBufferOffsetsEXT(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, basicTextureRenderPipeline.pipelineLayout.handle, 0, 1, &bufferIndexImage, &bufferOffset);
 
-        const VkBuffer vertexBuffers[2] = {megaVertexBuffer.handle, megaVertexBuffer.handle};
-        constexpr VkDeviceSize vertexOffsets[2] = {0, 0};
-        vkCmdBindVertexBuffers(cmd, 0, 2, vertexBuffers, vertexOffsets);
+        constexpr VkDeviceSize vertexOffset{0};
+        vkCmdBindVertexBuffers(cmd, 0, 1, &megaVertexBuffer.handle, &vertexOffset);
         vkCmdBindIndexBuffer(cmd, megaIndexBuffer.handle, 0, VK_INDEX_TYPE_UINT32);
         vkCmdDrawIndexed(cmd, cubeIndexCount, 1, 0, 0, 0);
 

@@ -16,6 +16,8 @@
 #include "render/vk_synchronization.h"
 #include "render/vk_resources.h"
 #include "render/vk_types.h"
+#include "render/descriptor_buffer/descriptor_buffer_bindless_resources.h"
+#include "render/pipelines/basic_texture_render_pipeline.h"
 #include "render/pipelines/render_pipeline.h"
 #include "utils/utils.h"
 
@@ -89,9 +91,20 @@ private:
 
     uint32_t cubeIndexCount{};
     Renderer::RenderPipeline renderPipeline;
+    Renderer::BasicTextureRenderPipeline basicTextureRenderPipeline;
+    Renderer::DescriptorBufferBindlessResources bindlessResourcesDescriptorBuffer{};
+
+    VkFence immFence{VK_NULL_HANDLE};
+    VkCommandPool immCommandPool{VK_NULL_HANDLE};
+    VkCommandBuffer immCommandBuffer{VK_NULL_HANDLE};
+    Renderer::AllocatedBuffer imageStagingBuffer{};
+    OffsetAllocator::Allocator stagingAllocator{Renderer::STAGING_BUFFER_SIZE};
 
 private:
     FT_Library ft;
+    Renderer::AllocatedImage fontAtlas;
+    Renderer::ImageView fontAtlasView;
+    Renderer::Sampler defaultSamplerLinear{};
     std::unordered_map<char, GlyphInfo> glyphMap;
 };
 }

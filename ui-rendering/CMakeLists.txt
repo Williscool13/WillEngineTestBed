@@ -23,4 +23,6 @@ target_link_libraries(ui-rendering PRIVATE
 compile_shaders(ui-rendering
         ${CMAKE_SOURCE_DIR}/shaders/render2.slang vertex vertexMain
         ${CMAKE_SOURCE_DIR}/shaders/render2.slang fragment fragmentMain
+        ${CMAKE_SOURCE_DIR}/shaders/render3.slang vertex vertexMain
+        ${CMAKE_SOURCE_DIR}/shaders/render3.slang fragment fragmentMain
 )
