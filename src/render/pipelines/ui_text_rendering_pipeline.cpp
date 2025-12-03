@@ -76,10 +76,16 @@ UITextRenderingPipeline::UITextRenderingPipeline(VulkanContext* context, VkDescr
             .location = 3,
             .binding = 0,
             .format = VK_FORMAT_R32_UINT,
-            .offset = offsetof(UIVertex, textureIndex),
+            .offset = offsetof(UIVertex, samplerIndex),
         },
         {
             .location = 4,
+            .binding = 0,
+            .format = VK_FORMAT_R32_UINT,
+            .offset = offsetof(UIVertex, textureIndex),
+        },
+        {
+            .location = 5,
             .binding = 0,
             .format = VK_FORMAT_R32_UINT,
             .offset = offsetof(UIVertex, bIsText),
@@ -105,7 +111,7 @@ UITextRenderingPipeline::UITextRenderingPipeline(VulkanContext* context, VkDescr
     renderPipelineBuilder.SetupInputAssembly(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
     renderPipelineBuilder.SetupRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE, VK_FRONT_FACE_COUNTER_CLOCKWISE);
     renderPipelineBuilder.DisableMultisampling();
-    renderPipelineBuilder.EnableDepthTest(true, VK_COMPARE_OP_GREATER_OR_EQUAL);
+    renderPipelineBuilder.DisableDepthTest();
     renderPipelineBuilder.SetupRenderer({DRAW_IMAGE_FORMAT}, VK_FORMAT_D32_SFLOAT);
     renderPipelineBuilder.SetupPipelineLayout(pipelineLayout.handle);
     VkGraphicsPipelineCreateInfo pipelineCreateInfo = renderPipelineBuilder.GeneratePipelineCreateInfo();

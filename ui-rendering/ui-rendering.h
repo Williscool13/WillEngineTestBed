@@ -50,7 +50,7 @@ struct UIRect
 {
     glm::vec2 pos;
     glm::vec2 size;
-    glm::vec4 color;
+    uint32_t packedTintColor;
 };
 
 struct UIImage
@@ -59,7 +59,7 @@ struct UIImage
     glm::vec2 size;
     uint32_t bindlessSamplerIndex;
     uint32_t bindlessTextureIndex;
-    glm::vec4 tint;
+    uint32_t packedTintColor;
 };
 
 struct UIButton
@@ -124,9 +124,11 @@ public:
 
     void GenerateUIBuffer(Renderer::AllocatedBuffer& buffer, uint32_t& vertexCount);
 
-    static void UIRenderRect(UIRect& rect, Renderer::AllocatedBuffer& buffer, uint32_t& vertexCount);
-    static void UIRenderImage(UIImage& image, Renderer::AllocatedBuffer& buffer, uint32_t& vertexCount);
-    static void UIRenderText(UIText& text, std::unordered_map<char, GlyphInfo>& glyphMap, Renderer::UIVertex* vertices, int32_t& vertexIndex);
+    void UIRenderRect(UIRect& rect, Renderer::UIVertex* vertices, int32_t& vertexIndex);
+
+    void UIRenderImage(UIImage& image, Renderer::UIVertex* vertices, int32_t& vertexIndex);
+
+    void UIRenderText(UIText& text, std::unordered_map<char, GlyphInfo>& glyphMap, Renderer::UIVertex* vertices, int32_t& vertexIndex);
 
 private:
     SDL_Window* window{nullptr};
@@ -182,6 +184,10 @@ private:
 
     Renderer::AllocatedImage whiteTexture;
     Renderer::ImageView whiteTextureView;
+
+    uint32_t whiteTextureIndex{~0u};
+    uint32_t defaultSamplerIndex{~0u};
+    uint32_t atlasTextureIndex{~0u};
 
     UIState uiState{};
 };

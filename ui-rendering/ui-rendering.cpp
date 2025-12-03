@@ -210,10 +210,10 @@ void UIRendering::SetupFont()
         .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
 
     };
-    int32_t textureIndex = bindlessResourcesDescriptorBuffer.AllocateTexture(imageInfo);
+    whiteTextureIndex = bindlessResourcesDescriptorBuffer.AllocateTexture(imageInfo);
 
     imageInfo.imageView = fontAtlasView.handle;;
-    int32_t textureIndex2 = bindlessResourcesDescriptorBuffer.AllocateTexture(imageInfo);
+    atlasTextureIndex = bindlessResourcesDescriptorBuffer.AllocateTexture(imageInfo);
 
     VkSamplerCreateInfo samplerInfo = {
         .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
@@ -235,7 +235,7 @@ void UIRendering::SetupFont()
         .unnormalizedCoordinates = VK_FALSE
     };
     defaultSamplerLinear = Renderer::VkResources::CreateSampler(vulkanContext.get(), samplerInfo);
-    int32_t samplerIndex = bindlessResourcesDescriptorBuffer.AllocateSampler(defaultSamplerLinear.handle);
+    defaultSamplerIndex = bindlessResourcesDescriptorBuffer.AllocateSampler(defaultSamplerLinear.handle);
 
     imageViewCreateInfo = Renderer::VkHelpers::ImageViewCreateInfo(
         fontAtlas.handle,
@@ -527,6 +527,20 @@ void UIRendering::Render(float deltaTime, uint32_t currentFrameInFlight, Rendere
         .scale = 1
     });
 
+    uiState.rects.push_back({
+        .pos = {10.0f, 10.0f},
+        .size = {100.0f, 100.0f},
+        .packedTintColor = 0xFF00FF00,
+    });
+
+    uiState.images.push_back({
+        .pos = {scaledRenderExtent[0] - 266.0f, 10.0f},
+        .size = {256.0f, 256.0f},
+        .bindlessSamplerIndex = defaultSamplerIndex,
+        .bindlessTextureIndex = atlasTextureIndex,
+        .packedTintColor = 0xFFFFFFFF,
+    });
+
     std::pair<Renderer::AllocatedBuffer, uint32_t>& currentUIBuffer = textVertexBuffers[currentFrameInFlight];
     GenerateUIBuffer(currentUIBuffer.first, currentUIBuffer.second);
 
@@ -627,11 +641,14 @@ void UIRendering::Render(float deltaTime, uint32_t currentFrameInFlight, Rendere
         };
 
         vkCmdPushConstants(cmd, textRenderingPipeline.pipelineLayout.handle, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(Renderer::TextRenderingPushConstant), &pushData);
-        VkDescriptorBufferBindingInfoEXT bindingInfo = fontAtlasDescriptorBuffer.GetBindingInfo();
-        vkCmdBindDescriptorBuffersEXT(cmd, 1, &bindingInfo);
-        uint32_t bufferIndex = 0;
-        VkDeviceSize bufferOffset = 0;
-        vkCmdSetDescriptorBufferOffsetsEXT(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, textRenderingPipeline.pipelineLayout.handle, 0, 1, &bufferIndex, &bufferOffset);
+        VkDescriptorBufferBindingInfoEXT bindingInfos[2];
+        bindingInfos[0] = fontAtlasDescriptorBuffer.GetBindingInfo();
+        bindingInfos[1] = bindlessResourcesDescriptorBuffer.GetBindingInfo();
+        vkCmdBindDescriptorBuffersEXT(cmd, 2, bindingInfos);
+
+        uint32_t bufferIndices[2] = {0, 1};
+        VkDeviceSize bufferOffsets[2] = {0, 0};
+        vkCmdSetDescriptorBufferOffsetsEXT(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, textRenderingPipeline.pipelineLayout.handle, 0, 2, bufferIndices, bufferOffsets);
 
         constexpr VkDeviceSize vertexOffset{0};
         vkCmdBindVertexBuffers(cmd, 0, 1, &currentUIBuffer.first.handle, &vertexOffset);
@@ -773,6 +790,14 @@ void UIRendering::GenerateUIBuffer(Renderer::AllocatedBuffer& buffer, uint32_t& 
     auto* vertices = static_cast<Renderer::UIVertex*>(buffer.allocationInfo.pMappedData);
     int32_t vertexIndex = 0;
 
+    for (auto& rect : uiState.rects) {
+        UIRenderRect(rect, vertices, vertexIndex);
+    }
+
+    for (auto& image : uiState.images) {
+        UIRenderImage(image, vertices, vertexIndex);
+    }
+
     for (auto& text : uiState.texts) {
         // font not implemented yet
         UIRenderText(text, glyphMap, vertices, vertexIndex);
@@ -781,23 +806,37 @@ void UIRendering::GenerateUIBuffer(Renderer::AllocatedBuffer& buffer, uint32_t& 
     vertexCount = vertexIndex;
 }
 
-void UIRendering::UIRenderRect(UIRect& rect, Renderer::AllocatedBuffer& buffer, uint32_t& vertexCount)
+void UIRendering::UIRenderRect(UIRect& rect, Renderer::UIVertex* vertices, int32_t& vertexIndex)
 {
-    // float x0 = rect.pos.x;
-    // float y0 = rect.pos.y;
-    // float x1 = x0 + rect.size.x;
-    // float y1 = y0 + rect.size.y;
-    //
-    // vertices[vertexIndex++] = {{x0, y0}, {0, 0}, rect.color};
-    // vertices[vertexIndex++] = {{x1, y0}, {1, 0}, rect.color};
-    // vertices[vertexIndex++] = {{x0, y1}, {0, 1}, rect.color};
-    //
-    // vertices[vertexIndex++] = {{x1, y0}, {1, 0}, rect.color};
-    // vertices[vertexIndex++] = {{x1, y1}, {1, 1}, rect.color};
-    // vertices[vertexIndex++] = {{x0, y1}, {0, 1}, rect.color};
+    float x0 = rect.pos.x;
+    float y0 = rect.pos.y;
+    float x1 = x0 + rect.size.x;
+    float y1 = y0 + rect.size.y;
+
+    vertices[vertexIndex++] = {{x0, y0}, {0.0f, 0.0f}, rect.packedTintColor, defaultSamplerIndex, whiteTextureIndex, 0};
+    vertices[vertexIndex++] = {{x1, y0}, {1.0f, 0.0f}, rect.packedTintColor, defaultSamplerIndex, whiteTextureIndex, 0};
+    vertices[vertexIndex++] = {{x0, y1}, {0.0f, 1.0f}, rect.packedTintColor, defaultSamplerIndex, whiteTextureIndex, 0};
+
+    vertices[vertexIndex++] = {{x1, y0}, {1.0f, 0.0f}, rect.packedTintColor, defaultSamplerIndex, whiteTextureIndex, 0};
+    vertices[vertexIndex++] = {{x1, y1}, {1.0f, 1.0f}, rect.packedTintColor, defaultSamplerIndex, whiteTextureIndex, 0};
+    vertices[vertexIndex++] = {{x0, y1}, {0.0f, 1.0f}, rect.packedTintColor, defaultSamplerIndex, whiteTextureIndex, 0};
 }
 
-void UIRendering::UIRenderImage(UIImage& image, Renderer::AllocatedBuffer& buffer, uint32_t& vertexCount) {}
+void UIRendering::UIRenderImage(UIImage& image, Renderer::UIVertex* vertices, int32_t& vertexIndex)
+{
+    float x0 = image.pos.x;
+    float y0 = image.pos.y;
+    float x1 = x0 + image.size.x;
+    float y1 = y0 + image.size.y;
+
+    vertices[vertexIndex++] = {{x0, y0}, {0.0f, 0.0f}, image.packedTintColor, image.bindlessSamplerIndex, image.bindlessTextureIndex, 0};
+    vertices[vertexIndex++] = {{x1, y0}, {1.0f, 0.0f}, image.packedTintColor, image.bindlessSamplerIndex, image.bindlessTextureIndex, 0};
+    vertices[vertexIndex++] = {{x0, y1}, {0.0f, 1.0f}, image.packedTintColor, image.bindlessSamplerIndex, image.bindlessTextureIndex, 0};
+
+    vertices[vertexIndex++] = {{x1, y0}, {1.0f, 0.0f}, image.packedTintColor, image.bindlessSamplerIndex, image.bindlessTextureIndex, 0};
+    vertices[vertexIndex++] = {{x1, y1}, {1.0f, 1.0f}, image.packedTintColor, image.bindlessSamplerIndex, image.bindlessTextureIndex, 0};
+    vertices[vertexIndex++] = {{x0, y1}, {0.0f, 1.0f}, image.packedTintColor, image.bindlessSamplerIndex, image.bindlessTextureIndex, 0};
+}
 
 void UIRendering::UIRenderText(UIText& text, std::unordered_map<char, GlyphInfo>& glyphMap, Renderer::UIVertex* vertices, int32_t& vertexIndex)
 {

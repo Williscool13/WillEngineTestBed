@@ -7,7 +7,8 @@ struct VertexOutput {
     float4 color : COLOR0;
     float2 uv : TEXCOORD0;
     nointerpolation uint textureIndex : TEXCOORD1;
-    nointerpolation uint bIsText : TEXCOORD2;
+    nointerpolation uint samplerIndex : TEXCOORD2;
+    nointerpolation uint bIsText : TEXCOORD3;
 };
 
 struct PushConsts {
@@ -27,6 +28,7 @@ VertexOutput vertexMain(UIVertex vertex, uniform PushConsts pushConstants) {
     output.uv = vertex.uv;
     output.color = UnpackRGBA8(vertex.color);  // Unpack RGBA8 to float4
     output.textureIndex = vertex.textureIndex;
+    output.samplerIndex = vertex.samplerIndex;
     output.bIsText = vertex.bIsText;
 
     return output;
@@ -51,7 +53,7 @@ float4 fragmentMain(VertexOutput input) : SV_Target {
         sampled = float4(1.0, 1.0, 1.0, alpha);
     } else {
         // image samples bindless
-        // sampled = textures[NonUniformResourceIndex(input.textureIndex)].Sample(samplers[0], input.uv);
+        sampled = textures[NonUniformResourceIndex(input.textureIndex)].Sample(samplers[NonUniformResourceIndex(input.samplerIndex)], input.uv);
     }
 
     return sampled * input.color;

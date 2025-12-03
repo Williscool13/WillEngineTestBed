@@ -42,6 +42,7 @@ struct UIVertex
     glm::vec2 position{0,0};
     glm::vec2 uv{0,0};
     uint32_t color{0xFFFFFFFF};
+    uint32_t samplerIndex{0};
     uint32_t textureIndex{0};
     uint32_t bIsText{1};
 };
