@@ -20,7 +20,7 @@
 #include "render/descriptor_buffer/descriptor_buffer_combined_image_sampler.h"
 #include "render/pipelines/basic_texture_render_pipeline.h"
 #include "render/pipelines/render_pipeline.h"
-#include "render/pipelines/text_rendering_pipeline.h"
+#include "render/pipelines/ui_text_rendering_pipeline.h"
 #include "utils/utils.h"
 
 
@@ -46,6 +46,63 @@ struct GlyphInfo
     int32_t advance;
 };
 
+struct UIRect
+{
+    glm::vec2 pos;
+    glm::vec2 size;
+    glm::vec4 color;
+};
+
+struct UIImage
+{
+    glm::vec2 pos;
+    glm::vec2 size;
+    uint32_t bindlessSamplerIndex;
+    uint32_t bindlessTextureIndex;
+    glm::vec4 tint;
+};
+
+struct UIButton
+{
+    UIRect rect;
+    std::function<void()> onClick;
+    bool isHovered;
+};
+
+struct UIButtonImage
+{
+    UIImage rect;
+    std::function<void()> onClick;
+    bool isHovered;
+};
+
+struct UIText
+{
+    std::string text;
+    glm::vec2 pos;
+    uint32_t packedColor;
+    uint32_t fontIndex;
+    float scale;
+};
+
+struct UIState
+{
+    std::vector<UIRect> rects;
+    std::vector<UIImage> images;
+    std::vector<UIButton> buttons;
+    std::vector<UIButtonImage> buttonImages;
+    std::vector<UIText> texts;
+
+    void Clear()
+    {
+        rects.clear();
+        images.clear();
+        buttons.clear();
+        buttonImages.clear();
+        texts.clear();
+    }
+};
+
 class UIRendering
 {
 public:
@@ -54,8 +111,6 @@ public:
     ~UIRendering();
 
     void SetupFont();
-
-    void RenderText(const char* text, float x, float y, float scale, uint32_t color);
 
     void Initialize();
 
@@ -66,6 +121,12 @@ public:
     void Render(float deltaTime, uint32_t currentFrameInFlight, Renderer::FrameSynchronization& frameSync, ImDrawDataSnapshot& imguiSnapshot);
 
     void Cleanup();
+
+    void GenerateUIBuffer(Renderer::AllocatedBuffer& buffer, uint32_t& vertexCount);
+
+    static void UIRenderRect(UIRect& rect, Renderer::AllocatedBuffer& buffer, uint32_t& vertexCount);
+    static void UIRenderImage(UIImage& image, Renderer::AllocatedBuffer& buffer, uint32_t& vertexCount);
+    static void UIRenderText(UIText& text, std::unordered_map<char, GlyphInfo>& glyphMap, Renderer::UIVertex* vertices, int32_t& vertexIndex);
 
 private:
     SDL_Window* window{nullptr};
@@ -97,12 +158,12 @@ private:
     Renderer::RenderPipeline renderPipeline;
     Renderer::BasicTextureRenderPipeline basicTextureRenderPipeline;
 
-    Renderer::TextRenderingPipeline textRenderingPipeline;
+    Renderer::UITextRenderingPipeline textRenderingPipeline;
     Renderer::DescriptorBufferBindlessResources bindlessResourcesDescriptorBuffer{};
     Renderer::DescriptorSetLayout fontAtlasSetLayout{};
     Renderer::DescriptorBufferCombinedImageSampler fontAtlasDescriptorBuffer{};
-    Renderer::AllocatedBuffer textVertexBuffer;
-    uint32_t vertexCount{0};
+    // buffer, vertexCount
+    std::vector<std::pair<Renderer::AllocatedBuffer, uint32_t> > textVertexBuffers;
     OffsetAllocator::Allocator textVertexAllocator{sizeof(uint32_t) * Renderer::MEGA_INDEX_BUFFER_COUNT};
 
     VkFence immFence{VK_NULL_HANDLE};
@@ -111,8 +172,6 @@ private:
     Renderer::AllocatedBuffer imageStagingBuffer{};
     OffsetAllocator::Allocator stagingAllocator{Renderer::STAGING_BUFFER_SIZE};
 
-
-
 private:
     FT_Library ft;
     Renderer::AllocatedImage fontAtlas;
@@ -120,6 +179,11 @@ private:
     Renderer::ImageView fontAtlasArrayView;
     Renderer::Sampler defaultSamplerLinear{};
     std::unordered_map<char, GlyphInfo> glyphMap;
+
+    Renderer::AllocatedImage whiteTexture;
+    Renderer::ImageView whiteTextureView;
+
+    UIState uiState{};
 };
 }
 

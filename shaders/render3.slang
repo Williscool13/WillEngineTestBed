@@ -11,6 +11,8 @@ struct VertexOutput
 struct PushConsts {
     float4x4 modelMatrix;
     SceneData* sceneData;
+    uint32_t textureIndex;
+    uint32_t samplerIndex;
 };
 
 [shader("vertex")]
@@ -34,8 +36,8 @@ SamplerState samplers[];
 Texture2D textures[];
 
 [shader("fragment")]
-float4 fragmentMain(VertexOutput input) : SV_Target
+float4 fragmentMain(VertexOutput input, uniform PushConsts pushConstants) : SV_Target
 {
-    float4 color = textures[0].Sample(samplers[0], input.uv);
+    float4 color = textures[pushConstants.textureIndex].Sample(samplers[pushConstants.samplerIndex], input.uv);
     return color;
 }

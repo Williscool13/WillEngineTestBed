@@ -15,6 +15,8 @@ struct Render3PushConstants
 {
     glm::mat4 modelMatrix;
     VkDeviceAddress sceneData;
+    uint32_t textureIndex;
+    uint32_t samplerIndex;
 };
 
 

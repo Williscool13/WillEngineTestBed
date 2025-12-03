@@ -15,6 +15,7 @@ struct Frustum
     glm::vec4 planes[6];
 
     Frustum() = default;
+
     explicit Frustum(const glm::mat4& viewProj);
 };
 
@@ -38,9 +39,11 @@ struct Vertex
 
 struct UIVertex
 {
-    glm::vec2 position;
-    glm::vec2 uv;
-    uint32_t color;
+    glm::vec2 position{0,0};
+    glm::vec2 uv{0,0};
+    uint32_t color{0xFFFFFFFF};
+    uint32_t textureIndex{0};
+    uint32_t bIsText{1};
 };
 
 struct MaterialProperties
@@ -70,34 +73,34 @@ struct MaterialProperties
 
 // ========== Instancing ==========
 
-    struct PackedVisibility
-    {
-        uint32_t visibilityChunk;
-    };
+struct PackedVisibility
+{
+    uint32_t visibilityChunk;
+};
 
-    struct InstancePrimitiveOffset
-    {
-        uint16_t primitiveOffset;
-    };
+struct InstancePrimitiveOffset
+{
+    uint16_t primitiveOffset;
+};
 
-    struct PrimitiveCount
-    {
-        uint32_t count;
-        uint32_t offset;
-    };
+struct PrimitiveCount
+{
+    uint32_t count;
+    uint32_t offset;
+};
 
-    struct InstancedMeshIndirectDrawParameters
-    {
-        uint32_t groupCountX;
-        uint32_t groupCountY;
-        uint32_t groupCountZ;
-        uint32_t compactedInstanceStart;
+struct InstancedMeshIndirectDrawParameters
+{
+    uint32_t groupCountX;
+    uint32_t groupCountY;
+    uint32_t groupCountZ;
+    uint32_t compactedInstanceStart;
 
-        uint32_t meshletOffset;
-        uint32_t meshletCount;
-        uint32_t materialIndex;
-        uint32_t padding;
-    };
+    uint32_t meshletOffset;
+    uint32_t meshletCount;
+    uint32_t materialIndex;
+    uint32_t padding;
+};
 
 struct BindlessIndirectPushConstant
 {

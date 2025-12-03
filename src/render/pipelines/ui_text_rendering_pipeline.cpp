@@ -2,7 +2,7 @@
 // Created by William on 2025-12-02.
 //
 
-#include "text_rendering_pipeline.h"
+#include "ui_text_rendering_pipeline.h"
 
 #include <stdexcept>
 
@@ -13,11 +13,11 @@
 
 namespace Renderer
 {
-TextRenderingPipeline::TextRenderingPipeline() = default;
+UITextRenderingPipeline::UITextRenderingPipeline() = default;
 
-TextRenderingPipeline::~TextRenderingPipeline() = default;
+UITextRenderingPipeline::~UITextRenderingPipeline() = default;
 
-TextRenderingPipeline::TextRenderingPipeline(VulkanContext* context, VkDescriptorSetLayout bindlessDescriptorSet) : context(context)
+UITextRenderingPipeline::UITextRenderingPipeline(VulkanContext* context, VkDescriptorSetLayout fontAtlasDescriptorSet, VkDescriptorSetLayout bindlessDescriptorSet) : context(context)
 {
     VkPushConstantRange renderPushConstantRange{};
     renderPushConstantRange.offset = 0;
@@ -26,8 +26,9 @@ TextRenderingPipeline::TextRenderingPipeline(VulkanContext* context, VkDescripto
 
     VkPipelineLayoutCreateInfo renderPipelineLayoutCreateInfo{};
     renderPipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    renderPipelineLayoutCreateInfo.pSetLayouts = &bindlessDescriptorSet;
-    renderPipelineLayoutCreateInfo.setLayoutCount = 1;
+    VkDescriptorSetLayout layouts[2]{fontAtlasDescriptorSet, bindlessDescriptorSet};
+    renderPipelineLayoutCreateInfo.pSetLayouts = layouts;
+    renderPipelineLayoutCreateInfo.setLayoutCount = 2;
     renderPipelineLayoutCreateInfo.pPushConstantRanges = &renderPushConstantRange;
     renderPipelineLayoutCreateInfo.pushConstantRangeCount = 1;
 
@@ -35,10 +36,10 @@ TextRenderingPipeline::TextRenderingPipeline(VulkanContext* context, VkDescripto
 
     VkShaderModule vertShader;
     VkShaderModule fragShader;
-    if (!VkHelpers::LoadShaderModule("shaders\\textRendering_vertex.spv", context->device, &vertShader)) {
+    if (!VkHelpers::LoadShaderModule("shaders\\uiTextRendering_vertex.spv", context->device, &vertShader)) {
         throw std::runtime_error("Error when building the vertex shader (indirectDraw_vertex.spv)");
     }
-    if (!VkHelpers::LoadShaderModule("shaders\\textRendering_fragment.spv", context->device, &fragShader)) {
+    if (!VkHelpers::LoadShaderModule("shaders\\uiTextRendering_fragment.spv", context->device, &fragShader)) {
         throw std::runtime_error("Error when building the fragment shader (indirectDraw_fragment.spv)");
     }
 
@@ -68,8 +69,20 @@ TextRenderingPipeline::TextRenderingPipeline(VulkanContext* context, VkDescripto
         {
             .location = 2,
             .binding = 0,
-            .format = VK_FORMAT_R32_SFLOAT,
+            .format = VK_FORMAT_R32_UINT,
             .offset = offsetof(UIVertex, color),
+        },
+        {
+            .location = 3,
+            .binding = 0,
+            .format = VK_FORMAT_R32_UINT,
+            .offset = offsetof(UIVertex, textureIndex),
+        },
+        {
+            .location = 4,
+            .binding = 0,
+            .format = VK_FORMAT_R32_UINT,
+            .offset = offsetof(UIVertex, bIsText),
         },
     };
 
@@ -90,7 +103,7 @@ TextRenderingPipeline::TextRenderingPipeline(VulkanContext* context, VkDescripto
     renderPipelineBuilder.SetupBlending({blendState});
 
     renderPipelineBuilder.SetupInputAssembly(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-    renderPipelineBuilder.SetupRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_BACK_BIT, VK_FRONT_FACE_COUNTER_CLOCKWISE);
+    renderPipelineBuilder.SetupRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE, VK_FRONT_FACE_COUNTER_CLOCKWISE);
     renderPipelineBuilder.DisableMultisampling();
     renderPipelineBuilder.EnableDepthTest(true, VK_COMPARE_OP_GREATER_OR_EQUAL);
     renderPipelineBuilder.SetupRenderer({DRAW_IMAGE_FORMAT}, VK_FORMAT_D32_SFLOAT);
@@ -102,7 +115,7 @@ TextRenderingPipeline::TextRenderingPipeline(VulkanContext* context, VkDescripto
     vkDestroyShaderModule(context->device, fragShader, nullptr);
 }
 
-TextRenderingPipeline::TextRenderingPipeline(TextRenderingPipeline&& other) noexcept
+UITextRenderingPipeline::UITextRenderingPipeline(UITextRenderingPipeline&& other) noexcept
 {
     pipelineLayout = std::move(other.pipelineLayout);
     pipeline = std::move(other.pipeline);
@@ -110,7 +123,7 @@ TextRenderingPipeline::TextRenderingPipeline(TextRenderingPipeline&& other) noex
     other.context = nullptr;
 }
 
-TextRenderingPipeline& TextRenderingPipeline::operator=(TextRenderingPipeline&& other) noexcept
+UITextRenderingPipeline& UITextRenderingPipeline::operator=(UITextRenderingPipeline&& other) noexcept
 {
     if (this != &other) {
         pipelineLayout = std::move(other.pipelineLayout);
