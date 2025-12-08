@@ -30,6 +30,8 @@
 #include "render/animation/animation_player.h"
 #include "render/animation/animation_player.h"
 #include "render/animation/animation_player.h"
+#include "render/animation/animation_player.h"
+#include "render/animation/animation_player.h"
 
 namespace UIRendering
 {
@@ -811,6 +813,10 @@ void UIRendering::GenerateUIBuffer(Renderer::AllocatedBuffer& buffer, uint32_t& 
     };
     UIRenderText(buttonText, glyphMap, vertices, vertexIndex);
 
+    static float sliderValue = 0.5f; // Store somewhere persistent
+    UIRenderSlider(vertices, vertexIndex, ButtonHashStr("volume_slider"), {100, 400}, 200.0f, sliderValue, 0.0f, 1.0f);
+
+
     vertexCount = vertexIndex;
 }
 
@@ -903,8 +909,7 @@ void UIRendering::UIRenderButton(Renderer::UIVertex* vertices, int32_t& vertexIn
         onClick();
     }
 
-    uint32_t color = state.bIsPressed ? packedPressedColor :
-                        state.bIsHovered ? packedHoveredColor : packedBaseColor;
+    uint32_t color = state.bIsPressed ? packedPressedColor : state.bIsHovered ? packedHoveredColor : packedBaseColor;
 
     UIRect rect{
         .pos = pos,
@@ -912,5 +917,57 @@ void UIRendering::UIRenderButton(Renderer::UIVertex* vertices, int32_t& vertexIn
         .packedTintColor = color,
     };
     UIRenderRect(rect, vertices, vertexIndex);
+}
+
+void UIRendering::UIRenderSlider(Renderer::UIVertex* vertices, int& vertexIndex, uint32_t hash, glm::vec2 pos, float width, float& value, float minValue, float maxValue)
+{
+    UISlider& state = sliderState[hash];
+    const Input& input = Input::Get();
+    glm::vec2 mousePos = input.GetMousePositionAbsolute();
+
+    // Bar
+    float barHeight = 4.0f;
+    glm::vec2 barPos = {pos.x, pos.y - barHeight / 2};
+    glm::vec2 barSize = {width, barHeight};
+
+    // Handle
+    float handleSize = 16.0f;
+    float normalizedValue = (value - minValue) / (maxValue - minValue);
+    float handleX = pos.x + normalizedValue * width - handleSize / 2;
+    glm::vec2 handlePos = {handleX, pos.y - handleSize / 2};
+    glm::vec2 handleSizeVec = {handleSize, handleSize};
+
+    bool mouseInHandle = true;
+    bool mouseInBar = false;
+
+    if (mouseInHandle && input.IsMousePressed(MouseButton::LMB)) {
+        state.bIsDragging = true;
+    }
+
+    if (!input.IsMouseDown(MouseButton::LMB)) {
+        state.bIsDragging = false;
+    }
+
+    if (state.bIsDragging) {
+        float t = (mousePos.x - pos.x) / width;
+        value = glm::clamp(minValue + t * (maxValue - minValue), minValue, maxValue);
+
+        LOG_INFO("Slider: {}", value);
+    }
+
+    // todo: seek if clicking bar but not handle
+    UIRect bar{
+        .pos = barPos,
+        .size = barSize,
+        .packedTintColor = 0xFF00FF00
+    };
+    UIRenderRect(bar, vertices, vertexIndex);
+
+    UIRect handle{
+        .pos = handlePos,
+        .size = handleSizeVec,
+        .packedTintColor = 0xFFFFFFFF
+    };
+    UIRenderRect(handle, vertices, vertexIndex);
 }
 }

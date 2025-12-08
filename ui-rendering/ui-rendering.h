@@ -68,6 +68,11 @@ struct UIButton
     bool bIsPressed;
 };
 
+struct UISlider
+{
+    bool bIsDragging;
+};
+
 struct UIButtonImage
 {
     UIImage rect;
@@ -111,8 +116,10 @@ public:
 
     void UIRenderText(UIText& text, std::unordered_map<char, GlyphInfo>& glyphMap, Renderer::UIVertex* vertices, int32_t& vertexIndex);
 
-    void UIRenderButton(::Renderer::UIVertex* vertices, int& vertexIndex, unsigned int hash, glm::vec2 pos, glm::vec2 size, uint32_t packedBaseColor, uint32_t packedHoveredColor, uint32_t packedPressedColor, std::function<
+    void UIRenderButton(Renderer::UIVertex* vertices, int& vertexIndex, uint32_t hash, glm::vec2 pos, glm::vec2 size, uint32_t packedBaseColor, uint32_t packedHoveredColor, uint32_t packedPressedColor, std::function<
                         void()> onClick);
+
+    void UIRenderSlider(Renderer::UIVertex* vertices, int& vertexIndex, unsigned int hash, glm::vec2 pos, float width, float& value, float minValue, float maxValue);
 
     static constexpr uint32_t ButtonHashStr(const char* str)
     {
@@ -184,6 +191,7 @@ private:
     uint32_t atlasTextureIndex{~0u};
 
     std::unordered_map<uint32_t, UIButton> buttonState;
+    std::unordered_map<uint32_t, UISlider> sliderState;
 };
 }
 
