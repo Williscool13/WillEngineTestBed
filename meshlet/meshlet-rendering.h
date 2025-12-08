@@ -81,7 +81,7 @@ private:
     Renderer::AllocatedBuffer megaMeshletTrianglesBuffer;
     OffsetAllocator::Allocator meshletTrianglesBufferAllocator{Renderer::MEGA_MESHLET_TRIANGLE_BUFFER_SIZE};
     Renderer::AllocatedBuffer megaMeshletBuffer;
-    OffsetAllocator::Allocator meshletBufferAllocator{sizeof(uint32_t) * Renderer::MEGA_INDEX_BUFFER_COUNT};
+    OffsetAllocator::Allocator meshletBufferAllocator{sizeof(Renderer::Meshlet) * Renderer::MEGA_INDEX_BUFFER_COUNT};
     Renderer::AllocatedBuffer materialBuffer;
     OffsetAllocator::Allocator materialBufferAllocator{sizeof(Renderer::MaterialProperties) * Renderer::MEGA_MATERIAL_BUFFER_COUNT};
     Renderer::AllocatedBuffer primitiveBuffer;

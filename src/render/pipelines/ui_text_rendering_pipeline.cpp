@@ -109,7 +109,7 @@ UITextRenderingPipeline::UITextRenderingPipeline(VulkanContext* context, VkDescr
     renderPipelineBuilder.SetupBlending({blendState});
 
     renderPipelineBuilder.SetupInputAssembly(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-    renderPipelineBuilder.SetupRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE, VK_FRONT_FACE_COUNTER_CLOCKWISE);
+    renderPipelineBuilder.SetupRasterization(VK_POLYGON_MODE_FILL, VK_CULL_MODE_BACK_BIT, VK_FRONT_FACE_COUNTER_CLOCKWISE);
     renderPipelineBuilder.DisableMultisampling();
     renderPipelineBuilder.DisableDepthTest();
     renderPipelineBuilder.SetupRenderer({DRAW_IMAGE_FORMAT}, VK_FORMAT_D32_SFLOAT);

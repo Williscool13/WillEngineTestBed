@@ -20,8 +20,8 @@ VertexOutput vertexMain(UIVertex vertex, uniform PushConsts pushConstants) {
     VertexOutput output;
     output.position = float4(
         (vertex.position.x / pushConstants.sceneData->renderTargetSize.x) * 2.0 - 1.0,
-        (vertex.position.y / pushConstants.sceneData->renderTargetSize.y) * 2.0 - 1.0,
-        0.999999,
+        1.0 - (vertex.position.y / pushConstants.sceneData->renderTargetSize.y) * 2.0,
+        0,
         1.0
     );
 

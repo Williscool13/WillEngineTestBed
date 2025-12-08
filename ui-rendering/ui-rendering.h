@@ -37,13 +37,13 @@ namespace UIRendering
 {
 struct GlyphInfo
 {
-    int32_t atlasX;
-    int32_t atlasY;
-    uint32_t width;
-    uint32_t height;
-    int32_t bearingX;
-    int32_t bearingY;
-    int32_t advance;
+    uint16_t atlasX;
+    uint16_t atlasY;
+    uint16_t width;
+    uint16_t height;
+    int16_t bearingX;
+    int16_t bearingY;
+    uint16_t advance;
 };
 
 struct UIRect
@@ -64,9 +64,8 @@ struct UIImage
 
 struct UIButton
 {
-    UIRect rect;
-    std::function<void()> onClick;
-    bool isHovered;
+    bool bIsHovered;
+    bool bIsPressed;
 };
 
 struct UIButtonImage
@@ -83,24 +82,6 @@ struct UIText
     uint32_t packedColor;
     uint32_t fontIndex;
     float scale;
-};
-
-struct UIState
-{
-    std::vector<UIRect> rects;
-    std::vector<UIImage> images;
-    std::vector<UIButton> buttons;
-    std::vector<UIButtonImage> buttonImages;
-    std::vector<UIText> texts;
-
-    void Clear()
-    {
-        rects.clear();
-        images.clear();
-        buttons.clear();
-        buttonImages.clear();
-        texts.clear();
-    }
 };
 
 class UIRendering
@@ -129,6 +110,19 @@ public:
     void UIRenderImage(UIImage& image, Renderer::UIVertex* vertices, int32_t& vertexIndex);
 
     void UIRenderText(UIText& text, std::unordered_map<char, GlyphInfo>& glyphMap, Renderer::UIVertex* vertices, int32_t& vertexIndex);
+
+    void UIRenderButton(::Renderer::UIVertex* vertices, int& vertexIndex, unsigned int hash, glm::vec2 pos, glm::vec2 size, uint32_t packedBaseColor, uint32_t packedHoveredColor, uint32_t packedPressedColor, std::function<
+                        void()> onClick);
+
+    static constexpr uint32_t ButtonHashStr(const char* str)
+    {
+        uint32_t hash = 2166136261u;
+        while (*str) {
+            hash ^= *str++;
+            hash *= 16777619u;
+        }
+        return hash;
+    }
 
 private:
     SDL_Window* window{nullptr};
@@ -189,7 +183,7 @@ private:
     uint32_t defaultSamplerIndex{~0u};
     uint32_t atlasTextureIndex{~0u};
 
-    UIState uiState{};
+    std::unordered_map<uint32_t, UIButton> buttonState;
 };
 }
 

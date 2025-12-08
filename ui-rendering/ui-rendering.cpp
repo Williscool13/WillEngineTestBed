@@ -26,6 +26,10 @@
 #include "render/render_context.h"
 #include "render/vk_descriptors.h"
 #include "render/vk_imgui_wrapper.h"
+#include "render/animation/animation_player.h"
+#include "render/animation/animation_player.h"
+#include "render/animation/animation_player.h"
+#include "render/animation/animation_player.h"
 
 namespace UIRendering
 {
@@ -81,8 +85,8 @@ void UIRendering::SetupFont()
 
     std::vector<VkBufferImageCopy> copies{};
     stagingAllocator.reset();
-    int currentX = 0;
-    int currentY = 0;
+    uint16_t currentX = 0;
+    uint16_t currentY = 0;
     int rowHeight = 0;
     for (char upperLetter : alphabets) {
         if (FT_Load_Char(face, upperLetter, FT_LOAD_RENDER)) {
@@ -107,11 +111,11 @@ void UIRendering::SetupFont()
         glyphMap[upperLetter] = {
             .atlasX = currentX,
             .atlasY = currentY,
-            .width = bitmap.width,
-            .height = bitmap.rows,
-            .bearingX = slot->bitmap_left,
-            .bearingY = slot->bitmap_top,
-            .advance = slot->advance.x >> 6,
+            .width = static_cast<uint16_t>(bitmap.width),
+            .height = static_cast<uint16_t>(bitmap.rows),
+            .bearingX = static_cast<int16_t>(slot->bitmap_left),
+            .bearingY = static_cast<int16_t>(slot->bitmap_top),
+            .advance = static_cast<uint16_t>(slot->advance.x >> 6),
         };
 
         if (bitmap.width != 0 && bitmap.rows != 0) {
@@ -516,31 +520,6 @@ void UIRendering::Render(float deltaTime, uint32_t currentFrameInFlight, Rendere
 
     std::array<uint32_t, 2> scaledRenderExtent = renderContext->GetScaledRenderExtent();
 
-    uiState.Clear();
-    float centerX = scaledRenderExtent[0] / 2.0f;
-    float centerY = scaledRenderExtent[1] / 2.0f;
-    uiState.texts.push_back({
-        .text = "Hello World",
-        .pos = {centerX, centerY},
-        .packedColor = (0xFFFFFFFF),
-        .fontIndex = 0,
-        .scale = 1
-    });
-
-    uiState.rects.push_back({
-        .pos = {10.0f, 10.0f},
-        .size = {100.0f, 100.0f},
-        .packedTintColor = 0xFF00FF00,
-    });
-
-    uiState.images.push_back({
-        .pos = {scaledRenderExtent[0] - 266.0f, 10.0f},
-        .size = {256.0f, 256.0f},
-        .bindlessSamplerIndex = defaultSamplerIndex,
-        .bindlessTextureIndex = atlasTextureIndex,
-        .packedTintColor = 0xFFFFFFFF,
-    });
-
     std::pair<Renderer::AllocatedBuffer, uint32_t>& currentUIBuffer = textVertexBuffers[currentFrameInFlight];
     GenerateUIBuffer(currentUIBuffer.first, currentUIBuffer.second);
 
@@ -790,18 +769,47 @@ void UIRendering::GenerateUIBuffer(Renderer::AllocatedBuffer& buffer, uint32_t& 
     auto* vertices = static_cast<Renderer::UIVertex*>(buffer.allocationInfo.pMappedData);
     int32_t vertexIndex = 0;
 
-    for (auto& rect : uiState.rects) {
-        UIRenderRect(rect, vertices, vertexIndex);
-    }
+    std::array<uint32_t, 2> scaledRenderExtent = renderContext->GetScaledRenderExtent();
+    const float centerX = scaledRenderExtent[0] / 2.0f;
+    const float centerY = scaledRenderExtent[1] / 2.0f;
 
-    for (auto& image : uiState.images) {
-        UIRenderImage(image, vertices, vertexIndex);
-    }
+    // font not implemented yet
+    UIText helloText{
+        .text = "Hello World!",
+        .pos = {centerX + 200, centerY + 200},
+        .packedColor = (0xFFFFFFFF),
+        .fontIndex = 0,
+        .scale = 1
+    };
+    UIRenderText(helloText, glyphMap, vertices, vertexIndex);
 
-    for (auto& text : uiState.texts) {
-        // font not implemented yet
-        UIRenderText(text, glyphMap, vertices, vertexIndex);
-    }
+    UIRect testRect{
+        .pos = {10.0f, 10.0f},
+        .size = {100.0f, 100.0f},
+        .packedTintColor = 0xFF00FF00,
+    };
+    UIRenderRect(testRect, vertices, vertexIndex);
+
+    UIImage atlasImage{
+        .pos = {scaledRenderExtent[0] - 266.0f, 10.0f},
+        .size = {256.0f, 256.0f},
+        .bindlessSamplerIndex = defaultSamplerIndex,
+        .bindlessTextureIndex = atlasTextureIndex,
+        .packedTintColor = 0xFFFFFFFF,
+    };
+    UIRenderImage(atlasImage, vertices, vertexIndex);
+
+    UIRenderButton(vertices, vertexIndex, ButtonHashStr("Test Button"), {250, 250}, {200, 50}, 0xFFFF0000, 0xFF00FF00, 0xFF0000FF, []() {
+        LOG_INFO("Button Pressed");
+    });
+    UIText buttonText{
+        .text = "Button",
+        .pos = {250 + 10, 250 + 40},
+        .packedColor = (0xFFFFFFFF),
+        .fontIndex = 0,
+        .scale = 0.75
+    };
+    UIRenderText(buttonText, glyphMap, vertices, vertexIndex);
 
     vertexCount = vertexIndex;
 }
@@ -813,13 +821,13 @@ void UIRendering::UIRenderRect(UIRect& rect, Renderer::UIVertex* vertices, int32
     float x1 = x0 + rect.size.x;
     float y1 = y0 + rect.size.y;
 
+    vertices[vertexIndex++] = {{x0, y1}, {0.0f, 1.0f}, rect.packedTintColor, defaultSamplerIndex, whiteTextureIndex, 0};
+    vertices[vertexIndex++] = {{x1, y0}, {1.0f, 0.0f}, rect.packedTintColor, defaultSamplerIndex, whiteTextureIndex, 0};
     vertices[vertexIndex++] = {{x0, y0}, {0.0f, 0.0f}, rect.packedTintColor, defaultSamplerIndex, whiteTextureIndex, 0};
-    vertices[vertexIndex++] = {{x1, y0}, {1.0f, 0.0f}, rect.packedTintColor, defaultSamplerIndex, whiteTextureIndex, 0};
-    vertices[vertexIndex++] = {{x0, y1}, {0.0f, 1.0f}, rect.packedTintColor, defaultSamplerIndex, whiteTextureIndex, 0};
 
-    vertices[vertexIndex++] = {{x1, y0}, {1.0f, 0.0f}, rect.packedTintColor, defaultSamplerIndex, whiteTextureIndex, 0};
-    vertices[vertexIndex++] = {{x1, y1}, {1.0f, 1.0f}, rect.packedTintColor, defaultSamplerIndex, whiteTextureIndex, 0};
     vertices[vertexIndex++] = {{x0, y1}, {0.0f, 1.0f}, rect.packedTintColor, defaultSamplerIndex, whiteTextureIndex, 0};
+    vertices[vertexIndex++] = {{x1, y1}, {1.0f, 1.0f}, rect.packedTintColor, defaultSamplerIndex, whiteTextureIndex, 0};
+    vertices[vertexIndex++] = {{x1, y0}, {1.0f, 0.0f}, rect.packedTintColor, defaultSamplerIndex, whiteTextureIndex, 0};
 }
 
 void UIRendering::UIRenderImage(UIImage& image, Renderer::UIVertex* vertices, int32_t& vertexIndex)
@@ -829,13 +837,13 @@ void UIRendering::UIRenderImage(UIImage& image, Renderer::UIVertex* vertices, in
     float x1 = x0 + image.size.x;
     float y1 = y0 + image.size.y;
 
+    vertices[vertexIndex++] = {{x0, y1}, {0.0f, 1.0f}, image.packedTintColor, image.bindlessSamplerIndex, image.bindlessTextureIndex, 0};
+    vertices[vertexIndex++] = {{x1, y0}, {1.0f, 0.0f}, image.packedTintColor, image.bindlessSamplerIndex, image.bindlessTextureIndex, 0};
     vertices[vertexIndex++] = {{x0, y0}, {0.0f, 0.0f}, image.packedTintColor, image.bindlessSamplerIndex, image.bindlessTextureIndex, 0};
-    vertices[vertexIndex++] = {{x1, y0}, {1.0f, 0.0f}, image.packedTintColor, image.bindlessSamplerIndex, image.bindlessTextureIndex, 0};
-    vertices[vertexIndex++] = {{x0, y1}, {0.0f, 1.0f}, image.packedTintColor, image.bindlessSamplerIndex, image.bindlessTextureIndex, 0};
 
-    vertices[vertexIndex++] = {{x1, y0}, {1.0f, 0.0f}, image.packedTintColor, image.bindlessSamplerIndex, image.bindlessTextureIndex, 0};
-    vertices[vertexIndex++] = {{x1, y1}, {1.0f, 1.0f}, image.packedTintColor, image.bindlessSamplerIndex, image.bindlessTextureIndex, 0};
     vertices[vertexIndex++] = {{x0, y1}, {0.0f, 1.0f}, image.packedTintColor, image.bindlessSamplerIndex, image.bindlessTextureIndex, 0};
+    vertices[vertexIndex++] = {{x1, y1}, {1.0f, 1.0f}, image.packedTintColor, image.bindlessSamplerIndex, image.bindlessTextureIndex, 0};
+    vertices[vertexIndex++] = {{x1, y0}, {1.0f, 0.0f}, image.packedTintColor, image.bindlessSamplerIndex, image.bindlessTextureIndex, 0};
 }
 
 void UIRendering::UIRenderText(UIText& text, std::unordered_map<char, GlyphInfo>& glyphMap, Renderer::UIVertex* vertices, int32_t& vertexIndex)
@@ -847,24 +855,62 @@ void UIRendering::UIRenderText(UIText& text, std::unordered_map<char, GlyphInfo>
         GlyphInfo& glyph = glyphMap[c];
 
         float x0 = cursorX + glyph.bearingX * text.scale;
-        float y0 = cursorY + glyph.bearingY * text.scale;
+        float y0 = cursorY - glyph.bearingY * text.scale;
         float x1 = x0 + glyph.width * text.scale;
-        float y1 = y0 - glyph.height * text.scale;
+        float y1 = y0 + glyph.height * text.scale;
 
         float u0 = static_cast<float>(glyph.atlasX) / Renderer::FONT_ATLAS_DIM;
         float v0 = static_cast<float>(glyph.atlasY) / Renderer::FONT_ATLAS_DIM;
         float u1 = static_cast<float>(glyph.atlasX + glyph.width) / Renderer::FONT_ATLAS_DIM;
         float v1 = static_cast<float>(glyph.atlasY + glyph.height) / Renderer::FONT_ATLAS_DIM;
 
+        vertices[vertexIndex++] = {{x0, y1}, {u0, v1}, text.packedColor};
+        vertices[vertexIndex++] = {{x1, y0}, {u1, v0}, text.packedColor};
         vertices[vertexIndex++] = {{x0, y0}, {u0, v0}, text.packedColor};
-        vertices[vertexIndex++] = {{x1, y0}, {u1, v0}, text.packedColor};
-        vertices[vertexIndex++] = {{x0, y1}, {u0, v1}, text.packedColor};
 
-        vertices[vertexIndex++] = {{x1, y0}, {u1, v0}, text.packedColor};
-        vertices[vertexIndex++] = {{x1, y1}, {u1, v1}, text.packedColor};
         vertices[vertexIndex++] = {{x0, y1}, {u0, v1}, text.packedColor};
+        vertices[vertexIndex++] = {{x1, y1}, {u1, v1}, text.packedColor};
+        vertices[vertexIndex++] = {{x1, y0}, {u1, v0}, text.packedColor};
 
         cursorX += glyph.advance * text.scale;
     }
+}
+
+void UIRendering::UIRenderButton(Renderer::UIVertex* vertices, int32_t& vertexIndex, uint32_t hash, glm::vec2 pos, glm::vec2 size, uint32_t packedBaseColor, uint32_t packedHoveredColor,
+                                 uint32_t packedPressedColor, std::function<void()> onClick)
+{
+    UIButton& state = buttonState[hash];
+    bool wasHovered = state.bIsHovered;
+    bool wasPressed = state.bIsPressed;
+
+    const Input& input = Input::Get();
+    auto isMouseInRect = [&input](glm::vec2 pos, glm::vec2 size) {
+        const glm::vec2 mousePos = input.GetMousePositionAbsolute();
+        return mousePos.x >= pos.x &&
+               mousePos.x <= pos.x + size.x &&
+               mousePos.y >= pos.y &&
+               mousePos.y <= pos.y + size.y;
+    };
+
+
+    bool isMouseDown = input.IsMouseDown(MouseButton::LMB);
+
+    state.bIsHovered = isMouseInRect(pos, size);
+    state.bIsPressed = state.bIsHovered && isMouseDown;
+
+    // On Release
+    if (wasHovered && !isMouseDown && wasPressed) {
+        onClick();
+    }
+
+    uint32_t color = state.bIsPressed ? packedPressedColor :
+                        state.bIsHovered ? packedHoveredColor : packedBaseColor;
+
+    UIRect rect{
+        .pos = pos,
+        .size = size,
+        .packedTintColor = color,
+    };
+    UIRenderRect(rect, vertices, vertexIndex);
 }
 }

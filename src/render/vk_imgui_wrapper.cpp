@@ -73,6 +73,7 @@ ImguiWrapper::ImguiWrapper(VulkanContext* context, SDL_Window* window, int32_t s
     initInfo.DescriptorPool = imguiPool;
     initInfo.MinImageCount = swapchainImageCount == 2 ? vkb::SwapchainBuilder::DOUBLE_BUFFERING : vkb::SwapchainBuilder::TRIPLE_BUFFERING;
     initInfo.ImageCount = swapchainImageCount;
+    initInfo.MinAllocationSize = 1024 * 1024;
     // initInfo.Allocator = g_Allocator;
     // initInfo.PipelineInfoMain.RenderPass = wd->RenderPass;
     initInfo.PipelineInfoMain.Subpass = 0;
