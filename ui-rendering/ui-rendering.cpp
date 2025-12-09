@@ -814,7 +814,7 @@ void UIRendering::GenerateUIBuffer(Renderer::AllocatedBuffer& buffer, uint32_t& 
     UIRenderText(buttonText, glyphMap, vertices, vertexIndex);
 
     static float sliderValue = 0.5f; // Store somewhere persistent
-    UIRenderSlider(vertices, vertexIndex, ButtonHashStr("volume_slider"), {100, 400}, 200.0f, sliderValue, 0.0f, 1.0f);
+    UIRenderSlider(vertices, vertexIndex, ButtonHashStr("volume_slider"), {100, 400}, 200.0f, sliderValue, 0.0f, 1.0f, 0.01f);
 
 
     vertexCount = vertexIndex;
@@ -919,7 +919,7 @@ void UIRendering::UIRenderButton(Renderer::UIVertex* vertices, int32_t& vertexIn
     UIRenderRect(rect, vertices, vertexIndex);
 }
 
-void UIRendering::UIRenderSlider(Renderer::UIVertex* vertices, int& vertexIndex, uint32_t hash, glm::vec2 pos, float width, float& value, float minValue, float maxValue)
+void UIRendering::UIRenderSlider(Renderer::UIVertex* vertices, int& vertexIndex, uint32_t hash, glm::vec2 pos, float width, float& value, float minValue, float maxValue, float step)
 {
     UISlider& state = sliderState[hash];
     const Input& input = Input::Get();
@@ -934,14 +934,32 @@ void UIRendering::UIRenderSlider(Renderer::UIVertex* vertices, int& vertexIndex,
     float handleSize = 16.0f;
     float normalizedValue = (value - minValue) / (maxValue - minValue);
     float handleX = pos.x + normalizedValue * width - handleSize / 2;
+    float handleCenterX = pos.x + normalizedValue * width;
     glm::vec2 handlePos = {handleX, pos.y - handleSize / 2};
     glm::vec2 handleSizeVec = {handleSize, handleSize};
 
-    bool mouseInHandle = true;
-    bool mouseInBar = false;
+    auto isMouseInRect = [&input, mousePos](glm::vec2 pos_, glm::vec2 size_) {
+        return mousePos.x >= pos_.x && mousePos.x <= pos_.x + size_.x &&
+               mousePos.y >= pos_.y && mousePos.y <= pos_.y + size_.y;
+    };
 
-    if (mouseInHandle && input.IsMousePressed(MouseButton::LMB)) {
-        state.bIsDragging = true;
+    bool mouseInHandle = isMouseInRect(handlePos, handleSizeVec);
+    bool mouseInBar = isMouseInRect(barPos, {barSize});
+
+    if (input.IsMousePressed(MouseButton::LMB)) {
+        if (mouseInHandle) {
+            state.bIsDragging = true;
+            state.dragOffsetX = mousePos.x - handleCenterX;
+        }
+        else if (mouseInBar) {
+            state.bIsDragging = true;
+            state.dragOffsetX = 0.0f;
+
+            float t = glm::clamp((mousePos.x - pos.x) / width, 0.0f, 1.0f);
+            float rawValue = minValue + t * (maxValue - minValue);
+            value = glm::round(rawValue / step) * step;
+            value = glm::clamp(value, minValue, maxValue);
+        }
     }
 
     if (!input.IsMouseDown(MouseButton::LMB)) {
@@ -949,13 +967,17 @@ void UIRendering::UIRenderSlider(Renderer::UIVertex* vertices, int& vertexIndex,
     }
 
     if (state.bIsDragging) {
-        float t = (mousePos.x - pos.x) / width;
-        value = glm::clamp(minValue + t * (maxValue - minValue), minValue, maxValue);
+        float adjustedMouseX = mousePos.x - state.dragOffsetX;
+        float t = glm::clamp((adjustedMouseX - pos.x) / width, 0.0f, 1.0f);
+        float rawValue = minValue + t * (maxValue - minValue);
+
+        value = glm::round(rawValue / step) * step;
+        value = glm::clamp(value, minValue, maxValue);
 
         LOG_INFO("Slider: {}", value);
     }
 
-    // todo: seek if clicking bar but not handle
+
     UIRect bar{
         .pos = barPos,
         .size = barSize,

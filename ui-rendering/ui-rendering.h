@@ -71,6 +71,7 @@ struct UIButton
 struct UISlider
 {
     bool bIsDragging;
+    float dragOffsetX;
 };
 
 struct UIButtonImage
@@ -119,7 +120,7 @@ public:
     void UIRenderButton(Renderer::UIVertex* vertices, int& vertexIndex, uint32_t hash, glm::vec2 pos, glm::vec2 size, uint32_t packedBaseColor, uint32_t packedHoveredColor, uint32_t packedPressedColor, std::function<
                         void()> onClick);
 
-    void UIRenderSlider(Renderer::UIVertex* vertices, int& vertexIndex, unsigned int hash, glm::vec2 pos, float width, float& value, float minValue, float maxValue);
+    void UIRenderSlider(Renderer::UIVertex* vertices, int& vertexIndex, unsigned int hash, glm::vec2 pos, float width, float& value, float minValue, float maxValue, float step = 0.0001f);
 
     static constexpr uint32_t ButtonHashStr(const char* str)
     {
